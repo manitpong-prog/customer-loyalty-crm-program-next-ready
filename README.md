@@ -50,10 +50,11 @@ If you connected Neon through the Vercel Marketplace integration, Vercel should 
 
 หลังทำ Production UI Cleanup Phase 1 แล้ว route จะแยกเป็น:
 
-- `/` หน้า prototype/demo รวมทุกบทบาท
+- `/` หน้า Landing จริงสำหรับเลือกเข้าใช้งาน
 - `/customer` หน้าลูกค้าแบบ production view
 - `/merchant` หลังบ้านร้านค้า
 - `/admin` ผู้ดูแลเว็บไซต์
+- `/demo` หน้า prototype/demo รวมทุกบทบาทสำหรับ debug ภายใน
 
 รายละเอียดเพิ่มเติมดู `docs/PRODUCTION_UI_CLEANUP_TH.md`
 
