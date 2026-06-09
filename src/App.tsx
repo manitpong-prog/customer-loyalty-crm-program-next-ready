@@ -40,7 +40,8 @@ export default function App({
   const isDemoMode = mode === "demo";
   const [activeRole, setActiveRole] = useState<AppRole>(initialRole);
   const [dataVersion, setDataVersion] = useState(0);
-  const [selectedShopId, setSelectedShopId] = useState("koffee_craft");
+  const defaultShopId = process.env.NEXT_PUBLIC_DEFAULT_SHOP_ID || "im_sticker";
+  const [selectedShopId, setSelectedShopId] = useState(defaultShopId);
   const [initialCouponCode, setInitialCouponCode] = useState<string>("");
   const [databaseLabel, setDatabaseLabel] = useState("กำลังเชื่อมต่อข้อมูล...");
 
@@ -244,7 +245,7 @@ export default function App({
 
             <CustomerDashboard
               key={`cust-${dataVersion}`}
-              currentCustomerId="cust_line_user"
+              currentCustomerId="cust_pilot_001"
               onDataChange={handleDataChange}
               selectedShopId={selectedShopId}
               setSelectedShopId={setSelectedShopId}

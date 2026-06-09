@@ -1,6 +1,6 @@
 # Customer Loyalty CRM Program
 
-Next.js production baseline converted from the original AI Studio mock-up and upgraded with Phase 1 Neon Database Integration.
+Next.js production baseline converted from the original AI Studio mock-up, upgraded with Neon Database Integration, and prepared for a clean pilot baseline.
 
 ## Commands
 
@@ -16,7 +16,7 @@ npm run start
 
 This version adds server-side Neon routes:
 
-- `GET /api/db/snapshot` loads all CRM data from Neon and seeds demo data when the database is empty.
+- `GET /api/db/snapshot` loads all CRM data from Neon and can seed `pilot`, `demo`, or `none` depending on `CRM_AUTO_SEED`.
 - `POST /api/db/sync` persists browser-side changes back to Neon.
 - `POST /api/db/reset` can clear or reseed test data only when `ALLOW_DB_RESET=true`.
 - `GET /api/db/health` checks that the app can reach Neon and returns row counts.
@@ -31,6 +31,8 @@ Create `.env.local` locally and set the same value in Vercel Project Settings > 
 DATABASE_URL="postgresql://..."
 DATABASE_URL_UNPOOLED="postgresql://..."
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
+NEXT_PUBLIC_DEFAULT_SHOP_ID="im_sticker"
+CRM_AUTO_SEED="pilot"
 ALLOW_DB_RESET="false"
 ```
 
@@ -41,6 +43,8 @@ If you connected Neon through the Vercel Marketplace integration, Vercel should 
 - Deployment guide: `docs/DEPLOYMENT_GUIDE_TH.md`
 - Neon schema: `neon/schema.sql`
 - Reset SQL: `neon/reset-demo.sql`
+- Pilot seed SQL: `neon/seed-pilot-im-sticker.sql`
+- Production data cleanup: `docs/PRODUCTION_DATA_CLEANUP_TH.md`
 
 ## Production UI Routes
 

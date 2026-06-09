@@ -22,13 +22,14 @@ export async function GET() {
 
   try {
     await ensureCrmSchema();
-    const seeded = await seedInitialDataIfEmpty();
+    const seedResult = await seedInitialDataIfEmpty();
     const data = await getCrmSnapshot();
 
     return NextResponse.json({
       ok: true,
       source: 'neon',
-      seeded,
+      seeded: seedResult.seeded,
+      seedMode: seedResult.mode,
       data,
     });
   } catch (error) {

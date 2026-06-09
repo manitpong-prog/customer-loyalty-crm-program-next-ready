@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { clearCrmData, getCrmSnapshot, isDatabaseConfigured, reseedDemoData } from '../../../../lib/server/crmDb';
+import { clearCrmData, getCrmSnapshot, isDatabaseConfigured, reseedDemoData, seedPilotData } from '../../../../lib/server/crmDb';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -18,10 +18,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const mode = body?.mode === 'seed-demo' ? 'seed-demo' : 'clear';
+    const mode = body?.mode === 'seed-demo' ? 'seed-demo' : body?.mode === 'seed-pilot' ? 'seed-pilot' : 'clear';
 
     if (mode === 'seed-demo') {
       await reseedDemoData();
+    } else if (mode === 'seed-pilot') {
+      await seedPilotData();
     } else {
       await clearCrmData();
     }

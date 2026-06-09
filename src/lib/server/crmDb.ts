@@ -7,6 +7,13 @@ import {
   INITIAL_SHOPS,
   INITIAL_TRANSACTIONS,
 } from '../../data/mockData';
+import {
+  PILOT_BANNERS,
+  PILOT_CUSTOMERS,
+  PILOT_REWARDS,
+  PILOT_SHOPS,
+  PILOT_TRANSACTIONS,
+} from '../../data/productionSeed';
 
 export type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons';
 
@@ -147,21 +154,44 @@ export async function ensureCrmSchema() {
   await sql`create index if not exists idx_point_coupons_shop_id on point_coupons(shop_id)`;
 }
 
+export type AutoSeedMode = 'pilot' | 'demo' | 'none';
+
+export function getAutoSeedMode(): AutoSeedMode {
+  const value = (process.env.CRM_AUTO_SEED || 'pilot').toLowerCase();
+  if (value === 'demo' || value === 'none' || value === 'pilot') return value;
+  return 'pilot';
+}
+
 export async function seedInitialDataIfEmpty() {
   const sql = requireSql();
   const result = await sql`select count(*)::int as count from shops`;
   const shopCount = Number(result[0]?.count || 0);
 
   if (shopCount > 0) {
-    return false;
+    return { seeded: false, mode: getAutoSeedMode() };
   }
 
-  await syncShops(INITIAL_SHOPS);
-  await syncCustomers(INITIAL_CUSTOMERS);
-  await syncRewards(INITIAL_REWARDS);
-  await syncBanners(INITIAL_BANNERS);
-  await syncTransactions(INITIAL_TRANSACTIONS);
-  return true;
+  const mode = getAutoSeedMode();
+
+  if (mode === 'none') {
+    return { seeded: false, mode };
+  }
+
+  if (mode === 'demo') {
+    await syncShops(INITIAL_SHOPS);
+    await syncCustomers(INITIAL_CUSTOMERS);
+    await syncRewards(INITIAL_REWARDS);
+    await syncBanners(INITIAL_BANNERS);
+    await syncTransactions(INITIAL_TRANSACTIONS);
+    return { seeded: true, mode };
+  }
+
+  await syncShops(PILOT_SHOPS);
+  await syncCustomers(PILOT_CUSTOMERS);
+  await syncRewards(PILOT_REWARDS);
+  await syncBanners(PILOT_BANNERS);
+  await syncTransactions(PILOT_TRANSACTIONS);
+  return { seeded: true, mode };
 }
 
 export async function getCrmSnapshot(): Promise<CrmSnapshot> {
@@ -355,4 +385,13 @@ export async function reseedDemoData() {
   await syncRewards(INITIAL_REWARDS);
   await syncBanners(INITIAL_BANNERS);
   await syncTransactions(INITIAL_TRANSACTIONS);
+}
+
+export async function seedPilotData() {
+  await clearCrmData();
+  await syncShops(PILOT_SHOPS);
+  await syncCustomers(PILOT_CUSTOMERS);
+  await syncRewards(PILOT_REWARDS);
+  await syncBanners(PILOT_BANNERS);
+  await syncTransactions(PILOT_TRANSACTIONS);
 }
