@@ -6,7 +6,7 @@ import {
   Coffee, ShoppingBag, Store, ChevronRight, Compass
 } from 'lucide-react';
 import { Customer, Reward, PromoBanner, Transaction, Shop, TierType } from '../types';
-import { getCustomers, saveCustomers, getRewards, getBanners, getTransactions, saveTransactions, getShops } from '../data/mockData';
+import { getCustomers, saveCustomers, getRewards, getBanners, getTransactions, saveTransactions, getShops, getGeneratedCoupons, saveGeneratedCoupons } from '../data/mockData';
 
 interface CustomerDashboardProps {
   key?: string;
@@ -60,8 +60,7 @@ export default function CustomerDashboard({
       setPromoCode(codeClean);
       setActiveTab('code');
 
-      const savedRaw = localStorage.getItem('crm_platform_generated_coupons');
-      const coupons = savedRaw ? JSON.parse(savedRaw) : [];
+      const coupons = getGeneratedCoupons();
       const matched = coupons.find((c: any) => c.code.toUpperCase() === codeClean);
 
       if (matched) {
@@ -148,9 +147,8 @@ export default function CustomerDashboard({
     const code = promoCode.trim().toUpperCase();
     if (!code) return;
 
-    // Check dynamic coupons from localStorage FIRST
-    const savedRaw = localStorage.getItem('crm_platform_generated_coupons');
-    const coupons = savedRaw ? JSON.parse(savedRaw) : [];
+    // Check dynamic coupons from Neon-backed local cache first
+    const coupons = getGeneratedCoupons();
     const matchedCoupon = coupons.find((c: any) => c.code.toUpperCase() === code);
 
     if (matchedCoupon) {
@@ -239,8 +237,7 @@ export default function CustomerDashboard({
   const handleConfirmClaimDynamicCoupon = () => {
     if (!pendingCoupon || !customer) return;
 
-    const savedRaw = localStorage.getItem('crm_platform_generated_coupons');
-    const coupons = savedRaw ? JSON.parse(savedRaw) : [];
+    const coupons = getGeneratedCoupons();
 
     const matchedIdx = coupons.findIndex((c: any) => c.code.toUpperCase() === pendingCoupon.code.toUpperCase());
     if (matchedIdx === -1) {
@@ -264,7 +261,9 @@ export default function CustomerDashboard({
 
     // 1. Mark as used
     coupons[matchedIdx].isUsed = true;
-    localStorage.setItem('crm_platform_generated_coupons', JSON.stringify(coupons));
+    coupons[matchedIdx].usedByCustomerId = customer.id;
+    coupons[matchedIdx].usedAt = new Date().toISOString();
+    saveGeneratedCoupons(coupons);
 
     // 2. Add points to the user
     const pointsToAdd = matched.points;

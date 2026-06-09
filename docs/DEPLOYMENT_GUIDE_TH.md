@@ -2,18 +2,23 @@
 
 ## สถานะไฟล์ชุดนี้
 
-ไฟล์ mock-up เดิมเป็น React + Vite จาก AI Studio และเก็บข้อมูลทั้งหมดใน `localStorage` ของ browser ไม่ใช่ฐานข้อมูลจริง
+ไฟล์ชุดนี้เป็น Next.js App Router และเพิ่ม Phase 1 Neon Database Integration แล้ว
 
-ไฟล์ชุดนี้ถูกปรับเป็น Next.js App Router แล้ว และทดสอบผ่านคำสั่ง:
+แนวทางการทำงานตอนนี้คือ:
 
-```bash
-npm run lint
-npm run build
+```text
+Browser UI
+  ↓ อ่าน cache เร็ว ๆ จาก localStorage
+Next.js API Routes
+  ↓ อ่าน/เขียนผ่าน DATABASE_URL
+Neon PostgreSQL
 ```
 
-ผลลัพธ์: Next.js production build ผ่าน
+เหตุผลที่ยังมี localStorage อยู่: โค้ด mock-up เดิมเป็น client-side ทั้งหมด การเปลี่ยนเป็น Neon แบบไม่รื้อ UI ใหญ่จึงใช้ localStorage เป็น local cache ชั่วคราว แต่ข้อมูลจะถูกโหลดจาก Neon ตอนเปิดเว็บ และบันทึกกลับ Neon ผ่าน `/api/db/sync` หลังมีการ save
 
-## ขั้นที่ 1: Run Local
+## ขั้นที่ 1: ติดตั้ง dependency ใหม่
+
+เวอร์ชันนี้เพิ่ม `@neondatabase/serverless` ดังนั้นหลังแตกไฟล์หรือ pull code ให้รัน:
 
 ```bash
 npm install
@@ -26,72 +31,145 @@ npm run dev
 http://localhost:3000
 ```
 
-## ขั้นที่ 2: Push ขึ้น GitHub
+ถ้ายังไม่ได้ใส่ `DATABASE_URL` เว็บจะ fallback ไปใช้ localStorage ได้เหมือนเดิม
 
-```bash
-git init
-git add .
-git commit -m "Convert mock-up to Next.js production baseline"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
-git push -u origin main
+## ขั้นที่ 2: ตั้งค่า Neon กับ Vercel
+
+ถ้าคุณกด Install Neon จาก Vercel Marketplace แล้ว ระบบจะเพิ่ม Environment Variables ให้เอง:
+
+```text
+DATABASE_URL
+DATABASE_URL_UNPOOLED
 ```
 
-## ขั้นที่ 3: สร้าง Neon Database
+สำหรับ runtime ของเว็บ ให้ใช้ `DATABASE_URL` เป็นหลัก เพราะเป็น pooled connection เหมาะกับ Vercel/serverless
 
-1. เข้า neon.com
-2. สร้าง Project ใหม่
-3. คัดลอก pooled connection string เช่น `postgresql://...sslmode=require`
-4. เปิด SQL Editor
-5. วางไฟล์ `neon/schema.sql` แล้วกด Run
+ถ้าตั้งเอง ให้ไปที่ Vercel:
 
-## ขั้นที่ 4: ตั้ง Environment Variables บน Vercel
+```text
+Project Settings > Environment Variables
+```
 
-ใน Vercel Project Settings > Environment Variables ให้เพิ่ม:
+แล้วใส่:
 
 ```env
-DATABASE_URL="postgresql://USER:PASSWORD@HOST/DB?sslmode=require"
+DATABASE_URL="postgresql://...pooler.../neondb?sslmode=require&channel_binding=require"
+DATABASE_URL_UNPOOLED="postgresql://.../neondb?sslmode=require"
 NEXT_PUBLIC_APP_URL="https://your-project.vercel.app"
+ALLOW_DB_RESET="false"
 ```
 
-ตอนนี้ UI ยังไม่ได้ต่อ Neon จริง จึงยังไม่จำเป็นต้องใช้ `DATABASE_URL` ใน runtime จนกว่าจะทำ phase เชื่อม API/Server Actions
+## ขั้นที่ 3: สร้าง schema ใน Neon
 
-## ขั้นที่ 5: Deploy ผ่าน Vercel
+เปิด Neon Console > SQL Editor แล้ววางไฟล์:
 
-1. เข้า vercel.com
-2. Add New Project
-3. Import GitHub repository
-4. Framework Preset ควร detect เป็น Next.js
-5. Build Command: `npm run build`
-6. Output Directory: ปล่อยว่างสำหรับ Next.js
-7. Deploy
-
-## ขั้นที่ 6: Reset ข้อมูลตัวอย่าง
-
-### ระยะ Prototype ปัจจุบัน
-
-ข้อมูลอยู่ใน browser localStorage ถ้าต้องการล้างข้อมูล mock ในเครื่อง ให้เปิด DevTools Console แล้วใช้:
-
-```js
-localStorage.clear()
-location.reload()
+```text
+neon/schema.sql
 ```
 
-แต่ถ้าล้างหมด UI บางส่วนอาจไม่มีข้อมูลให้แสดง เพราะ mock-up เดิมออกแบบให้มีข้อมูลตั้งต้นเสมอ
+จากนั้นกด Run
 
-### ระยะ Production หลังต่อ Neon แล้ว
+หมายเหตุ: แม้ยังไม่กด Run เอง โค้ด `/api/db/snapshot` จะพยายามสร้างตารางให้อัตโนมัติเมื่อมี `DATABASE_URL` แล้ว แต่การรัน schema เองทำให้ตรวจสอบง่ายกว่า
 
-ใช้ SQL นี้เพื่อล้างข้อมูลธุรกิจทั้งหมด แต่คง schema ไว้:
+## ขั้นที่ 4: Push ขึ้น GitHub แล้ว Deploy ใหม่
+
+```bash
+git add .
+git commit -m "Add Neon database integration"
+git push
+```
+
+จากนั้น Vercel จะ redeploy อัตโนมัติ
+
+## ขั้นที่ 5: เช็กว่าเว็บต่อ Neon แล้ว
+
+เปิดเว็บ Production แล้วดูตรงแถบบน ถ้าขึ้น:
+
+```text
+ฐานข้อมูล: Neon PostgreSQL + Local Cache
+```
+
+แปลว่าเว็บโหลดข้อมูลจาก Neon สำเร็จ
+
+ถ้าขึ้น:
+
+```text
+ฐานข้อมูล: LocalStorage Fallback
+```
+
+ให้เช็กว่า `DATABASE_URL` อยู่ใน Vercel Environment Variables หรือไม่ แล้ว redeploy อีกครั้ง
+
+
+## ขั้นที่ 5.1: เช็ก API health
+
+หลัง deploy แล้ว เปิด URL นี้ใน browser:
+
+```text
+https://your-project.vercel.app/api/db/health
+```
+
+ถ้าเชื่อมต่อสำเร็จควรเห็น JSON ประมาณนี้:
+
+```json
+{"ok":true,"source":"neon","counts":{"shops":6,"customers":4}}
+```
+
+## ขั้นที่ 6: ทดสอบการเขียนข้อมูลจริง
+
+ให้ลองทำรายการเหล่านี้:
+
+1. อนุมัติร้านค้าในหน้า Webmaster
+2. สร้างคูปองในหน้าหลังบ้านร้านค้า
+3. เปิดลิงก์รับแต้มฝั่งลูกค้า
+4. แลกรางวัลหรืออนุมัติรายการแลกของ
+5. เปิด Neon Console > Tables แล้วดูข้อมูลในตาราง เช่น `transactions`, `point_coupons`, `customers`
+
+## Reset ข้อมูลตัวอย่าง
+
+### วิธี SQL ตรงใน Neon
+
+รันไฟล์:
+
+```text
+neon/reset-demo.sql
+```
+
+หรือใช้ SQL นี้:
 
 ```sql
-truncate table transactions, point_coupons, promo_banners, rewards, customers, shops restart identity cascade;
+truncate table point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade;
 ```
 
-## Roadmap ที่แนะนำก่อนใช้งานจริง
+### วิธี API เฉพาะตอนทดสอบ
 
-1. แยกหน้า `/customer`, `/owner`, `/admin` เป็น route จริงของ Next.js
-2. เปลี่ยน `src/data/mockData.ts` จาก localStorage เป็น API หรือ Server Actions ที่อ่าน/เขียน Neon
-3. เพิ่มระบบ Auth เช่น LINE LIFF สำหรับลูกค้า/เจ้าของร้าน และ admin login สำหรับผู้ดูแลระบบ
-4. เพิ่ม validation และ transaction-safe point logic เช่น ใช้ database transaction ตอนแลกรางวัล/รับแต้ม
-5. ทำ Seed script สำหรับสร้างร้านแรกจริง เช่น `im-sticker`
-6. ทำ Reset script สำหรับล้างข้อมูล demo ก่อนเริ่ม Production
+ตั้ง Vercel Environment Variable:
+
+```env
+ALLOW_DB_RESET="true"
+```
+
+แล้ว redeploy ก่อน จากนั้นเรียก:
+
+```bash
+curl -X POST https://your-project.vercel.app/api/db/reset \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"clear"}'
+```
+
+ถ้าต้องการ reseed demo data กลับเข้าไป:
+
+```bash
+curl -X POST https://your-project.vercel.app/api/db/reset \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"seed-demo"}'
+```
+
+หลังใช้เสร็จ ให้ตั้ง `ALLOW_DB_RESET=false` แล้ว redeploy
+
+## Roadmap ถัดไปก่อนใช้งานจริงจริง
+
+1. แยก route จริง เช่น `/customer`, `/owner`, `/admin`
+2. ทำ Auth/Role จริง เช่น LINE LIFF สำหรับลูกค้าและเจ้าของร้าน
+3. ย้าย logic แต้มสำคัญไปทำใน server transaction ทั้งหมด
+4. ทำ schema แบบ production ละเอียดขึ้น เช่น shop_members, merchant_applications, point_ledger
+5. ล้าง demo data แล้ว seed เฉพาะร้านแรกจริง

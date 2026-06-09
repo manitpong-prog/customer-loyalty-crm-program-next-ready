@@ -1,6 +1,6 @@
 # Customer Loyalty CRM Program
 
-Next.js production baseline converted from the original AI Studio mock-up.
+Next.js production baseline converted from the original AI Studio mock-up and upgraded with Phase 1 Neon Database Integration.
 
 ## Commands
 
@@ -12,11 +12,32 @@ npm run build
 npm run start
 ```
 
+## Neon status
+
+This version adds server-side Neon routes:
+
+- `GET /api/db/snapshot` loads all CRM data from Neon and seeds demo data when the database is empty.
+- `POST /api/db/sync` persists browser-side changes back to Neon.
+- `POST /api/db/reset` can clear or reseed test data only when `ALLOW_DB_RESET=true`.
+- `GET /api/db/health` checks that the app can reach Neon and returns row counts.
+
+The current UI still uses a browser local cache for responsiveness, but Neon is now the shared backend source used at startup and after each save.
+
+## Environment variables
+
+Create `.env.local` locally and set the same value in Vercel Project Settings > Environment Variables:
+
+```env
+DATABASE_URL="postgresql://..."
+DATABASE_URL_UNPOOLED="postgresql://..."
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+ALLOW_DB_RESET="false"
+```
+
+If you connected Neon through the Vercel Marketplace integration, Vercel should already have `DATABASE_URL` and `DATABASE_URL_UNPOOLED`.
+
 ## Docs
 
 - Deployment guide: `docs/DEPLOYMENT_GUIDE_TH.md`
-- Neon schema draft: `neon/schema.sql`
-
-## Important status
-
-The current UI is now buildable as a Next.js app, but the business data layer still uses browser `localStorage` from the original mock-up. Use this as the deployable prototype baseline before migrating reads/writes to Neon via Next.js API routes or Server Actions.
+- Neon schema: `neon/schema.sql`
+- Reset SQL: `neon/reset-demo.sql`

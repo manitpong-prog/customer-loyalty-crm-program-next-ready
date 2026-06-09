@@ -352,17 +352,70 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
   }
 ];
 
-// LocalStorage helpers to simulate cross-dashboard reactivity
+// Client-side cache helpers.
+// Neon is accessed only through Next.js API routes. The browser keeps a local cache so the existing prototype UI can remain fast and mostly unchanged.
 const KEYS = {
   SHOPS: 'crm_platforms_shops',
   CUSTOMERS: 'crm_platform_customers',
   REWARDS: 'crm_platform_rewards',
   BANNERS: 'crm_platform_banners',
   TRANSACTIONS: 'crm_platform_transactions',
+  COUPONS: 'crm_platform_generated_coupons',
+} as const;
+
+type SyncableKey = (typeof KEYS)[keyof typeof KEYS];
+type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons';
+
+export type DatabaseBootstrapResult = {
+  source: 'neon' | 'local-fallback' | 'error-fallback';
+  message?: string;
 };
 
-export function getStoredData<T>(key: string, defaults: T): T {
-  if (typeof window === 'undefined' || !window.localStorage) {
+export type GeneratedCoupon = {
+  code: string;
+  points: number;
+  shopId: string;
+  shopName: string;
+  description: string;
+  createdAt: string;
+  expiresAt: string;
+  isUsed: boolean;
+  usedByCustomerId?: string | null;
+  usedAt?: string | null;
+};
+
+const KEY_TO_ENTITY: Partial<Record<SyncableKey, CrmEntity>> = {
+  [KEYS.SHOPS]: 'shops',
+  [KEYS.CUSTOMERS]: 'customers',
+  [KEYS.REWARDS]: 'rewards',
+  [KEYS.BANNERS]: 'banners',
+  [KEYS.TRANSACTIONS]: 'transactions',
+  [KEYS.COUPONS]: 'coupons',
+};
+
+function canUseStorage() {
+  return typeof window !== 'undefined' && Boolean(window.localStorage);
+}
+
+function queueNeonSync<T>(key: SyncableKey, data: T) {
+  if (typeof window === 'undefined') return;
+
+  const entity = KEY_TO_ENTITY[key];
+  if (!entity) return;
+
+  // Fire-and-forget: the UI remains responsive while the server persists the latest full list to Neon.
+  window.fetch('/api/db/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entity, rows: data }),
+    keepalive: true,
+  }).catch((error) => {
+    console.warn(`[crm-db] Could not sync ${entity} to Neon. Local cache is still updated.`, error);
+  });
+}
+
+export function getStoredData<T>(key: SyncableKey, defaults: T): T {
+  if (!canUseStorage()) {
     return defaults;
   }
 
@@ -374,37 +427,84 @@ export function getStoredData<T>(key: string, defaults: T): T {
   }
 }
 
-export function saveStoredData<T>(key: string, data: T): void {
-  if (typeof window === 'undefined' || !window.localStorage) {
+export function saveStoredData<T>(key: SyncableKey, data: T, options: { sync?: boolean } = {}): void {
+  if (!canUseStorage()) {
     return;
   }
 
   try {
     window.localStorage.setItem(key, JSON.stringify(data));
+    if (options.sync !== false) {
+      queueNeonSync(key, data);
+    }
   } catch (e) {
     console.error('Error saving storage', e);
   }
 }
 
-export function initializeDatabase() {
-  if (typeof window === 'undefined' || !window.localStorage) {
+function seedLocalStorageIfEmpty() {
+  if (!canUseStorage()) {
     return;
   }
 
   if (!window.localStorage.getItem(KEYS.SHOPS)) {
-    saveStoredData(KEYS.SHOPS, INITIAL_SHOPS);
+    saveStoredData(KEYS.SHOPS, INITIAL_SHOPS, { sync: false });
   }
   if (!window.localStorage.getItem(KEYS.CUSTOMERS)) {
-    saveStoredData(KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
+    saveStoredData(KEYS.CUSTOMERS, INITIAL_CUSTOMERS, { sync: false });
   }
   if (!window.localStorage.getItem(KEYS.REWARDS)) {
-    saveStoredData(KEYS.REWARDS, INITIAL_REWARDS);
+    saveStoredData(KEYS.REWARDS, INITIAL_REWARDS, { sync: false });
   }
   if (!window.localStorage.getItem(KEYS.BANNERS)) {
-    saveStoredData(KEYS.BANNERS, INITIAL_BANNERS);
+    saveStoredData(KEYS.BANNERS, INITIAL_BANNERS, { sync: false });
   }
   if (!window.localStorage.getItem(KEYS.TRANSACTIONS)) {
-    saveStoredData(KEYS.TRANSACTIONS, INITIAL_TRANSACTIONS);
+    saveStoredData(KEYS.TRANSACTIONS, INITIAL_TRANSACTIONS, { sync: false });
+  }
+  if (!window.localStorage.getItem(KEYS.COUPONS)) {
+    saveStoredData(KEYS.COUPONS, [], { sync: false });
+  }
+}
+
+function replaceLocalCacheFromSnapshot(snapshot: {
+  shops?: Shop[];
+  customers?: Customer[];
+  rewards?: Reward[];
+  banners?: PromoBanner[];
+  transactions?: Transaction[];
+  coupons?: GeneratedCoupon[];
+}) {
+  saveStoredData(KEYS.SHOPS, snapshot.shops || INITIAL_SHOPS, { sync: false });
+  saveStoredData(KEYS.CUSTOMERS, snapshot.customers || INITIAL_CUSTOMERS, { sync: false });
+  saveStoredData(KEYS.REWARDS, snapshot.rewards || INITIAL_REWARDS, { sync: false });
+  saveStoredData(KEYS.BANNERS, snapshot.banners || INITIAL_BANNERS, { sync: false });
+  saveStoredData(KEYS.TRANSACTIONS, snapshot.transactions || INITIAL_TRANSACTIONS, { sync: false });
+  saveStoredData(KEYS.COUPONS, snapshot.coupons || [], { sync: false });
+}
+
+export async function initializeDatabase(): Promise<DatabaseBootstrapResult> {
+  if (!canUseStorage()) {
+    return { source: 'local-fallback', message: 'Browser localStorage is not available.' };
+  }
+
+  seedLocalStorageIfEmpty();
+
+  try {
+    const response = await fetch('/api/db/snapshot', { cache: 'no-store' });
+    const payload = await response.json();
+
+    if (payload?.source === 'neon' && payload?.data) {
+      replaceLocalCacheFromSnapshot(payload.data);
+    }
+
+    return {
+      source: payload?.source === 'neon' ? 'neon' : response.ok ? 'local-fallback' : 'error-fallback',
+      message: payload?.message,
+    };
+  } catch (error) {
+    console.warn('[crm-db] Neon bootstrap failed. Continuing with local cache.', error);
+    return { source: 'error-fallback', message: 'Cannot reach database API. Using local cache.' };
   }
 }
 
@@ -446,4 +546,12 @@ export function getTransactions(): Transaction[] {
 
 export function saveTransactions(txs: Transaction[]) {
   saveStoredData(KEYS.TRANSACTIONS, txs);
+}
+
+export function getGeneratedCoupons(): GeneratedCoupon[] {
+  return getStoredData(KEYS.COUPONS, [] as GeneratedCoupon[]);
+}
+
+export function saveGeneratedCoupons(coupons: GeneratedCoupon[]) {
+  saveStoredData(KEYS.COUPONS, coupons);
 }

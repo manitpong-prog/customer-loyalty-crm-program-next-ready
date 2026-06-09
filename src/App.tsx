@@ -20,6 +20,7 @@ export default function App() {
   const [dataVersion, setDataVersion] = useState(0);
   const [selectedShopId, setSelectedShopId] = useState('koffee_craft');
   const [initialCouponCode, setInitialCouponCode] = useState<string>('');
+  const [databaseLabel, setDatabaseLabel] = useState('กำลังเชื่อมต่อข้อมูล...');
 
   // Triggered when static storage modifies of children
   const handleDataChange = () => {
@@ -27,24 +28,39 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Bootstrap initial CRM database state in localStorage
-    initializeDatabase();
-    handleDataChange();
+    let isMounted = true;
 
-    // Check for '?code=...' query parameter in window URL
-    const searchParams = new URLSearchParams(window.location.search);
-    const code = searchParams.get('code');
-    if (code) {
-      setInitialCouponCode(code);
-      setActiveRole('customer');
-      // Clean query parameter from address bar cleanly
-      try {
-        const cleanUrl = window.location.origin + window.location.pathname;
-        window.history.replaceState({}, document.title, cleanUrl);
-      } catch (e) {
-        console.error('Failed to clean URL', e);
+    const bootstrap = async () => {
+      // Bootstrap CRM state from Neon first. If Neon is not configured or unreachable,
+      // the app continues with the local browser cache fallback.
+      const result = await initializeDatabase();
+
+      if (!isMounted) return;
+
+      setDatabaseLabel(result.source === 'neon' ? 'Neon PostgreSQL + Local Cache' : 'LocalStorage Fallback');
+      handleDataChange();
+
+      // Check for '?code=...' query parameter in window URL
+      const searchParams = new URLSearchParams(window.location.search);
+      const code = searchParams.get('code');
+      if (code) {
+        setInitialCouponCode(code);
+        setActiveRole('customer');
+        // Clean query parameter from address bar cleanly
+        try {
+          const cleanUrl = window.location.origin + window.location.pathname;
+          window.history.replaceState({}, document.title, cleanUrl);
+        } catch (e) {
+          console.error('Failed to clean URL', e);
+        }
       }
-    }
+    };
+
+    bootstrap();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const handleTriggerSimulatedLink = (code: string) => {
@@ -136,7 +152,7 @@ export default function App() {
           </div>
 
           <div className="text-[10px] font-mono text-slate-400 flex items-center gap-2">
-            <span>ฐานความปลอดภัย: REST SQL LocalStorage</span>
+            <span>ฐานข้อมูล: {databaseLabel}</span>
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
           </div>
 

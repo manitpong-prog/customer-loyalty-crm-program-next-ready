@@ -9,7 +9,7 @@ import { Shop, Customer, Reward, Transaction, PromoBanner } from '../types';
 import { 
   getShops, saveShops, getCustomers, saveCustomers, 
   getRewards, saveRewards, getTransactions, saveTransactions,
-  getBanners, saveBanners
+  getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons
 } from '../data/mockData';
 
 interface OwnerDashboardProps {
@@ -63,8 +63,7 @@ export default function OwnerDashboard({
     const randomHex = Math.random().toString(36).substring(2, 7).toUpperCase();
     const uniqueCode = `CPN-${shopAbbr}-${generatePoints}-${randomHex}`;
 
-    const savedRaw = localStorage.getItem('crm_platform_generated_coupons');
-    const coupons = savedRaw ? JSON.parse(savedRaw) : [];
+    const coupons = getGeneratedCoupons();
 
     const activeShop = shops.length > 0 ? shops.find(s => s.id === selectedShopId) : getShops().find(s => s.id === selectedShopId);
     const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString();
@@ -81,7 +80,7 @@ export default function OwnerDashboard({
     };
 
     coupons.push(newCoupon);
-    localStorage.setItem('crm_platform_generated_coupons', JSON.stringify(coupons));
+    saveGeneratedCoupons(coupons);
 
     // Construct app's URL
     const currentOrigin = window.location.origin + window.location.pathname;
@@ -98,10 +97,9 @@ export default function OwnerDashboard({
 
   const handleDeleteGeneratedCoupon = (code: string) => {
     if (confirm(`คุณแน่ใจต้องการลบรหัสคูปอง ${code} ถาวรใช่หรือไม่? หลังจากลบแล้ว คูปองหรือลิงก์สะสมแต้มนี้จะไม่สามารถถูกนำมาสแกนหรือใช้งานได้อีกทุกกรณี`)) {
-      const savedRaw = localStorage.getItem('crm_platform_generated_coupons');
-      const coupons = savedRaw ? JSON.parse(savedRaw) : [];
+      const coupons = getGeneratedCoupons();
       const filtered = coupons.filter((c: any) => c.code.toUpperCase() !== code.toUpperCase());
-      localStorage.setItem('crm_platform_generated_coupons', JSON.stringify(filtered));
+      saveGeneratedCoupons(filtered);
       showStatus('✓ ลบข้อมูลรหัสแจกแต้มพิเศษสำเร็จอย่างถาวร');
       loadData();
     }
@@ -139,8 +137,7 @@ export default function OwnerDashboard({
     setTransactions(getTransactions().filter(t => t.shopId === selectedShopId));
 
     try {
-      const savedRaw = localStorage.getItem('crm_platform_generated_coupons');
-      const coupons = savedRaw ? JSON.parse(savedRaw) : [];
+      const coupons = getGeneratedCoupons();
       const shopCoupons = coupons.filter((c: any) => c.shopId === selectedShopId);
       shopCoupons.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setGeneratedCouponsList(shopCoupons);
