@@ -1,10 +1,6 @@
-import App from '../../App';
-import AccessGate from '../../components/AccessGate';
+import { redirect } from 'next/navigation';
+import { getDefaultMerchantPath } from '../../lib/shopSlug';
 
-export default function MerchantPage() {
-  return (
-    <AccessGate area="merchant">
-      <App initialRole="owner" mode="merchant" />
-    </AccessGate>
-  );
+export default function MerchantIndexPage() {
+  redirect(getDefaultMerchantPath());
 }

@@ -87,3 +87,15 @@ Environment variables:
 NEXT_PUBLIC_DEFAULT_SHOP_ID=im_sticker
 NEXT_PUBLIC_DEFAULT_SHOP_SLUG=im-sticker
 ```
+
+## Phase 4C: Merchant Shop Route
+
+เพิ่ม route หลังบ้านร้านค้าตาม slug:
+
+```text
+/merchant              -> /merchant/im-sticker
+/merchant/im-sticker   -> หลังบ้านร้าน iM Sticker
+```
+
+หน้า Landing จะพาเจ้าของร้านไปที่ route ของร้าน default โดยใช้ `NEXT_PUBLIC_DEFAULT_SHOP_SLUG`
+

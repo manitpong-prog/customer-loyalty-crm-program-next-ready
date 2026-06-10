@@ -22,3 +22,7 @@ export function getDefaultShopSlug(): string {
 export function getDefaultCustomerPath(): string {
   return `/customer/${getDefaultShopSlug()}`;
 }
+
+export function getDefaultMerchantPath(): string {
+  return `/merchant/${getDefaultShopSlug()}`;
+}

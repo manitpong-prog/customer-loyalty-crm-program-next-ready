@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getDefaultCustomerPath } from '../lib/shopSlug';
+import { getDefaultCustomerPath, getDefaultMerchantPath } from '../lib/shopSlug';
 import { ArrowRight, BadgeCheck, BarChart3, LockKeyhole, ShieldCheck, Smartphone, Store } from 'lucide-react';
 
 const primaryActions = [
@@ -11,7 +11,7 @@ const primaryActions = [
     badge: 'Customer',
   },
   {
-    href: '/merchant',
+    href: getDefaultMerchantPath(),
     title: 'เข้าหลังบ้านร้านค้า',
     description: 'จัดการลูกค้า แต้มสะสม คูปอง รางวัล และรายการของร้าน',
     icon: Store,
