@@ -34,6 +34,9 @@ NEXT_PUBLIC_APP_URL="http://localhost:3000"
 NEXT_PUBLIC_DEFAULT_SHOP_ID="im_sticker"
 CRM_AUTO_SEED="pilot"
 ALLOW_DB_RESET="false"
+NEXT_PUBLIC_MERCHANT_ACCESS_PIN="1234"
+NEXT_PUBLIC_ADMIN_ACCESS_PIN="admin1234"
+NEXT_PUBLIC_DEMO_ACCESS_PIN="demo2026"
 ```
 
 If you connected Neon through the Vercel Marketplace integration, Vercel should already have `DATABASE_URL` and `DATABASE_URL_UNPOOLED`.
@@ -54,7 +57,17 @@ If you connected Neon through the Vercel Marketplace integration, Vercel should 
 - `/customer` หน้าลูกค้าแบบ production view
 - `/merchant` หลังบ้านร้านค้า
 - `/admin` ผู้ดูแลเว็บไซต์
-- `/demo` หน้า prototype/demo รวมทุกบทบาทสำหรับ debug ภายใน
+- `/demo` หน้า prototype/demo รวมทุกบทบาทสำหรับ debug ภายใน แต่ถูกกั้นด้วย Demo PIN แล้ว
+
+## Phase 4A Simple Access Control
+
+รอบนี้เพิ่ม PIN gate แบบเบาสำหรับหน้าที่ไม่ควรเปิดให้ลูกค้าทั่วไปเข้าโดยตรง:
+
+- `/merchant` ใช้ `NEXT_PUBLIC_MERCHANT_ACCESS_PIN` ค่าเริ่มต้น `1234`
+- `/admin` ใช้ `NEXT_PUBLIC_ADMIN_ACCESS_PIN` ค่าเริ่มต้น `admin1234`
+- `/demo` ใช้ `NEXT_PUBLIC_DEMO_ACCESS_PIN` ค่าเริ่มต้น `demo2026`
+
+หมายเหตุ: PIN ชุดนี้เป็น client-side guard สำหรับโปรเจกต์เรียนรู้/ทดสอบ ไม่ใช่ระบบ auth ที่ปลอดภัยแบบ production เต็มรูปแบบ รอบถัดไปควรย้ายไปใช้ระบบ login/session ฝั่ง server
 
 รายละเอียดเพิ่มเติมดู `docs/PRODUCTION_UI_CLEANUP_TH.md`
 

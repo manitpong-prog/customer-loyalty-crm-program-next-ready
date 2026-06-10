@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, BadgeCheck, BarChart3, Bug, ShieldCheck, Smartphone, Store } from 'lucide-react';
+import { ArrowRight, BadgeCheck, BarChart3, LockKeyhole, ShieldCheck, Smartphone, Store } from 'lucide-react';
 
 const primaryActions = [
   {
@@ -96,7 +96,7 @@ export default function HomePage() {
             })}
           </div>
 
-          <div className="mt-8 grid gap-4 rounded-[2rem] border border-white/10 bg-white/[0.06] p-5 text-sm text-slate-300 backdrop-blur md:grid-cols-[1.2fr_0.8fr]">
+          <div className="mt-8 grid gap-4 rounded-[2rem] border border-white/10 bg-white/[0.06] p-5 text-sm text-slate-300 backdrop-blur md:grid-cols-[1.15fr_0.85fr]">
             <div className="flex gap-3">
               <BarChart3 className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
               <div>
@@ -107,12 +107,12 @@ export default function HomePage() {
               </div>
             </div>
             <div className="flex gap-3 md:justify-end">
-              <Bug className="mt-0.5 h-5 w-5 shrink-0 text-violet-300" />
+              <LockKeyhole className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
               <div className="md:text-right">
-                <p className="font-bold text-white">หน้า Prototype ภายใน</p>
-                <Link href="/demo" className="mt-1 inline-flex font-bold text-violet-200 underline underline-offset-4">
-                  เปิด /demo สำหรับ debug รวมทุกบทบาท
-                </Link>
+                <p className="font-bold text-white">Simple Access Control</p>
+                <p className="mt-1 leading-6">
+                  หลังบ้านร้านค้า ผู้ดูแลระบบ และหน้า debug ถูกกั้นด้วย PIN แบบง่ายแล้ว
+                </p>
               </div>
             </div>
           </div>
