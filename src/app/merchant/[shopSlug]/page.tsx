@@ -11,12 +11,14 @@ interface MerchantShopPageProps {
 export default async function MerchantShopPage({ params }: MerchantShopPageProps) {
   const { shopSlug } = await params;
 
+  const shopId = shopSlugToId(shopSlug);
+
   return (
-    <AccessGate area="merchant">
+    <AccessGate area="merchant" shopId={shopId}>
       <App
         initialRole="owner"
         mode="merchant"
-        initialShopId={shopSlugToId(shopSlug)}
+        initialShopId={shopId}
         initialShopSlug={shopSlug}
       />
     </AccessGate>

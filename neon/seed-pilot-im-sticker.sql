@@ -1,7 +1,7 @@
 -- Seed a clean pilot baseline for iM Sticker.
 -- This removes old mock/demo data and creates one active shop plus one placeholder customer.
 
-truncate table point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade;
+truncate table merchant_line_users, line_users, point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade;
 
 insert into shops (
   id, name, description, logo, category, points_rate, is_active, registration_status, phone, created_at, updated_at
@@ -20,7 +20,7 @@ insert into shops (
 );
 
 insert into customers (
-  id, name, phone, line_name, line_id, avatar, current_points, lifetime_points, tier, created_at, updated_at
+  id, name, phone, line_name, line_id, avatar, current_points, lifetime_points, tier, created_at, shop_ids, updated_at
 ) values (
   'cust_pilot_001',
   'ลูกค้าทดสอบ',
@@ -32,5 +32,6 @@ insert into customers (
   0,
   'Silver',
   now(),
+  '["im_sticker"]'::jsonb,
   now()
 );

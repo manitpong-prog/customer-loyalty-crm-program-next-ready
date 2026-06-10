@@ -47,6 +47,8 @@ import {
   filterRewardsByShop,
   filterTransactionsByShop,
 } from "../lib/shopScope";
+import LineLoginPanel from "./LineLoginPanel";
+import type { LineIdentity } from "../lib/lineAuth";
 
 type CustomerTab = "home" | "rewards" | "code" | "history" | "profile";
 type CouponValidationState = "ready" | "used" | "expired" | "wrong-shop" | "not-found";
@@ -61,6 +63,8 @@ interface CustomerDashboardProps {
   clearInitialCouponCode?: () => void;
   initialTab?: CustomerTab;
   displayMode?: "demo" | "production";
+  lineIdentity?: LineIdentity | null;
+  onLineIdentityChange?: (identity: LineIdentity | null) => void;
 }
 
 export default function CustomerDashboard({
@@ -72,6 +76,8 @@ export default function CustomerDashboard({
   clearInitialCouponCode,
   initialTab = "home",
   displayMode = "demo",
+  lineIdentity,
+  onLineIdentityChange,
 }: CustomerDashboardProps) {
   const isProductionView = displayMode === "production";
   // Navigation tabs: 'home', 'rewards', 'code', 'history', 'profile'
@@ -179,7 +185,9 @@ export default function CustomerDashboard({
       allTransactions,
       true,
     );
+    const lineCustomerId = lineIdentity?.customerId || (lineIdentity?.lineUserId ? `line_${lineIdentity.lineUserId}` : "");
     const currCust =
+      (lineCustomerId ? scopedCustomers.find((c) => c.id === lineCustomerId) : undefined) ||
       scopedCustomers.find((c) => c.id === currentCustomerId) ||
       allCustomers.find((c) => c.id === currentCustomerId) ||
       scopedCustomers[0] ||
@@ -208,7 +216,7 @@ export default function CustomerDashboard({
 
   useEffect(() => {
     loadData();
-  }, [currentCustomerId, selectedShopId, activeTab]);
+  }, [currentCustomerId, selectedShopId, activeTab, lineIdentity?.lineUserId, lineIdentity?.customerId]);
 
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -650,6 +658,15 @@ export default function CustomerDashboard({
           )}
         </div>
       </div>
+
+      {isProductionView && (
+        <LineLoginPanel
+          context="customer"
+          shopId={selectedShopId}
+          onAuthenticated={onLineIdentityChange}
+          compact
+        />
+      )}
 
       {/* Success / Error Notification banners floating */}
       <AnimatePresence>

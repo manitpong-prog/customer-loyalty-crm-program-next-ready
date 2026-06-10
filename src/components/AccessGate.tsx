@@ -3,12 +3,16 @@
 import React, { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, LockKeyhole, ShieldCheck, Store, Wrench } from "lucide-react";
+import LineLoginPanel from "./LineLoginPanel";
+import type { LineIdentity } from "../lib/lineAuth";
+import { readStoredLineIdentity } from "../lib/lineAuth";
 
 type AccessArea = "merchant" | "admin" | "demo";
 
 interface AccessGateProps {
   area: AccessArea;
   children: ReactNode;
+  shopId?: string;
 }
 
 const areaConfig = {
@@ -60,25 +64,53 @@ const areaConfig = {
   helper: string;
 }>;
 
-export default function AccessGate({ area, children }: AccessGateProps) {
+export default function AccessGate({ area, children, shopId }: AccessGateProps) {
   const config = areaConfig[area];
   const accessPin = useMemo(() => config.envPin || config.defaultPin, [config.defaultPin, config.envPin]);
   const [isChecking, setIsChecking] = useState(true);
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const [lineIdentity, setLineIdentity] = useState<LineIdentity | null>(null);
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const Icon = config.icon;
 
   useEffect(() => {
-    try {
-      const granted = window.sessionStorage.getItem(config.storageKey) === "true";
-      setIsUnlocked(granted);
-    } catch {
-      setIsUnlocked(false);
-    } finally {
-      setIsChecking(false);
+    const checkAccess = async () => {
+      try {
+        const storedIdentity = readStoredLineIdentity();
+        if (storedIdentity) {
+          setLineIdentity(storedIdentity);
+
+          if (area === "merchant" && shopId && storedIdentity.ownerShopIds?.includes(shopId)) {
+            setIsUnlocked(true);
+            return;
+          }
+        }
+
+        const granted = window.sessionStorage.getItem(config.storageKey) === "true";
+        setIsUnlocked(granted);
+      } catch {
+        setIsUnlocked(false);
+      } finally {
+        setIsChecking(false);
+      }
+    };
+
+    checkAccess();
+  }, [area, config.storageKey, shopId]);
+
+  const handleLineIdentityChange = (identity: LineIdentity | null) => {
+    setLineIdentity(identity);
+
+    if (area === "merchant" && shopId && identity?.ownerShopIds?.includes(shopId)) {
+      try {
+        window.sessionStorage.setItem(config.storageKey, "true");
+      } catch {
+        // ignore
+      }
+      setIsUnlocked(true);
     }
-  }, [config.storageKey]);
+  };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -141,6 +173,15 @@ export default function AccessGate({ area, children }: AccessGateProps) {
             </div>
           </div>
 
+          <div className="flex flex-col justify-center gap-4">
+            {area === "merchant" && shopId && (
+              <LineLoginPanel
+                context="merchant"
+                shopId={shopId}
+                onAuthenticated={handleLineIdentityChange}
+              />
+            )}
+
           <form onSubmit={handleSubmit} className="flex flex-col justify-center rounded-[1.5rem] bg-white p-6 text-slate-950 md:p-8">
             <div className="mb-6 flex items-center gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-white">
@@ -185,6 +226,7 @@ export default function AccessGate({ area, children }: AccessGateProps) {
               </span>
             </p>
           </form>
+          </div>
         </section>
       </div>
     </main>

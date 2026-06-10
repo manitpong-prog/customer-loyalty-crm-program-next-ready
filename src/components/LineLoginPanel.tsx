@@ -1,0 +1,326 @@
+"use client";
+
+import React, { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { AlertCircle, BadgeCheck, Link2, LogIn, LogOut, ShieldCheck, Smartphone, UserCheck } from "lucide-react";
+import {
+  clearLineIdentity,
+  LineAuthContext,
+  LineIdentity,
+  readStoredLineIdentity,
+  saveLineIdentity,
+} from "../lib/lineAuth";
+
+type LineLoginPanelProps = {
+  context: LineAuthContext;
+  shopId: string;
+  compact?: boolean;
+  onAuthenticated?: (identity: LineIdentity | null) => void;
+};
+
+type LineAuthResponse = {
+  ok: boolean;
+  message?: string;
+  identity?: LineIdentity;
+};
+
+const liffSdkUrl = "https://static.line-scdn.net/liff/edge/2/sdk.js";
+
+function loadLiffSdk() {
+  return new Promise<void>((resolve, reject) => {
+    if (typeof window === "undefined") {
+      reject(new Error("window is not available"));
+      return;
+    }
+
+    if (window.liff) {
+      resolve();
+      return;
+    }
+
+    const existing = document.querySelector<HTMLScriptElement>(`script[src="${liffSdkUrl}"]`);
+    if (existing) {
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener("error", () => reject(new Error("โหลด LIFF SDK ไม่สำเร็จ")), { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = liffSdkUrl;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("โหลด LIFF SDK ไม่สำเร็จ"));
+    document.head.appendChild(script);
+  });
+}
+
+export default function LineLoginPanel({
+  context,
+  shopId,
+  compact = false,
+  onAuthenticated,
+}: LineLoginPanelProps) {
+  const liffId = process.env.NEXT_PUBLIC_LINE_LIFF_ID || "";
+  const isMerchant = context === "merchant";
+  const [identity, setIdentity] = useState<LineIdentity | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [linkCode, setLinkCode] = useState("");
+  const [linking, setLinking] = useState(false);
+
+  const isOwner = useMemo(
+    () => Boolean(identity?.ownerShopIds?.includes(shopId)),
+    [identity?.ownerShopIds, shopId],
+  );
+
+  const publishIdentity = useCallback(
+    (nextIdentity: LineIdentity | null) => {
+      setIdentity(nextIdentity);
+      if (nextIdentity) saveLineIdentity(nextIdentity);
+      onAuthenticated?.(nextIdentity);
+    },
+    [onAuthenticated],
+  );
+
+  const refreshOwnerStatus = useCallback(
+    async (current: LineIdentity) => {
+      try {
+        const response = await fetch(`/api/line/me?lineUserId=${encodeURIComponent(current.lineUserId)}`, {
+          cache: "no-store",
+        });
+        const result = (await response.json()) as LineAuthResponse;
+        if (result.ok && result.identity) {
+          publishIdentity(result.identity);
+        }
+      } catch {
+        // Keep the stored identity. This panel must not block the existing app.
+      }
+    },
+    [publishIdentity],
+  );
+
+  useEffect(() => {
+    const stored = readStoredLineIdentity();
+    if (stored) {
+      publishIdentity(stored);
+      refreshOwnerStatus(stored);
+    }
+  }, [publishIdentity, refreshOwnerStatus]);
+
+  const loginWithLine = async () => {
+    if (!liffId) {
+      setStatusMessage("ยังไม่ได้ตั้งค่า NEXT_PUBLIC_LINE_LIFF_ID จึงยังล็อกอิน LINE จริงไม่ได้");
+      return;
+    }
+
+    setIsLoading(true);
+    setStatusMessage("");
+
+    try {
+      await loadLiffSdk();
+
+      if (!window.liff) {
+        throw new Error("ไม่พบ LIFF SDK หลังโหลด script");
+      }
+
+      await window.liff.init({ liffId });
+
+      if (!window.liff.isLoggedIn()) {
+        window.liff.login({ redirectUri: window.location.href });
+        return;
+      }
+
+      const [profile, idToken] = await Promise.all([
+        window.liff.getProfile(),
+        Promise.resolve(window.liff.getIDToken()),
+      ]);
+
+      const response = await fetch("/api/line/auth", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          context,
+          shopId,
+          idToken,
+          profile,
+        }),
+      });
+
+      const result = (await response.json()) as LineAuthResponse;
+
+      if (!response.ok || !result.ok || !result.identity) {
+        throw new Error(result.message || "เข้าสู่ระบบด้วย LINE ไม่สำเร็จ");
+      }
+
+      publishIdentity(result.identity);
+      setStatusMessage(result.identity.verified
+        ? "ยืนยันตัวตน LINE สำเร็จ"
+        : "บันทึกโปรไฟล์ LINE สำเร็จ แต่ยังไม่ได้ verify ID token ฝั่ง server");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "เข้าสู่ระบบด้วย LINE ไม่สำเร็จ");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const logout = () => {
+    clearLineIdentity();
+    setIdentity(null);
+    setStatusMessage("ออกจากบัญชี LINE ในระบบ CRM แล้ว");
+    onAuthenticated?.(null);
+  };
+
+  const handleLinkOwner = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!identity) {
+      setStatusMessage("กรุณาเข้าสู่ระบบ LINE ก่อนผูกบัญชีเจ้าของร้าน");
+      return;
+    }
+
+    if (!linkCode.trim()) {
+      setStatusMessage("กรุณากรอกรหัสผูกเจ้าของร้าน");
+      return;
+    }
+
+    setLinking(true);
+    setStatusMessage("");
+
+    try {
+      const response = await fetch("/api/line/merchant-owner", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          shopId,
+          lineUserId: identity.lineUserId,
+          linkCode: linkCode.trim(),
+        }),
+      });
+
+      const result = (await response.json()) as LineAuthResponse;
+
+      if (!response.ok || !result.ok || !result.identity) {
+        throw new Error(result.message || "ผูกบัญชีเจ้าของร้านไม่สำเร็จ");
+      }
+
+      publishIdentity(result.identity);
+      setLinkCode("");
+      setStatusMessage("ผูก LINE นี้เป็นเจ้าของร้านสำเร็จแล้ว");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "ผูกบัญชีเจ้าของร้านไม่สำเร็จ");
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const panelTone = isMerchant
+    ? "border-amber-200 bg-amber-50 text-amber-950"
+    : "border-emerald-200 bg-emerald-50 text-emerald-950";
+
+  const actionTone = isMerchant
+    ? "bg-amber-500 text-slate-950 hover:bg-amber-400"
+    : "bg-[#06C755] text-white hover:bg-[#05b04b]";
+
+  return (
+    <section className={`mx-3 mt-3 rounded-3xl border p-3 shadow-sm ${panelTone}`}>
+      <div className="flex items-start gap-3">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${isMerchant ? "bg-amber-100" : "bg-emerald-100"}`}>
+          {isMerchant ? <ShieldCheck className="h-5 w-5" /> : <Smartphone className="h-5 w-5" />}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] opacity-70">
+                {isMerchant ? "Merchant LINE Auth" : "LINE Member Auth"}
+              </p>
+              <h3 className="mt-1 text-sm font-black">
+                {identity ? `เชื่อมต่อ LINE: ${identity.displayName}` : "เข้าสู่ระบบด้วย LINE"}
+              </h3>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {identity ? (
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="inline-flex items-center gap-1.5 rounded-2xl border border-black/10 bg-white px-3 py-2 text-xs font-extrabold text-slate-700 transition hover:bg-slate-50"
+                >
+                  <LogOut className="h-4 w-4" />
+                  ออกจากระบบ
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={loginWithLine}
+                  disabled={isLoading || !liffId}
+                  className={`inline-flex items-center gap-1.5 rounded-2xl px-3 py-2 text-xs font-extrabold transition disabled:cursor-not-allowed disabled:opacity-50 ${actionTone}`}
+                >
+                  <LogIn className="h-4 w-4" />
+                  {isLoading ? "กำลังเชื่อมต่อ..." : "Login with LINE"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {identity ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-black ${identity.verified ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>
+                <BadgeCheck className="h-3.5 w-3.5" />
+                {identity.verified ? "Verified LINE ID Token" : "Profile fallback"}
+              </span>
+              {isMerchant && (
+                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-black ${isOwner ? "bg-emerald-100 text-emerald-800" : "bg-white text-amber-800"}`}>
+                  <UserCheck className="h-3.5 w-3.5" />
+                  {isOwner ? "เป็นเจ้าของร้านนี้" : "ยังไม่ได้ผูกเป็นเจ้าของร้านนี้"}
+                </span>
+              )}
+              <span className="font-mono text-[10px] opacity-70">LINE: {identity.lineUserId.slice(0, 8)}...</span>
+            </div>
+          ) : (
+            <p className="mt-2 text-xs leading-5 opacity-80">
+              {liffId
+                ? "เมื่อลูกค้าหรือเจ้าของร้านเปิดผ่าน LIFF ระบบจะใช้ LINE user id เพื่อผูกแต้มและสิทธิ์ร้าน"
+                : "ยังไม่ได้ตั้ง LIFF ID ใน Environment Variables จึงยังใช้งาน LINE Login จริงไม่ได้ แต่ระบบส่วนอื่นยังใช้ได้ตามปกติ"}
+            </p>
+          )}
+
+          {isMerchant && identity && !isOwner && (
+            <form onSubmit={handleLinkOwner} className="mt-3 grid gap-2 rounded-2xl border border-amber-200 bg-white/70 p-3 sm:grid-cols-[1fr_auto]">
+              <input
+                value={linkCode}
+                onChange={(event) => setLinkCode(event.target.value)}
+                placeholder="รหัสผูกเจ้าของร้าน"
+                className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-amber-400"
+              />
+              <button
+                type="submit"
+                disabled={linking}
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-950 px-3 py-2 text-xs font-extrabold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60"
+              >
+                <Link2 className="h-4 w-4" />
+                {linking ? "กำลังผูก..." : "ผูกเป็นเจ้าของ"}
+              </button>
+            </form>
+          )}
+
+          {statusMessage && (
+            <div className="mt-3 flex items-start gap-2 rounded-2xl border border-black/10 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-700">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{statusMessage}</span>
+            </div>
+          )}
+
+          {!compact && isMerchant && (
+            <p className="mt-3 text-[11px] leading-5 opacity-75">
+              ระยะ pilot นี้ LINE owner check เป็นฐานใหม่ ส่วน PIN เดิมยังคงเป็น fallback ชั่วคราวจนกว่าจะย้ายเป็น auth/session เต็มระบบ
+            </p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}

@@ -13,6 +13,7 @@ create table if not exists shops (
   registration_status text not null default 'pending' check (registration_status in ('pending', 'approved', 'rejected')),
   phone text not null default '',
   created_at timestamptz not null default now(),
+  shop_ids jsonb not null default '[]'::jsonb,
   updated_at timestamptz not null default now()
 );
 
@@ -84,11 +85,32 @@ create table if not exists point_coupons (
   used_at timestamptz
 );
 
+
+create table if not exists line_users (
+  line_user_id text primary key,
+  display_name text not null default '',
+  picture_url text not null default '',
+  email text not null default '',
+  last_login_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists merchant_line_users (
+  shop_id text not null references shops(id) on delete cascade,
+  line_user_id text not null references line_users(line_user_id) on delete cascade,
+  role text not null default 'owner' check (role in ('owner')),
+  created_at timestamptz not null default now(),
+  primary key (shop_id, line_user_id)
+);
+
 create index if not exists idx_rewards_shop_id on rewards(shop_id);
 create index if not exists idx_banners_shop_id on promo_banners(shop_id);
 create index if not exists idx_transactions_user_id on transactions(user_id);
 create index if not exists idx_transactions_shop_id on transactions(shop_id);
 create index if not exists idx_point_coupons_shop_id on point_coupons(shop_id);
+create index if not exists idx_customers_line_id on customers(line_id);
+create index if not exists idx_merchant_line_users_line_user_id on merchant_line_users(line_user_id);
 
 -- ล้างข้อมูลธุรกิจทั้งหมด แต่คงโครงสร้างตารางไว้
--- truncate table point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade;
+-- truncate table merchant_line_users, line_users, point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade;

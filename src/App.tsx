@@ -11,6 +11,7 @@ import CustomerDashboard from "./components/CustomerDashboard";
 import OwnerDashboard from "./components/OwnerDashboard";
 import WebmasterDashboard from "./components/WebmasterDashboard";
 import { getDefaultShopId, shopSlugToId } from "./lib/shopSlug";
+import type { LineIdentity } from "./lib/lineAuth";
 import {
   Sparkles,
   AppWindow,
@@ -51,10 +52,22 @@ export default function App({
   const [initialCouponCode, setInitialCouponCode] = useState<string>("");
   const [initialCustomerTab, setInitialCustomerTab] = useState<CustomerTab>("home");
   const [databaseLabel, setDatabaseLabel] = useState("กำลังเชื่อมต่อข้อมูล...");
+  const [lineIdentity, setLineIdentity] = useState<LineIdentity | null>(null);
 
   // Triggered when static storage modifies of children
   const handleDataChange = () => {
     setDataVersion((prev) => prev + 1);
+  };
+
+  const handleLineIdentityChange = async (identity: LineIdentity | null) => {
+    setLineIdentity(identity);
+
+    // LINE login can create or update customer membership in Neon.
+    // Reload the Neon snapshot into the local cache so the UI switches to that real LINE customer immediately.
+    if (identity) {
+      await initializeDatabase();
+      handleDataChange();
+    }
   };
 
   useEffect(() => {
@@ -282,6 +295,8 @@ export default function App({
               clearInitialCouponCode={() => setInitialCouponCode("")}
               initialTab={initialCustomerTab}
               displayMode={isDemoMode ? "demo" : "production"}
+              lineIdentity={lineIdentity}
+              onLineIdentityChange={handleLineIdentityChange}
             />
           </div>
         )}

@@ -30,6 +30,21 @@ export type GeneratedCoupon = {
   usedAt?: string | null;
 };
 
+
+export type LineUserRecord = {
+  lineUserId: string;
+  displayName: string;
+  pictureUrl?: string;
+  email?: string;
+};
+
+export type StoredLineUser = {
+  lineUserId: string;
+  displayName: string;
+  pictureUrl: string;
+  email: string;
+};
+
 export type CrmSnapshot = {
   shops: Shop[];
   customers: Customer[];
@@ -153,11 +168,32 @@ export async function ensureCrmSchema() {
     used_at timestamptz
   )`;
 
+
+  await sql`create table if not exists line_users (
+    line_user_id text primary key,
+    display_name text not null default '',
+    picture_url text not null default '',
+    email text not null default '',
+    last_login_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+  )`;
+
+  await sql`create table if not exists merchant_line_users (
+    shop_id text not null references shops(id) on delete cascade,
+    line_user_id text not null references line_users(line_user_id) on delete cascade,
+    role text not null default 'owner' check (role in ('owner')),
+    created_at timestamptz not null default now(),
+    primary key (shop_id, line_user_id)
+  )`;
+
   await sql`create index if not exists idx_rewards_shop_id on rewards(shop_id)`;
   await sql`create index if not exists idx_banners_shop_id on promo_banners(shop_id)`;
   await sql`create index if not exists idx_transactions_user_id on transactions(user_id)`;
   await sql`create index if not exists idx_transactions_shop_id on transactions(shop_id)`;
   await sql`create index if not exists idx_point_coupons_shop_id on point_coupons(shop_id)`;
+  await sql`create index if not exists idx_customers_line_id on customers(line_id)`;
+  await sql`create index if not exists idx_merchant_line_users_line_user_id on merchant_line_users(line_user_id)`;
 }
 
 export type AutoSeedMode = 'pilot' | 'demo' | 'none';
@@ -379,10 +415,131 @@ async function syncCoupons(rows: GeneratedCoupon[]) {
   `;
 }
 
+
+export async function upsertLineUser(lineUser: LineUserRecord) {
+  const sql = requireSql();
+
+  await sql`
+    insert into line_users (line_user_id, display_name, picture_url, email, last_login_at, updated_at)
+    values (${lineUser.lineUserId}, ${lineUser.displayName || ''}, ${lineUser.pictureUrl || ''}, ${lineUser.email || ''}, now(), now())
+    on conflict (line_user_id) do update set
+      display_name = excluded.display_name,
+      picture_url = excluded.picture_url,
+      email = coalesce(nullif(excluded.email, ''), line_users.email),
+      last_login_at = now(),
+      updated_at = now()
+  `;
+}
+
+export async function getLineUser(lineUserId: string): Promise<StoredLineUser | null> {
+  const sql = requireSql();
+
+  const rows = await sql`
+    select
+      line_user_id as "lineUserId",
+      display_name as "displayName",
+      picture_url as "pictureUrl",
+      email
+    from line_users
+    where line_user_id = ${lineUserId}
+    limit 1
+  `;
+
+  return (rows[0] as StoredLineUser | undefined) || null;
+}
+
+export async function getOwnerShopIds(lineUserId: string): Promise<string[]> {
+  const sql = requireSql();
+
+  const rows = await sql`
+    select shop_id as "shopId"
+    from merchant_line_users
+    where line_user_id = ${lineUserId} and role = 'owner'
+    order by created_at asc
+  `;
+
+  return rows.map((row) => String((row as { shopId: string }).shopId));
+}
+
+export async function linkMerchantOwner(shopId: string, lineUserId: string) {
+  const sql = requireSql();
+
+  await sql`
+    insert into merchant_line_users (shop_id, line_user_id, role)
+    values (${shopId}, ${lineUserId}, 'owner')
+    on conflict (shop_id, line_user_id) do update set role = 'owner'
+  `;
+}
+
+export async function ensureCustomerMembershipForLineUser(params: {
+  shopId: string;
+  lineUserId: string;
+  displayName: string;
+  pictureUrl?: string;
+}) {
+  const sql = requireSql();
+  const customerId = `line_${params.lineUserId}`;
+  const shopIds = JSON.stringify([params.shopId]);
+
+  await sql`
+    insert into customers (
+      id,
+      name,
+      phone,
+      line_name,
+      line_id,
+      avatar,
+      current_points,
+      lifetime_points,
+      tier,
+      created_at,
+      shop_ids,
+      updated_at
+    )
+    values (
+      ${customerId},
+      ${params.displayName || 'LINE User'},
+      '',
+      ${params.displayName || 'LINE User'},
+      ${params.lineUserId},
+      ${params.pictureUrl || ''},
+      0,
+      0,
+      'Silver',
+      now(),
+      ${shopIds}::jsonb,
+      now()
+    )
+    on conflict (id) do update set
+      name = case when customers.name = '' or customers.name = 'LINE User' then excluded.name else customers.name end,
+      line_name = excluded.line_name,
+      line_id = excluded.line_id,
+      avatar = excluded.avatar,
+      shop_ids = coalesce(
+        (
+          select jsonb_agg(distinct value)
+          from jsonb_array_elements_text(customers.shop_ids || excluded.shop_ids) as merged(value)
+        ),
+        excluded.shop_ids
+      ),
+      updated_at = now()
+  `;
+
+  const rows = await sql`
+    select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds"
+    from customers
+    where id = ${customerId}
+    limit 1
+  `;
+
+  return rows[0] as unknown as Customer;
+}
+
+
 export async function clearCrmData() {
   const sql = requireSql();
   await ensureCrmSchema();
-  await sql`truncate table point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade`;
+  await sql`truncate table merchant_line_users, line_users, point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade`;
 }
 
 export async function reseedDemoData() {

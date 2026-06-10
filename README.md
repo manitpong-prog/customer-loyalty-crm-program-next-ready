@@ -161,3 +161,24 @@ NEXT_PUBLIC_DEFAULT_SHOP_SLUG=im-sticker
 
 ดูรายละเอียดเพิ่มได้ที่ `docs/CUSTOMER_FLOW_PHASE5C_TH.md`
 
+
+
+## Phase 5D: LINE Auth Foundation
+
+เพิ่มฐาน LINE Login / LIFF สำหรับลูกค้าและเจ้าของร้าน
+
+- ลูกค้า login ด้วย LINE ที่ `/customer/im-sticker`
+- เจ้าของร้าน login ด้วย LINE ที่ `/merchant/im-sticker`
+- Admin ยังไม่ผูกกับ LINE และควรย้ายเป็น email/password ใน phase ถัดไป
+- เพิ่ม API: `/api/line/auth`, `/api/line/me`, `/api/line/merchant-owner`
+- เพิ่มตาราง: `line_users`, `merchant_line_users`
+
+Environment variables ใหม่:
+
+```env
+NEXT_PUBLIC_LINE_LIFF_ID=""
+LINE_CHANNEL_ID=""
+MERCHANT_OWNER_LINK_CODE=""
+```
+
+อ่านรายละเอียดที่ `docs/LINE_AUTH_FOUNDATION_PHASE5D_TH.md`
