@@ -239,29 +239,47 @@ export default function CustomerDashboard({
 
   if (!customer)
     return (
-      <div className="flex min-h-[70vh] items-center justify-center bg-slate-50 p-6 text-center">
-        <div className="max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="text-sm font-black text-slate-900">ยังไม่พบข้อมูลสมาชิกของร้านนี้</div>
-          <p className="mt-2 text-xs leading-5 text-slate-600">
-            ถ้าเพิ่งกด Login with LINE แล้วค้าง ให้เปิดลิงก์ reset ด้านล่างเพื่อล้าง session ชั่วคราว แล้วลองเข้าใหม่อีกครั้ง
-          </p>
-          <div className="mt-4 grid gap-2">
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="rounded-2xl bg-slate-950 px-4 py-2 text-xs font-extrabold text-white"
-            >
-              โหลดข้อมูลใหม่
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                window.location.href = `${window.location.pathname}?resetLine=1`;
-              }}
-              className="rounded-2xl border border-slate-200 px-4 py-2 text-xs font-extrabold text-slate-700"
-            >
-              ล้าง LINE session ชั่วคราว
-            </button>
+      <div className="min-h-screen bg-slate-50">
+        <div className="bg-[#06C755] px-4 py-4 text-white shadow-sm">
+          <div className="flex items-center gap-2 text-sm font-black">
+            <span className="h-2.5 w-2.5 rounded-full bg-white/50" />
+            iM Sticker
+          </div>
+        </div>
+
+        {isProductionView && (
+          <LineLoginPanel
+            context="customer"
+            shopId={selectedShopId}
+            onAuthenticated={onLineIdentityChange}
+            compact
+          />
+        )}
+
+        <div className="flex min-h-[55vh] items-center justify-center p-6 text-center">
+          <div className="max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="text-sm font-black text-slate-900">กำลังรอข้อมูลสมาชิกของร้านนี้</div>
+            <p className="mt-2 text-xs leading-5 text-slate-600">
+              ถ้าเพิ่งกด Login with LINE ระบบอาจกำลังสร้างสมาชิกใหม่ใน Neon ให้กดโหลดข้อมูลใหม่หนึ่งครั้ง หรือกดล้าง session ถ้ายังวนซ้ำ
+            </p>
+            <div className="mt-4 grid gap-2">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-2xl bg-slate-950 px-4 py-2 text-xs font-extrabold text-white"
+              >
+                โหลดข้อมูลใหม่
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = `${window.location.pathname}?resetLine=1`;
+                }}
+                className="rounded-2xl border border-slate-200 px-4 py-2 text-xs font-extrabold text-slate-700"
+              >
+                ล้าง LINE session ชั่วคราว
+              </button>
+            </div>
           </div>
         </div>
       </div>

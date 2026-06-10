@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   initializeDatabase,
   getShops,
@@ -60,16 +60,32 @@ export default function App({
     setDataVersion((prev) => prev + 1);
   };
 
-  const handleLineIdentityChange = async (identity: LineIdentity | null) => {
-    setLineIdentity(identity);
+  const handleLineIdentityChange = useCallback(async (identity: LineIdentity | null) => {
+    if (!identity) {
+      setLineIdentity(null);
+      return;
+    }
+
+    setLineIdentity((previous) => {
+      const sameIdentity =
+        previous?.lineUserId === identity.lineUserId &&
+        previous?.customerId === identity.customerId &&
+        JSON.stringify(previous?.ownerShopIds || []) === JSON.stringify(identity.ownerShopIds || []);
+
+      return sameIdentity ? previous : identity;
+    });
 
     // LINE login can create or update customer membership in Neon.
-    // Reload the Neon snapshot into the local cache so the UI switches to that real LINE customer immediately.
-    if (identity) {
-      await initializeDatabase();
-      handleDataChange();
+    // Refresh the local cache only when the LINE customer is not already present.
+    // This prevents an infinite remount loop when the panel restores the same identity from localStorage.
+    if (identity.customerId) {
+      const hasLineCustomerInCache = getCustomers().some((customer) => customer.id === identity.customerId);
+      if (!hasLineCustomerInCache) {
+        await initializeDatabase();
+        handleDataChange();
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (!isDemoMode && selectedShopId !== defaultShopId) {

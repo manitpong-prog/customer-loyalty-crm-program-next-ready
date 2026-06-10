@@ -187,3 +187,9 @@ MERCHANT_OWNER_LINK_CODE=""
 ## Phase 5D.1 — LIFF Login Stability Fix
 
 แก้ปัญหา Login with LINE redirect วนและเพิ่ม recovery URL `?resetLine=1` สำหรับล้าง LINE session ชั่วคราว ดูรายละเอียดใน `docs/LIFF_LOGIN_STABILITY_FIX_PHASE5D1_TH.md`.
+
+### Phase 5D.2 - LIFF Session Loop Fix
+
+- แก้ปัญหา LINE Login/LIFF เด้งสลับหน้า Login กับหน้าไม่พบสมาชิก
+- ป้องกันการ refresh snapshot ซ้ำเมื่อ restore LINE identity เดิมจาก localStorage
+- fallback หน้าไม่พบสมาชิกยังแสดง Login with LINE ให้ใช้งานต่อได้
