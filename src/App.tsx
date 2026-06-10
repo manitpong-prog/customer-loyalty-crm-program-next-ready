@@ -10,6 +10,7 @@ import {
 import CustomerDashboard from "./components/CustomerDashboard";
 import OwnerDashboard from "./components/OwnerDashboard";
 import WebmasterDashboard from "./components/WebmasterDashboard";
+import { getDefaultShopId, shopSlugToId } from "./lib/shopSlug";
 import {
   Sparkles,
   AppWindow,
@@ -31,16 +32,20 @@ type AppMode = "demo" | "customer" | "merchant" | "admin";
 interface AppProps {
   initialRole?: AppRole;
   mode?: AppMode;
+  initialShopId?: string;
+  initialShopSlug?: string;
 }
 
 export default function App({
   initialRole = "customer",
   mode = "demo",
+  initialShopId,
+  initialShopSlug,
 }: AppProps) {
   const isDemoMode = mode === "demo";
   const [activeRole, setActiveRole] = useState<AppRole>(initialRole);
   const [dataVersion, setDataVersion] = useState(0);
-  const defaultShopId = process.env.NEXT_PUBLIC_DEFAULT_SHOP_ID || "im_sticker";
+  const defaultShopId = initialShopId || (initialShopSlug ? shopSlugToId(initialShopSlug) : getDefaultShopId());
   const [selectedShopId, setSelectedShopId] = useState(defaultShopId);
   const [initialCouponCode, setInitialCouponCode] = useState<string>("");
   const [databaseLabel, setDatabaseLabel] = useState("กำลังเชื่อมต่อข้อมูล...");

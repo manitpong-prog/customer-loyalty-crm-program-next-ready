@@ -71,3 +71,19 @@ If you connected Neon through the Vercel Marketplace integration, Vercel should 
 
 รายละเอียดเพิ่มเติมดู `docs/PRODUCTION_UI_CLEANUP_TH.md`
 
+
+## Phase 4B: Customer Shop Route
+
+Customer production URL now supports shop slug routing:
+
+```text
+/customer              -> redirects to /customer/im-sticker
+/customer/im-sticker   -> iM Sticker customer page
+```
+
+Environment variables:
+
+```env
+NEXT_PUBLIC_DEFAULT_SHOP_ID=im_sticker
+NEXT_PUBLIC_DEFAULT_SHOP_SLUG=im-sticker
+```

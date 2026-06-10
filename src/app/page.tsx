@@ -1,9 +1,10 @@
 import Link from 'next/link';
+import { getDefaultCustomerPath } from '../lib/shopSlug';
 import { ArrowRight, BadgeCheck, BarChart3, LockKeyhole, ShieldCheck, Smartphone, Store } from 'lucide-react';
 
 const primaryActions = [
   {
-    href: '/customer',
+    href: getDefaultCustomerPath(),
     title: 'เข้าหน้าลูกค้า',
     description: 'ดูบัตรสมาชิก แต้มสะสม ของรางวัล และประวัติการใช้งาน',
     icon: Smartphone,

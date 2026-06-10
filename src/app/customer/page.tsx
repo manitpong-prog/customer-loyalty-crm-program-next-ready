@@ -1,5 +1,6 @@
-import App from '../../App';
+import { redirect } from 'next/navigation';
+import { getDefaultCustomerPath } from '../../lib/shopSlug';
 
-export default function CustomerPage() {
-  return <App initialRole="customer" mode="customer" />;
+export default function CustomerIndexPage() {
+  redirect(getDefaultCustomerPath());
 }
