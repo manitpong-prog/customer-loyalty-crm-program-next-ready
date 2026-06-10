@@ -38,6 +38,7 @@ import {
   getShops,
   getGeneratedCoupons,
   saveGeneratedCoupons,
+  type GeneratedCoupon,
 } from "../data/mockData";
 import {
   assertCouponBelongsToShop,
@@ -47,6 +48,9 @@ import {
   filterTransactionsByShop,
 } from "../lib/shopScope";
 
+type CustomerTab = "home" | "rewards" | "code" | "history" | "profile";
+type CouponValidationState = "ready" | "used" | "expired" | "wrong-shop" | "not-found";
+
 interface CustomerDashboardProps {
   key?: string;
   currentCustomerId: string;
@@ -55,6 +59,7 @@ interface CustomerDashboardProps {
   setSelectedShopId: (id: string) => void;
   initialCouponCode?: string;
   clearInitialCouponCode?: () => void;
+  initialTab?: CustomerTab;
   displayMode?: "demo" | "production";
 }
 
@@ -65,13 +70,12 @@ export default function CustomerDashboard({
   setSelectedShopId,
   initialCouponCode,
   clearInitialCouponCode,
+  initialTab = "home",
   displayMode = "demo",
 }: CustomerDashboardProps) {
   const isProductionView = displayMode === "production";
   // Navigation tabs: 'home', 'rewards', 'code', 'history', 'profile'
-  const [activeTab, setActiveTab] = useState<
-    "home" | "rewards" | "code" | "history" | "profile"
-  >("home");
+  const [activeTab, setActiveTab] = useState<CustomerTab>(initialTab);
   const [historySubTab, setHistorySubTab] = useState<"earn" | "redeem">("earn");
 
   // Data State
@@ -95,8 +99,30 @@ export default function CustomerDashboard({
   const [scanning, setScanning] = useState(false);
 
   // Dynamic Coupon States
-  const [pendingCoupon, setPendingCoupon] = useState<any | null>(null);
+  const [pendingCoupon, setPendingCoupon] = useState<GeneratedCoupon | null>(null);
   const [showCouponConfirm, setShowCouponConfirm] = useState(false);
+
+  const validateCouponForCurrentShop = (coupon?: GeneratedCoupon | null): CouponValidationState => {
+    if (!coupon) return "not-found";
+    if (!assertCouponBelongsToShop(coupon.shopId, selectedShopId)) return "wrong-shop";
+    if (coupon.isUsed) return "used";
+    if (new Date() > new Date(coupon.expiresAt)) return "expired";
+    return "ready";
+  };
+
+  const explainCouponValidation = (state: CouponValidationState) => {
+    if (state === "wrong-shop") return "รหัสนี้เป็นของร้านอื่น ไม่สามารถใช้กับร้านนี้ได้";
+    if (state === "used") return "รหัสแจกแต้มนี้ถูกใช้งานไปแล้ว ใช้ซ้ำไม่ได้";
+    if (state === "expired") return "รหัสแจกแต้มนี้หมดอายุแล้ว โปรดขอลิงก์ใหม่จากร้าน";
+    if (state === "not-found") return "ไม่พบข้อมูลรหัสแจกแต้มนี้ กรุณาตรวจสอบรหัสอีกครั้ง";
+    return "";
+  };
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
 
   useEffect(() => {
     if (initialCouponCode) {
@@ -109,9 +135,15 @@ export default function CustomerDashboard({
         (c: any) => c.code.toUpperCase() === codeClean,
       );
 
-      if (matched && assertCouponBelongsToShop(matched.shopId, selectedShopId)) {
-        setPendingCoupon(matched);
-        setShowCouponConfirm(true);
+      if (matched) {
+        const couponState = validateCouponForCurrentShop(matched);
+        if (couponState === "ready") {
+          setPendingCoupon(matched);
+          setShowCouponConfirm(true);
+        } else {
+          setErrorMessage(explainCouponValidation(couponState));
+          setTimeout(() => setErrorMessage(""), 4500);
+        }
       } else {
         const genericCodes = [
           "WELCOME50",
@@ -119,7 +151,7 @@ export default function CustomerDashboard({
           "KOFFEELOVER100",
           "CHICSTYLE80",
         ];
-        if (genericCodes.includes(codeClean)) {
+        if (!isProductionView && genericCodes.includes(codeClean)) {
           setSuccessMessage(
             `พบรหัสสะสมแต้มแคมเปญ: ${codeClean} โปรดกดปุ่มยืนยันเพื่อรับคะแนนสะสม`,
           );
@@ -134,7 +166,7 @@ export default function CustomerDashboard({
         clearInitialCouponCode();
       }
     }
-  }, [initialCouponCode, clearInitialCouponCode]);
+  }, [initialCouponCode, clearInitialCouponCode, selectedShopId, isProductionView]);
 
   // Load latest data on mount and tab switch
   const loadData = () => {
@@ -168,7 +200,7 @@ export default function CustomerDashboard({
     }
 
     setRewards(
-      filterRewardsByShop(getRewards(), selectedShopId).filter((r) => r.isAvailable),
+      filterRewardsByShop(getRewards(), selectedShopId).filter((r) => r.isAvailable && r.stock > 0),
     );
     setBanners(filterBannersByShop(getBanners(), selectedShopId, true));
     setTransactions(scopedTransactions.filter((t) => t.userId === currCust.id));
@@ -202,6 +234,14 @@ export default function CustomerDashboard({
 
   // Find Active Shop details
   const activeShop = shops.find((s) => s.id === selectedShopId) || shops[0];
+
+  const pendingCouponState = validateCouponForCurrentShop(pendingCoupon);
+  const pendingCouponExpiryLabel = pendingCoupon
+    ? new Date(pendingCoupon.expiresAt).toLocaleString("th-TH", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
+    : "";
 
   // Point Progress calculate
   const getTierThreshold = (tier: TierType) => {
@@ -239,27 +279,14 @@ export default function CustomerDashboard({
     );
 
     if (matchedCoupon) {
-      if (!assertCouponBelongsToShop(matchedCoupon.shopId, selectedShopId)) {
-        setErrorMessage("รหัสนี้เป็นของร้านอื่น ไม่สามารถใช้กับร้านนี้ได้");
-        setTimeout(() => setErrorMessage(""), 3500);
-        return;
-      }
-      if (matchedCoupon.isUsed) {
-        setErrorMessage(
-          "ลิงก์หรือรหัสรวบรวมแต้มนี้ถูกใช้ไปแล้ว คูปองสามารถสะสมสิทธิ์ได้ครั้งเดียว!",
-        );
-        setTimeout(() => setErrorMessage(""), 3500);
-        return;
-      }
-      if (new Date() > new Date(matchedCoupon.expiresAt)) {
-        setErrorMessage(
-          "ลิงก์หรือรหัสสะสมแต้มพรีเมี่ยมนี้หมดอายุการใช้งานไปแล้ว",
-        );
+      const couponState = validateCouponForCurrentShop(matchedCoupon);
+      if (couponState !== "ready") {
+        setErrorMessage(explainCouponValidation(couponState));
         setTimeout(() => setErrorMessage(""), 3500);
         return;
       }
 
-      // Valid dynamic coupon -> Launch confirmation modal!
+      // Valid dynamic coupon -> Launch confirmation modal.
       setPendingCoupon(matchedCoupon);
       setShowCouponConfirm(true);
       return;
@@ -358,20 +385,9 @@ export default function CustomerDashboard({
     }
 
     const matched = coupons[matchedIdx];
-    if (!assertCouponBelongsToShop(matched.shopId, selectedShopId)) {
-      setErrorMessage("รหัสนี้เป็นของร้านอื่น ไม่สามารถใช้กับร้านนี้ได้");
-      setShowCouponConfirm(false);
-      return;
-    }
-
-    if (matched.isUsed) {
-      setErrorMessage("รหัสสะสมแต้มนี้ถูกใช้งานไปก่อนหน้าแล้ว");
-      setShowCouponConfirm(false);
-      return;
-    }
-
-    if (new Date() > new Date(matched.expiresAt)) {
-      setErrorMessage("โค้ดหมดอายุการใช้งานแล้ว โปรดของลิ้งก์เติมแต้มใหม่");
+    const couponState = validateCouponForCurrentShop(matched);
+    if (couponState !== "ready") {
+      setErrorMessage(explainCouponValidation(couponState));
       setShowCouponConfirm(false);
       return;
     }
@@ -422,7 +438,7 @@ export default function CustomerDashboard({
 
     setShowCouponConfirm(false);
     setSuccessMessage(
-      `สะสมสิทธิ์สำเร็จ! ได้รับ +${pointsToAdd} แต้มจากกลุ่ม ${matched.shopName}`,
+      `รับแต้มสำเร็จ! ได้รับ +${pointsToAdd} แต้มจากร้าน ${matched.shopName}`,
     );
     setPromoCode("");
     setPendingCoupon(null);
@@ -497,7 +513,23 @@ export default function CustomerDashboard({
   const handleConfirmRedeem = () => {
     if (!selectedReward || !customer) return;
 
-    if (customer.currentPoints < selectedReward.pointsCost) {
+    const latestReward = getRewards().find(
+      (reward) => reward.id === selectedReward.id && reward.shopId === selectedShopId,
+    );
+
+    if (!latestReward || !latestReward.isAvailable) {
+      setErrorMessage("ของรางวัลนี้ไม่เปิดให้แลกในขณะนี้ กรุณาเลือกรายการอื่น");
+      setTimeout(() => setErrorMessage(""), 3000);
+      return;
+    }
+
+    if (latestReward.stock <= 0) {
+      setErrorMessage("ของรางวัลนี้หมดสต็อกแล้ว กรุณาติดต่อร้านค้า");
+      setTimeout(() => setErrorMessage(""), 3000);
+      return;
+    }
+
+    if (customer.currentPoints < latestReward.pointsCost) {
       setErrorMessage("แต้มสะสมของคุณไม่เพียงพอสำหรับการแลกของรางวัลชิ้นนี้");
       setTimeout(() => setErrorMessage(""), 3000);
       return;
@@ -505,21 +537,21 @@ export default function CustomerDashboard({
 
     setIsRedeeming(true);
 
-    // Simulate short cool network delay
+    // Short delay for a friendlier mobile/LINE OA interaction.
     setTimeout(() => {
       const allCustomers = getCustomers();
       const updatedCustomers = allCustomers.map((c) => {
         if (c.id === customer.id) {
           return {
             ...c,
-            currentPoints: c.currentPoints - selectedReward.pointsCost,
+            currentPoints: c.currentPoints - latestReward.pointsCost,
           };
         }
         return c;
       });
       saveCustomers(updatedCustomers);
 
-      // Create Pending Transaction (requires Store Owner approval!)
+      // Create Pending Transaction. Merchant confirms handover in /merchant/im-sticker.
       const newTx: Transaction = {
         id: `tx_${Date.now()}`,
         userId: customer.id,
@@ -528,21 +560,22 @@ export default function CustomerDashboard({
         shopId: selectedShopId,
         shopName: activeShop?.name || "ร้านค้าพาร์ทเนอร์",
         type: "redeem",
-        points: selectedReward.pointsCost,
-        description: `ขอแลกรางวัล: ${selectedReward.name}`,
+        points: latestReward.pointsCost,
+        description: `ขอแลกรางวัล: ${latestReward.name}`,
         status: "pending",
-        rewardId: selectedReward.id,
+        rewardId: latestReward.id,
         createdAt: new Date().toISOString(),
       };
 
       const currentTxs = getTransactions();
       saveTransactions([newTx, ...currentTxs]);
 
+      setSelectedReward(latestReward);
       setIsRedeeming(false);
       setIsRedeemSuccess(true);
       onDataChange();
       loadData();
-    }, 1500);
+    }, 900);
   };
 
   // Update Profile
@@ -925,13 +958,87 @@ export default function CustomerDashboard({
             <div className="space-y-1">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
                 <QrCode className="w-4 h-4 text-emerald-600" />
-                ใส่รหัสโค้ด / สแกนรับแต้ม
+                รับแต้มจากร้าน {activeShop?.name}
               </h3>
-              <p className="text-[10px] text-slate-500 font-medium">
-                กรณีได้รับโค้ดจัดกิจกรรมจากร้านค้า หรือ
-                สแกนคิวอาร์โค้ดสิทธิพิเศษ
+              <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
+                ใช้สำหรับลิงก์หรือ QR ที่ร้านสร้างจากหลังบ้าน เมื่อเปิดจาก LINE OA ระบบจะตรวจสิทธิ์และให้ลูกค้ากดยืนยันรับแต้มเอง
               </p>
             </div>
+
+            {pendingCoupon && (
+              <div className={`rounded-3xl border p-4.5 shadow-xs space-y-3.5 ${
+                pendingCouponState === "ready"
+                  ? "bg-emerald-50 border-emerald-200"
+                  : "bg-rose-50 border-rose-200"
+              }`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className={`text-[10px] font-mono font-black uppercase tracking-[0.18em] ${
+                      pendingCouponState === "ready" ? "text-emerald-700" : "text-rose-700"
+                    }`}>
+                      {pendingCouponState === "ready" ? "ตรวจพบรหัสแจกแต้ม" : "รหัสนี้ใช้ไม่ได้"}
+                    </p>
+                    <h4 className="mt-1 text-base font-black text-slate-950">
+                      {pendingCouponState === "ready" ? `รับ +${pendingCoupon.points} แต้ม` : "ไม่สามารถรับแต้มได้"}
+                    </h4>
+                    <p className="mt-1 text-[11px] font-semibold text-slate-600 leading-relaxed">
+                      {pendingCouponState === "ready"
+                        ? pendingCoupon.description
+                        : explainCouponValidation(pendingCouponState)}
+                    </p>
+                  </div>
+                  <div className={`rounded-2xl px-3 py-2 text-center font-mono font-black ${
+                    pendingCouponState === "ready"
+                      ? "bg-white text-emerald-700 border border-emerald-200"
+                      : "bg-white text-rose-700 border border-rose-200"
+                  }`}>
+                    <span className="block text-lg leading-none">+{pendingCoupon.points}</span>
+                    <span className="text-[9px]">POINTS</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 rounded-2xl bg-white/80 p-3 text-[10px] font-bold text-slate-600 border border-white">
+                  <div className="flex justify-between gap-3">
+                    <span>ร้านค้า:</span>
+                    <span className="text-slate-950 text-right">{pendingCoupon.shopName}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span>รหัส:</span>
+                    <span className="font-mono text-slate-950 text-right">{pendingCoupon.code}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span>หมดอายุ:</span>
+                    <span className="text-amber-700 text-right">{pendingCouponExpiryLabel}</span>
+                  </div>
+                </div>
+
+                <div className="flex gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCouponConfirm(false);
+                      setPendingCoupon(null);
+                      setPromoCode("");
+                    }}
+                    className="flex-1 rounded-xl bg-white border border-slate-200 px-3 py-2.5 text-xs font-extrabold text-slate-700 shadow-sm"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmClaimDynamicCoupon}
+                    disabled={pendingCouponState !== "ready"}
+                    className={`flex-1 rounded-xl px-3 py-2.5 text-xs font-black shadow-sm transition active:scale-[0.98] ${
+                      pendingCouponState === "ready"
+                        ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                        : "bg-slate-200 text-slate-500 cursor-not-allowed"
+                    }`}
+                  >
+                    ยืนยันรับแต้ม
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Manual Promo code entry */}
             <form
@@ -939,136 +1046,146 @@ export default function CustomerDashboard({
               className="bg-white border border-slate-200/80 p-4.5 rounded-3xl space-y-3.5 shadow-xs"
             >
               <div className="space-y-1.5">
-                <label className="text-[11px] font-bold text-slate-650">
-                  กรอกรหัสสะสมแต้ม (สลักตัวอักษรพิมพ์ใหญ่)
+                <label className="text-[11px] font-bold text-slate-700">
+                  กรอกรหัสจากร้านค้า
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={promoCode}
-                    onChange={(e) => setPromoCode(e.target.value)}
-                    placeholder="ตัวอย่าง WELCOME50"
-                    className="bg-slate-50 border border-slate-200 focus:border-amber-500 focus:bg-white text-xs text-slate-800 uppercase font-bold px-3.5 py-2.5 rounded-xl flex-1 outline-none transition"
+                    onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                    placeholder="เช่น CPN-IS-50-ABCDE"
+                    className="bg-slate-50 border border-slate-200 focus:border-emerald-500 focus:bg-white text-xs text-slate-900 uppercase font-bold px-3.5 py-2.5 rounded-xl flex-1 outline-none transition"
                   />
                   <button
                     type="submit"
                     className="bg-stone-900 hover:bg-black text-white font-extrabold text-xs px-4.5 py-2.5 rounded-xl transition active:scale-95 shadow-sm cursor-pointer"
                   >
-                    ยืนยัน
+                    ตรวจรหัส
                   </button>
                 </div>
               </div>
 
-              {/* Sample codes helper */}
-              <div className="bg-slate-50/80 rounded-2xl p-3 space-y-2 text-[10px] border border-slate-200/60 shadow-inner">
-                <p className="text-amber-700 font-bold">
-                  รหัสสะสมแต้มสาธารณะเปิดซิมจำลอง:
-                </p>
-                <div className="grid grid-cols-2 gap-2 font-mono text-slate-500 font-semibold">
-                  <div
-                    className="flex justify-between hover:text-slate-900 cursor-pointer pr-1 transition"
-                    onClick={() => setPromoCode("WELCOME50")}
-                  >
-                    <span>• WELCOME50</span>
-                    <span className="text-emerald-600 font-bold text-[9px]">
-                      (+50)
-                    </span>
-                  </div>
-                  <div
-                    className="flex justify-between hover:text-slate-900 cursor-pointer pr-1 transition"
-                    onClick={() => setPromoCode("CRM2026")}
-                  >
-                    <span>• CRM2026</span>
-                    <span className="text-emerald-600 font-bold text-[9px]">
-                      (+150)
-                    </span>
-                  </div>
-                  <div
-                    className="flex justify-between hover:text-slate-900 cursor-pointer pr-1 transition"
-                    onClick={() => setPromoCode("KOFFEELOVER100")}
-                  >
-                    <span>• KOFFEELOVER100</span>
-                    <span className="text-emerald-600 font-bold text-[9px]">
-                      (+100)
-                    </span>
+              {isProductionView ? (
+                <div className="bg-emerald-50 rounded-2xl p-3 space-y-2 text-[10.5px] border border-emerald-100 text-emerald-900">
+                  <p className="font-extrabold">วิธีรับแต้มจากร้าน</p>
+                  <ol className="list-decimal list-inside space-y-1 font-semibold leading-relaxed">
+                    <li>ร้านสร้างลิงก์หรือ QR แจกแต้มจากหลังบ้าน</li>
+                    <li>ลูกค้าเปิดลิงก์ผ่าน LINE OA หรือกรอกรหัสในช่องนี้</li>
+                    <li>กดยืนยันรับแต้ม 1 ครั้ง ระบบจะบันทึกลงบัญชีสมาชิกทันที</li>
+                  </ol>
+                </div>
+              ) : (
+                <div className="bg-slate-50/80 rounded-2xl p-3 space-y-2 text-[10px] border border-slate-200/60 shadow-inner">
+                  <p className="text-amber-700 font-bold">
+                    รหัสสะสมแต้มสาธารณะเปิดซิมจำลอง:
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 font-mono text-slate-500 font-semibold">
+                    <div
+                      className="flex justify-between hover:text-slate-900 cursor-pointer pr-1 transition"
+                      onClick={() => setPromoCode("WELCOME50")}
+                    >
+                      <span>• WELCOME50</span>
+                      <span className="text-emerald-600 font-bold text-[9px]">
+                        (+50)
+                      </span>
+                    </div>
+                    <div
+                      className="flex justify-between hover:text-slate-900 cursor-pointer pr-1 transition"
+                      onClick={() => setPromoCode("CRM2026")}
+                    >
+                      <span>• CRM2026</span>
+                      <span className="text-emerald-600 font-bold text-[9px]">
+                        (+150)
+                      </span>
+                    </div>
+                    <div
+                      className="flex justify-between hover:text-slate-900 cursor-pointer pr-1 transition"
+                      onClick={() => setPromoCode("KOFFEELOVER100")}
+                    >
+                      <span>• KOFFEELOVER100</span>
+                      <span className="text-emerald-600 font-bold text-[9px]">
+                        (+100)
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </form>
 
-            {/* QR Scan Simulation interface */}
-            <div className="bg-white border border-slate-200/80 p-4.5 rounded-3xl space-y-3.5 shadow-xs">
-              <div className="flex justify-between items-center">
-                <h4 className="text-xs font-extrabold text-slate-800">
-                  สแกนคิวอาร์โค้ดรับแต้มหน้าร้าน
-                </h4>
-                <Camera className="w-4 h-4 text-slate-400" />
-              </div>
+            {/* QR Scan Simulation interface - hidden from production customer route */}
+            {!isProductionView && (
+              <div className="bg-white border border-slate-200/80 p-4.5 rounded-3xl space-y-3.5 shadow-xs">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-xs font-extrabold text-slate-800">
+                    สแกนคิวอาร์โค้ดรับแต้มหน้าร้าน
+                  </h4>
+                  <Camera className="w-4 h-4 text-slate-400" />
+                </div>
 
-              <div className="relative border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 aspect-video flex flex-col justify-center items-center overflow-hidden p-4 text-center shadow-inner">
-                {scanning ? (
-                  <div className="space-y-3">
-                    <div className="w-9 h-9 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
-                    <p className="text-[11px] font-mono font-bold text-slate-500">
-                      กำลังสแกนและยืนยันความปลอดภัยเข้ารับแต้ม...
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div className="w-12 h-12 bg-white border border-slate-200 rounded-xl flex items-center justify-center mx-auto text-amber-550 shadow-2xs">
-                      <QrCode className="w-7 h-7" />
+                <div className="relative border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50 aspect-video flex flex-col justify-center items-center overflow-hidden p-4 text-center shadow-inner">
+                  {scanning ? (
+                    <div className="space-y-3">
+                      <div className="w-9 h-9 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                      <p className="text-[11px] font-mono font-bold text-slate-500">
+                        กำลังสแกนและยืนยันความปลอดภัยเข้ารับแต้ม...
+                      </p>
                     </div>
-                    <p className="text-xs font-semibold text-slate-500">
-                      กดปุ่มจำลองการแสกนคิวอาร์รับแต้มด้านล่าง
-                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="w-12 h-12 bg-white border border-slate-200 rounded-xl flex items-center justify-center mx-auto text-amber-550 shadow-2xs">
+                        <QrCode className="w-7 h-7" />
+                      </div>
+                      <p className="text-xs font-semibold text-slate-500">
+                        กดปุ่มจำลองการแสกนคิวอาร์รับแต้มด้านล่าง
+                      </p>
+                    </div>
+                  )}
+
+                  {scanning && (
+                    <div className="absolute left-0 right-0 h-0.5 bg-amber-500 top-0 shadow-lg animate-bounce duration-[1500ms]" />
+                  )}
+                </div>
+
+                <div className="space-y-2.5">
+                  <span className="text-[9px] uppercase font-mono text-slate-400 font-bold block">
+                    จำลองรหัสสแกนคิวอาร์รับแต้มพิเศษ:
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        simulateScan(
+                          50,
+                          activeShop?.name || "ร้านค้าพาร์ทเนอร์",
+                          activeShop?.id || "shop-1",
+                          "สแกนด่วนกิจกรรมเช้า",
+                        )
+                      }
+                      disabled={scanning}
+                      className="bg-slate-900 hover:bg-black text-white text-[10.5px] font-bold p-3 rounded-xl cursor-pointer text-center active:scale-95 transition shadow-sm"
+                    >
+                      🚀 รับ 50 แต้ม ({activeShop?.name})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        simulateScan(
+                          100,
+                          activeShop?.name || "ร้านค้าพาร์ทเนอร์",
+                          activeShop?.id || "shop-1",
+                          "โปรด่วนพิเศษซื้อครบ 500",
+                        )
+                      }
+                      disabled={scanning}
+                      className="bg-amber-600 hover:bg-amber-700 text-white text-[10.5px] font-bold p-3 rounded-xl cursor-pointer text-center active:scale-95 transition shadow-sm"
+                    >
+                      🔥 รับ 100 แต้ม ({activeShop?.name})
+                    </button>
                   </div>
-                )}
-
-                {/* Laser scan effect overlay */}
-                {scanning && (
-                  <div className="absolute left-0 right-0 h-0.5 bg-amber-500 top-0 shadow-lg animate-bounce duration-[1500ms]" />
-                )}
-              </div>
-
-              {/* Simulation Quick Launchers for scanning */}
-              <div className="space-y-2.5">
-                <span className="text-[9px] uppercase font-mono text-slate-400 font-bold block">
-                  จำลองรหัสสแกนคิวอาร์รับแต้มพิเศษ:
-                </span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      simulateScan(
-                        50,
-                        activeShop?.name || "ร้านค้าพาร์ทเนอร์",
-                        activeShop?.id || "shop-1",
-                        "สแกนด่วนกิจกรรมเช้า",
-                      )
-                    }
-                    disabled={scanning}
-                    className="bg-slate-900 hover:bg-black text-white text-[10.5px] font-bold p-3 rounded-xl cursor-pointer text-center active:scale-95 transition shadow-sm"
-                  >
-                    🚀 รับ 50 แต้ม ({activeShop?.name})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      simulateScan(
-                        100,
-                        activeShop?.name || "ร้านค้าพาร์ทเนอร์",
-                        activeShop?.id || "shop-1",
-                        "โปรด่วนพิเศษซื้อครบ 500",
-                      )
-                    }
-                    disabled={scanning}
-                    className="bg-amber-600 hover:bg-amber-700 text-white text-[10.5px] font-bold p-3 rounded-xl cursor-pointer text-center active:scale-95 transition shadow-sm"
-                  >
-                    🔥 รับ 100 แต้ม ({activeShop?.name})
-                  </button>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -1334,7 +1451,7 @@ export default function CustomerDashboard({
         >
           <QrCode className="w-5 h-5 scale-110 text-emerald-600" />
           <span className="text-[9px] font-bold font-sans text-emerald-600">
-            ใส่โค้ด
+            รับแต้ม
           </span>
         </button>
 

@@ -147,3 +147,17 @@ NEXT_PUBLIC_DEFAULT_SHOP_SLUG=im-sticker
 ## Phase 5B.1 - Merchant UI Contrast Fix
 
 แก้ปัญหาตัวหนังสือในหน้า `/merchant/im-sticker` สีอ่อนกลืนกับพื้นหลัง โดยเฉพาะชื่อ/เบอร์โทร/รายละเอียดลูกค้าในแท็บสมาชิก CRM และปุ่ม `เปิด` / `ปิด` ของรางวัล ให้มองเห็นชัดขึ้นบนพื้นหลัง production view
+
+## Phase 5C - Customer Claim / Redeem Flow
+
+เพิ่มความพร้อมฝั่งลูกค้าสำหรับ LINE OA / Rich Menu:
+
+- รองรับ `/customer/im-sticker?tab=rewards`, `?tab=history`, `?tab=code`
+- รองรับลิงก์แจกแต้ม `/customer/im-sticker?code=...`
+- ซ่อน mock codes และ QR simulation ออกจากหน้า production customer
+- ตรวจคูปองผิดร้าน / ใช้แล้ว / หมดอายุ
+- แสดงเฉพาะของรางวัลที่เปิดใช้งานและยังมี stock
+- ลูกค้าขอแลกรางวัลแล้วสร้าง transaction สถานะ pending ให้ร้านอนุมัติภายหลัง
+
+ดูรายละเอียดเพิ่มได้ที่ `docs/CUSTOMER_FLOW_PHASE5C_TH.md`
+

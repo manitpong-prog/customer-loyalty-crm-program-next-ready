@@ -28,6 +28,7 @@ import {
 
 type AppRole = "customer" | "owner" | "webmaster";
 type AppMode = "demo" | "customer" | "merchant" | "admin";
+type CustomerTab = "home" | "rewards" | "code" | "history" | "profile";
 
 interface AppProps {
   initialRole?: AppRole;
@@ -48,6 +49,7 @@ export default function App({
   const defaultShopId = initialShopId || (initialShopSlug ? shopSlugToId(initialShopSlug) : getDefaultShopId());
   const [selectedShopId, setSelectedShopId] = useState(defaultShopId);
   const [initialCouponCode, setInitialCouponCode] = useState<string>("");
+  const [initialCustomerTab, setInitialCustomerTab] = useState<CustomerTab>("home");
   const [databaseLabel, setDatabaseLabel] = useState("กำลังเชื่อมต่อข้อมูล...");
 
   // Triggered when static storage modifies of children
@@ -78,13 +80,29 @@ export default function App({
       );
       handleDataChange();
 
-      // Check for '?code=...' query parameter in window URL
+      // Check customer deep-link query parameters.
+      // Examples for LINE Rich Menu:
+      // /customer/im-sticker?tab=rewards
+      // /customer/im-sticker?tab=history
+      // /customer/im-sticker?code=CPN-IS-50-ABCDE
       const searchParams = new URLSearchParams(window.location.search);
       const code = searchParams.get("code");
+      const tabParam = searchParams.get("tab") as CustomerTab | null;
+      const allowedTabs: CustomerTab[] = ["home", "rewards", "code", "history", "profile"];
+
+      if (tabParam && allowedTabs.includes(tabParam)) {
+        setInitialCustomerTab(tabParam);
+        setActiveRole("customer");
+      }
+
       if (code) {
         setInitialCouponCode(code);
+        setInitialCustomerTab("code");
         setActiveRole("customer");
-        // Clean query parameter from address bar cleanly
+      }
+
+      if (code || tabParam) {
+        // Clean query parameter from address bar after bootstrap to avoid re-triggering on refresh.
         try {
           const cleanUrl = window.location.origin + window.location.pathname;
           window.history.replaceState({}, document.title, cleanUrl);
@@ -262,6 +280,7 @@ export default function App({
               setSelectedShopId={setSelectedShopId}
               initialCouponCode={initialCouponCode}
               clearInitialCouponCode={() => setInitialCouponCode("")}
+              initialTab={initialCustomerTab}
               displayMode={isDemoMode ? "demo" : "production"}
             />
           </div>
