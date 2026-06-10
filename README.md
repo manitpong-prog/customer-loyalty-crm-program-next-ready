@@ -142,3 +142,8 @@ NEXT_PUBLIC_DEFAULT_SHOP_SLUG=im-sticker
 - แก้ลิงก์คูปองให้ชี้ไป `/customer/im-sticker?code=...`
 
 ดูรายละเอียด: `docs/MERCHANT_CRUD_PHASE5B_TH.md`
+
+
+## Phase 5B.1 - Merchant UI Contrast Fix
+
+แก้ปัญหาตัวหนังสือในหน้า `/merchant/im-sticker` สีอ่อนกลืนกับพื้นหลัง โดยเฉพาะชื่อ/เบอร์โทร/รายละเอียดลูกค้าในแท็บสมาชิก CRM และปุ่ม `เปิด` / `ปิด` ของรางวัล ให้มองเห็นชัดขึ้นบนพื้นหลัง production view

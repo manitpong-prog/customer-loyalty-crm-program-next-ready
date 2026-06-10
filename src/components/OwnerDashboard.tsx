@@ -588,7 +588,7 @@ export default function OwnerDashboard({
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-3xl p-6.5 shadow-sm space-y-6.5 text-slate-850">
+    <div className="bg-white border border-slate-200 rounded-3xl p-6.5 shadow-sm space-y-6.5 text-slate-900">
       
       {/* HEADER SECTION INCLUDES STATS & SWITCH SHOP */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-5">
@@ -733,7 +733,7 @@ export default function OwnerDashboard({
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="border-b border-neutral-850 text-neutral-400 font-bold uppercase tracking-wider font-mono">
+                      <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider font-mono">
                         <th className="pb-3 pl-2">ชื่อลูกค้า / โทรศัพท์</th>
                         <th className="pb-3">ของรางวัลที่ขอแลก</th>
                         <th className="pb-3">แต้มที่ใช้</th>
@@ -741,22 +741,22 @@ export default function OwnerDashboard({
                         <th className="pb-3 pl-2">การด่วนตัดสินใจ</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-neutral-850/60">
+                    <tbody className="divide-y divide-slate-200">
                       {transactions
                         .filter(t => t.type === 'redeem')
                         .map(t => {
                           const showBadge = t.status === 'pending';
                           return (
-                            <tr key={t.id} className="hover:bg-neutral-900/30">
+                            <tr key={t.id} className="hover:bg-amber-50/50">
                               <td className="py-3.5 pl-2">
-                                <div className="font-semibold text-neutral-100">{t.userName}</div>
-                                <div className="text-[10px] text-neutral-400">{t.userPhone}</div>
+                                <div className="font-semibold text-slate-900">{t.userName}</div>
+                                <div className="text-[10px] text-slate-600">{t.userPhone}</div>
                               </td>
-                              <td className="py-3.5 font-medium text-neutral-200">
+                              <td className="py-3.5 font-medium text-slate-800">
                                 {t.description.replace('ขอแลกรางวัล: ', '')}
                               </td>
                               <td className="py-3.5 font-mono text-rose-400 font-bold font-semibold">-{t.points} แต้ม</td>
-                              <td className="py-3.5 text-neutral-400 font-mono">
+                              <td className="py-3.5 text-slate-600 font-mono">
                                 {new Date(t.createdAt).toLocaleDateString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                               </td>
                               <td className="py-3.5">
@@ -776,7 +776,7 @@ export default function OwnerDashboard({
                                     </button>
                                   </div>
                                 ) : (
-                                  <span className={`text-[10px] font-mono uppercase font-bold ${t.status === 'completed' ? 'text-emerald-400' : 'text-neutral-500 line-through'}`}>
+                                  <span className={`text-[10px] font-mono uppercase font-bold ${t.status === 'completed' ? 'text-emerald-700' : 'text-slate-500 line-through'}`}>
                                     {t.status === 'completed' ? 'อนุมัติเรียบร้อย' : 'คำขอถูกยกเลิก'}
                                   </span>
                                 )}
@@ -787,7 +787,7 @@ export default function OwnerDashboard({
 
                       {transactions.filter(t => t.type === 'redeem').length === 0 && (
                         <tr>
-                          <td colSpan={5} className="py-8 text-center text-neutral-500 font-medium font-sans">
+                          <td colSpan={5} className="py-8 text-center text-slate-500 font-medium font-sans">
                             ยังไม่พบคำร้องขอแลกของรางวัลใดๆ สำหรับแบรนด์ของคุณ
                           </td>
                         </tr>
@@ -798,15 +798,15 @@ export default function OwnerDashboard({
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="bg-neutral-900/40 p-4 rounded-xl border border-neutral-850 text-xs text-neutral-450 flex justify-between items-center">
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs text-slate-600 flex justify-between items-center">
                   <span className="font-sans">แอดมินสามารถติดตามดูประวัติสะสมแต้ม/สแกน QR และข้อมูลแลกของรางวัลทั้งหมดในเครือคุณได้ ย้อนหลังครบถ้วน</span>
-                  <span className="text-[10px] font-mono text-neutral-400 font-semibold">รวมทั้งหมด: {transactions.length} รายการ</span>
+                  <span className="text-[10px] font-mono text-slate-500 font-semibold">รวมทั้งหมด: {transactions.length} รายการ</span>
                 </div>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse font-sans">
                     <thead>
-                      <tr className="border-b border-neutral-850 text-neutral-450 font-bold uppercase tracking-wider font-mono">
+                      <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider font-mono">
                         <th className="pb-3 pl-2">รหัสธุรกรรม / อ้างอิง</th>
                         <th className="pb-3">ประเภทกิจกรรม</th>
                         <th className="pb-3">รายละเอียดบัญชี</th>
@@ -815,11 +815,11 @@ export default function OwnerDashboard({
                         <th className="pb-3 text-right pr-2">การดำเนินการถาวร</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-neutral-850/60">
+                    <tbody className="divide-y divide-slate-200">
                       {transactions.map(t => (
-                        <tr key={t.id} className="hover:bg-neutral-900/30">
+                        <tr key={t.id} className="hover:bg-amber-50/50">
                           <td className="py-3.5 pl-2 font-mono text-[10.5px]">
-                            <div className="font-bold text-neutral-350">{t.id}</div>
+                            <div className="font-bold text-slate-900">{t.id}</div>
                             <div className="text-[9px] text-neutral-400">ลูกค้า: {t.userName} • {t.userPhone}</div>
                           </td>
                           <td className="py-3.5 font-sans">
@@ -827,13 +827,13 @@ export default function OwnerDashboard({
                               {t.type === 'earn' ? '📊 สะสมแต้ม' : '🎁 แลกรางวัล'}
                             </span>
                           </td>
-                          <td className="py-3.5 text-neutral-300 font-medium text-[11px] font-sans">
+                          <td className="py-3.5 text-slate-800 font-medium text-[11px] font-sans">
                             {t.description}
                           </td>
                           <td className={`py-3.5 font-mono text-xs font-black ${t.type === 'earn' ? 'text-emerald-400' : 'text-rose-400'}`}>
                             {t.type === 'earn' ? `+${t.points}` : `-${t.points}`} แต้ม
                           </td>
-                          <td className="py-3.5 text-neutral-400 font-mono text-[10.5px]">
+                          <td className="py-3.5 text-slate-600 font-mono text-[10.5px]">
                             {new Date(t.createdAt).toLocaleString('th-TH')}
                           </td>
                           <td className="py-3.5 text-right pr-2">
@@ -852,7 +852,7 @@ export default function OwnerDashboard({
 
                       {transactions.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="py-8 text-center text-neutral-500 font-medium font-sans">
+                          <td colSpan={6} className="py-8 text-center text-slate-500 font-medium font-sans">
                             ยังไม่มีข้อมูลประวัติธุรกรรมสะสมแต้มใดในระบบเว็พบอร์ดขณะนี้
                           </td>
                         </tr>
@@ -872,13 +872,13 @@ export default function OwnerDashboard({
             {/* Search filter bar */}
             <div className="flex flex-col lg:flex-row gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input 
                   type="text"
                   placeholder="ค้นหาลูกค้าสะสมแต้มด้วยชื่อ หรือเบอร์โทรศัพท์..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-9 py-2 text-xs text-white"
+                  className="w-full bg-white border border-slate-300 rounded-xl px-9 py-2 text-xs text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-amber-300"
                 />
               </div>
               <button
@@ -938,7 +938,7 @@ export default function OwnerDashboard({
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="border-b border-neutral-850 text-neutral-400 font-bold uppercase tracking-wider font-mono">
+                  <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider font-mono">
                     <th className="pb-3 pr-2">ข้อมูลลูกค้า / พร็อพเพอร์ตี้ LINE</th>
                     <th className="pb-3">ระดับสมาชิก</th>
                     <th className="pb-3">แต้มปัจจุบัน</th>
@@ -947,26 +947,26 @@ export default function OwnerDashboard({
                     <th className="pb-3 text-right">ปรับสมดุลคะแนน</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-neutral-850/60">
+                <tbody className="divide-y divide-slate-200">
                   {filteredCustomers.map(c => (
-                    <tr key={c.id} className="hover:bg-neutral-900/20">
+                    <tr key={c.id} className="hover:bg-amber-50/50">
                       <td className="py-3.5 pr-2">
                         <div className="flex items-center gap-2.5">
                           <img src={c.avatar} className="w-8 h-8 rounded-full object-cover" referrerPolicy="no-referrer" />
                           <div>
-                            <div className="font-semibold text-neutral-100">{c.name}</div>
-                            <div className="text-[10px] text-neutral-400">{c.phone} • LINE: {c.lineName}</div>
+                            <div className="font-semibold text-slate-900">{c.name}</div>
+                            <div className="text-[10px] text-slate-600">{c.phone} • LINE: {c.lineName}</div>
                           </div>
                         </div>
                       </td>
                       <td className="py-3.5">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${c.tier === 'Platinum' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' : c.tier === 'Gold' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' : 'bg-neutral-800 text-neutral-400'}`}>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${c.tier === 'Platinum' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' : c.tier === 'Gold' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
                           {c.tier}
                         </span>
                       </td>
-                      <td className="py-3.5 font-bold font-mono text-yellow-400 text-sm">{c.currentPoints} Pts</td>
-                      <td className="py-3.5 font-mono text-neutral-400">{c.lifetimePoints} Pts</td>
-                      <td className="py-3.5 font-mono text-neutral-500">{new Date(c.createdAt).toLocaleDateString('th-TH')}</td>
+                      <td className="py-3.5 font-bold font-mono text-amber-700 text-sm">{c.currentPoints} Pts</td>
+                      <td className="py-3.5 font-mono text-slate-700">{c.lifetimePoints} Pts</td>
+                      <td className="py-3.5 font-mono text-slate-500">{new Date(c.createdAt).toLocaleDateString('th-TH')}</td>
                       <td className="py-3.5 text-right font-medium">
                         <button 
                           onClick={() => {
@@ -983,7 +983,7 @@ export default function OwnerDashboard({
                   ))}
                   {filteredCustomers.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-neutral-500 font-medium font-sans">
+                      <td colSpan={6} className="py-8 text-center text-slate-500 font-medium font-sans">
                         ยังไม่พบสมาชิกของร้านนี้ กด “เพิ่มสมาชิก” หรือให้ลูกค้ารับแต้มจากลิงก์ Rich Menu เพื่อเริ่มต้นได้เลย
                       </td>
                     </tr>
@@ -1009,7 +1009,7 @@ export default function OwnerDashboard({
 
                   <div className="space-y-1">
                     <h4 className="text-sm font-bold text-neutral-100">ปรับสมดุลคะแนนลูกค้าด้วยมือ</h4>
-                    <p className="text-[10px] text-neutral-400">ลูกค้าปัจจุบัน: {selectedCustForAdjust.name}</p>
+                    <p className="text-[10px] text-slate-600">ลูกค้าปัจจุบัน: {selectedCustForAdjust.name}</p>
                   </div>
 
                   <div className="bg-neutral-950 p-2.5 rounded-lg text-[10px] text-center text-neutral-400">
@@ -1097,7 +1097,7 @@ export default function OwnerDashboard({
                   </button>
                   <div>
                     <h4 className="text-sm font-bold text-neutral-100">เพิ่มสมาชิกใหม่ของร้าน</h4>
-                    <p className="text-[10px] text-neutral-400 mt-1">ใช้สำหรับเพิ่มลูกค้าที่สมัครหน้าร้านก่อนเชื่อม LINE Login จริง</p>
+                    <p className="text-[10px] text-slate-600 mt-1">ใช้สำหรับเพิ่มลูกค้าที่สมัครหน้าร้านก่อนเชื่อม LINE Login จริง</p>
                   </div>
                   <div className="space-y-3">
                     <div className="space-y-1">
@@ -1158,7 +1158,7 @@ export default function OwnerDashboard({
         {activeTab === 'rewards' && (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="text-xs font-bold text-neutral-300 uppercase font-mono tracking-wider">บัญชีคูปองพรีเมี่ยมของร้าน</h3>
+              <h3 className="text-xs font-bold text-slate-700 uppercase font-mono tracking-wider">บัญชีคูปองพรีเมี่ยมของร้าน</h3>
               <button 
                 onClick={openAddReward}
                 className="bg-yellow-500 hover:bg-yellow-600 text-neutral-950 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1 cursor-pointer transition active:scale-95"
@@ -1169,14 +1169,14 @@ export default function OwnerDashboard({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {rewards.map(rew => (
-                <div key={rew.id} className="bg-neutral-950 border border-neutral-850 p-3.5 rounded-2xl flex gap-3">
+                <div key={rew.id} className="bg-white border border-slate-200 p-3.5 rounded-2xl flex gap-3 shadow-sm">
                   <img src={rew.image} alt={rew.name} className="w-20 h-20 rounded-xl object-cover flex-shrink-0" referrerPolicy="no-referrer" />
                   <div className="flex-1 flex flex-col justify-between min-w-0">
                     <div className="space-y-0.5">
-                      <h4 className="text-xs font-bold text-neutral-100 truncate">{rew.name}</h4>
-                      <p className="text-[10px] text-neutral-400 line-clamp-1">{rew.description}</p>
+                      <h4 className="text-xs font-bold text-slate-900 truncate">{rew.name}</h4>
+                      <p className="text-[10px] text-slate-600 line-clamp-1">{rew.description}</p>
                       <p className="text-[10px] font-semibold text-yellow-500 mt-1">ใช้แต้ม : {rew.pointsCost} แต้ม • สต็อก: {rew.stock} ชิ้น</p>
-                      <span className={`inline-flex w-fit mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${rew.isAvailable ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-neutral-800 text-neutral-500 border-neutral-700'}`}>
+                      <span className={`inline-flex w-fit mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${rew.isAvailable ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
                         {rew.isAvailable ? 'แสดงบนหน้าลูกค้า' : 'ปิดการแสดงผล'}
                       </span>
                     </div>
@@ -1184,13 +1184,13 @@ export default function OwnerDashboard({
                     <div className="flex justify-end gap-1.5 mt-2">
                       <button 
                         onClick={() => handleToggleRewardAvailability(rew.id)}
-                        className="bg-neutral-850 hover:bg-neutral-800 text-neutral-350 px-2 py-1.5 rounded-lg active:scale-90 transition cursor-pointer text-[9px] font-bold"
+                        className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-900 px-2.5 py-1.5 rounded-lg active:scale-90 transition cursor-pointer text-[10px] font-black shadow-sm"
                       >
                         {rew.isAvailable ? 'ปิด' : 'เปิด'}
                       </button>
                       <button 
                         onClick={() => openEditReward(rew)}
-                        className="bg-neutral-850 hover:bg-neutral-800 text-neutral-350 p-1.5 rounded-lg active:scale-90 transition cursor-pointer"
+                        className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-800 p-1.5 rounded-lg active:scale-90 transition cursor-pointer shadow-sm"
                       >
                         <Edit className="w-3.5 h-3.5" />
                       </button>
@@ -1205,7 +1205,7 @@ export default function OwnerDashboard({
                 </div>
               ))}
               {rewards.length === 0 && (
-                <div className="md:col-span-2 py-12 text-center bg-neutral-950 rounded-2xl border border-neutral-850 text-neutral-500 font-sans text-xs">
+                <div className="md:col-span-2 py-12 text-center bg-slate-50 rounded-2xl border border-slate-200 text-slate-500 font-sans text-xs">
                   ยังไม่มีของรางวัลของร้านนี้ กด “เพิ่มของรางวัลใหม่” เพื่อเริ่มสร้างรายการแลกแต้มจริง
                 </div>
               )}
@@ -1315,8 +1315,8 @@ export default function OwnerDashboard({
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <div>
-                <h3 className="text-xs font-bold text-neutral-300 uppercase font-mono tracking-wider">แคมเปญกระตุ้นยอดขายสะสม</h3>
-                <p className="text-[10px] text-neutral-400">โปรโมชั่นที่ประกาศหน้าบ้านของคุณจะนำเสนอในหน้าจอ Line OA ในวันเดียวกัน</p>
+                <h3 className="text-xs font-bold text-slate-700 uppercase font-mono tracking-wider">แคมเปญกระตุ้นยอดขายสะสม</h3>
+                <p className="text-[10px] text-slate-600">โปรโมชั่นที่ประกาศหน้าบ้านของคุณจะนำเสนอในหน้าจอ Line OA ในวันเดียวกัน</p>
               </div>
               <button 
                 onClick={() => setShowBannerModal(true)}
@@ -1344,7 +1344,7 @@ export default function OwnerDashboard({
                         </button>
                       </div>
                     </div>
-                    <p className="text-[10px] text-neutral-400 leading-relaxed">{ban.description}</p>
+                    <p className="text-[10px] text-slate-600 leading-relaxed">{ban.description}</p>
                     <div className="text-[9px] text-neutral-500 font-mono flex gap-3 pt-1">
                       <span>สิ้นสุดแคมเปญ: {new Date(ban.expirationDate).toLocaleDateString('th-TH')}</span>
                     </div>
@@ -1353,7 +1353,7 @@ export default function OwnerDashboard({
               ))}
 
               {banners.length === 0 && (
-                <div className="py-12 text-center bg-neutral-950 rounded-2xl border border-neutral-850 text-neutral-500 font-sans text-xs">
+                <div className="py-12 text-center bg-slate-50 rounded-2xl border border-slate-200 text-slate-500 font-sans text-xs">
                   ยังไม่ได้สร้างโปรโมชั่นหรือโพสต์โฆษณาใดๆ ในปัจจุบัน
                 </div>
               )}
@@ -1443,8 +1443,8 @@ export default function OwnerDashboard({
         {activeTab === 'generator' && (
           <div className="space-y-6">
             <div className="space-y-1">
-              <h3 className="text-xs font-bold text-neutral-300 uppercase font-mono tracking-wider">ระบบสร้างลิ้งก์และ QR Code แจกแต้มด่วน</h3>
-              <p className="text-[10px] text-neutral-400">กำหนดพิกัดความเหมาะสมของคะแนนแล้วสร้างรูปคิวอาร์ แปะหน้าเครื่องคิดเงินหน้าร้านเพื่อกระตุ้นให้ลูกค้ากรอกสแกนรับแต้ม</p>
+              <h3 className="text-xs font-bold text-slate-700 uppercase font-mono tracking-wider">ระบบสร้างลิ้งก์และ QR Code แจกแต้มด่วน</h3>
+              <p className="text-[10px] text-slate-600">กำหนดพิกัดความเหมาะสมของคะแนนแล้วสร้างรูปคิวอาร์ แปะหน้าเครื่องคิดเงินหน้าร้านเพื่อกระตุ้นให้ลูกค้ากรอกสแกนรับแต้ม</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
@@ -1454,7 +1454,7 @@ export default function OwnerDashboard({
                 <span className="text-[11px] font-bold text-yellow-500 font-mono uppercase block font-sans">การตั้งค่าพารามิเตอร์แต้มสแกน</span>
                 
                 <div className="space-y-1 flex flex-col">
-                  <label className="text-[10px] text-neutral-400 block font-sans">ปริมาณแต้มที่ต้องการแจก (Points) :</label>
+                  <label className="text-[10px] text-slate-600 block font-sans">ปริมาณแต้มที่ต้องการแจก (Points) :</label>
                   <select 
                     value={generatePoints}
                     onChange={(e) => setGeneratePoints(parseInt(e.target.value))}
@@ -1469,7 +1469,7 @@ export default function OwnerDashboard({
                 </div>
 
                 <div className="space-y-1 font-sans">
-                  <label className="text-[10px] text-neutral-400 block font-sans">คําอธิบายหรือวัตถุประสงค์ในการเติมแต้ม :</label>
+                  <label className="text-[10px] text-slate-600 block font-sans">คําอธิบายหรือวัตถุประสงค์ในการเติมแต้ม :</label>
                   <input 
                     type="text"
                     value={generateDesc}
@@ -1482,7 +1482,7 @@ export default function OwnerDashboard({
 
                 {/* Expiry minute input bounded 1 to 60 */}
                 <div className="space-y-1 font-sans">
-                  <label className="text-[10px] text-neutral-400 block font-sans font-medium">
+                  <label className="text-[10px] text-slate-600 block font-sans font-medium">
                     กำหนดเวลาหมดอายุของลิงก์แอปพลิเคชัน (1 - 60 นาที):
                   </label>
                   <div className="flex items-center gap-2">
@@ -1502,7 +1502,7 @@ export default function OwnerDashboard({
                   <p className="text-[9px] text-neutral-500 italic block mt-1 font-sans">ลิงก์และคิวอาร์นี้จะหมดอายุและใช้ได้เพียง "ครั้งเดียว" เท่านั้นเพื่อความปลอดภัยระดับสถาบัน</p>
                 </div>
 
-                <div className="bg-neutral-900/60 rounded-xl p-3 text-[10px] text-neutral-400 space-y-2 border border-neutral-800/40">
+                <div className="bg-neutral-900/60 rounded-xl p-3 text-[10px] text-slate-600 space-y-2 border border-neutral-800/40">
                   <div className="flex justify-between items-center">
                     <span className="text-yellow-400 font-bold block">🔗 ลิงก์ที่ถูกสร้างอย่างปลอดภัย:</span>
                     {activeCoupon && (
@@ -1583,14 +1583,14 @@ export default function OwnerDashboard({
               <div className="flex justify-between items-center">
                 <div className="space-y-0.5">
                   <span className="text-xs font-bold text-neutral-200">📜 ประวัติข้อมูลลิงก์คูปองระบบสแกนด่วน ({generatedCouponsList.length} รายการ)</span>
-                  <p className="text-[10px] text-neutral-400">ควบคุม ตรวจสอง และยกเลิกรหัสบัตรของขวัญที่ผ่านการแชร์ทางลิงก์อินเตอร์เน็ตในทุกๆ รายการ</p>
+                  <p className="text-[10px] text-slate-600">ควบคุม ตรวจสอง และยกเลิกรหัสบัตรของขวัญที่ผ่านการแชร์ทางลิงก์อินเตอร์เน็ตในทุกๆ รายการ</p>
                 </div>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse font-sans">
                   <thead>
-                    <tr className="border-b border-neutral-850 text-neutral-400 font-bold uppercase tracking-wider font-mono">
+                    <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider font-mono">
                       <th className="pb-2.5 pl-2 text-left">รหัสสกินคูปอง (Coupon Code)</th>
                       <th className="pb-2.5 text-left">คำอธิบายงาน</th>
                       <th className="pb-2.5 text-left">คะแนนบวก</th>
@@ -1600,7 +1600,7 @@ export default function OwnerDashboard({
                       <th className="pb-2.5 text-right pr-2 text-left font-sans">การดำเนินการจัดการ</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-neutral-850/60 font-sans">
+                  <tbody className="divide-y divide-slate-200 font-sans">
                     {generatedCouponsList.map((c: any) => {
                       const isExpired = new Date() > new Date(c.expiresAt);
                       const isUsed = c.isUsed;
@@ -1625,7 +1625,7 @@ export default function OwnerDashboard({
                       }
 
                       return (
-                        <tr key={c.code} className="hover:bg-neutral-900/30">
+                        <tr key={c.code} className="hover:bg-amber-50/50">
                           <td className="py-3 pl-2 font-mono font-bold text-neutral-200">
                             <div className="flex items-center gap-1.5">
                               <span>{c.code}</span>
