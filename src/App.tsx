@@ -11,6 +11,7 @@ import CustomerDashboard from "./components/CustomerDashboard";
 import OwnerDashboard from "./components/OwnerDashboard";
 import WebmasterDashboard from "./components/WebmasterDashboard";
 import { getDefaultShopId, shopSlugToId } from "./lib/shopSlug";
+import { clearLineIdentity } from "./lib/lineAuth";
 import type { LineIdentity } from "./lib/lineAuth";
 import {
   Sparkles,
@@ -80,6 +81,19 @@ export default function App({
     let isMounted = true;
 
     const bootstrap = async () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const shouldResetLine = searchParams.get("resetLine") === "1";
+
+      if (shouldResetLine) {
+        clearLineIdentity();
+        setLineIdentity(null);
+        try {
+          window.sessionStorage.removeItem("im_crm_liff_login_pending_v1");
+        } catch {
+          // ignore storage issues inside embedded browsers
+        }
+      }
+
       // Bootstrap CRM state from Neon first. If Neon is not configured or unreachable,
       // the app continues with the local browser cache fallback.
       const result = await initializeDatabase();
@@ -98,7 +112,6 @@ export default function App({
       // /customer/im-sticker?tab=rewards
       // /customer/im-sticker?tab=history
       // /customer/im-sticker?code=CPN-IS-50-ABCDE
-      const searchParams = new URLSearchParams(window.location.search);
       const code = searchParams.get("code");
       const tabParam = searchParams.get("tab") as CustomerTab | null;
       const allowedTabs: CustomerTab[] = ["home", "rewards", "code", "history", "profile"];
@@ -114,7 +127,7 @@ export default function App({
         setActiveRole("customer");
       }
 
-      if (code || tabParam) {
+      if (code || tabParam || shouldResetLine) {
         // Clean query parameter from address bar after bootstrap to avoid re-triggering on refresh.
         try {
           const cleanUrl = window.location.origin + window.location.pathname;

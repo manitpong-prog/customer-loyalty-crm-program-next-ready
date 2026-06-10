@@ -1,6 +1,6 @@
 "use client";
 
-import React, { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, BadgeCheck, Link2, LogIn, LogOut, ShieldCheck, Smartphone, UserCheck } from "lucide-react";
 import {
   clearLineIdentity,
@@ -53,6 +53,51 @@ function loadLiffSdk() {
   });
 }
 
+const liffLoginPendingKey = "im_crm_liff_login_pending_v1";
+
+function getCleanRedirectUri() {
+  if (typeof window === "undefined") return "";
+
+  const url = new URL(window.location.href);
+  [
+    "liff.state",
+    "access_token",
+    "id_token",
+    "state",
+    "code",
+    "friendship_status_changed",
+    "error",
+    "error_description",
+  ].forEach((key) => url.searchParams.delete(key));
+
+  return url.toString();
+}
+
+function clearLiffLoginPending() {
+  try {
+    window.sessionStorage.removeItem(liffLoginPendingKey);
+  } catch {
+    // Some embedded browsers can block sessionStorage.
+  }
+}
+
+function markLiffLoginPending() {
+  try {
+    window.sessionStorage.setItem(liffLoginPendingKey, "1");
+  } catch {
+    // Some embedded browsers can block sessionStorage.
+  }
+}
+
+function wasLiffLoginPending() {
+  try {
+    return window.sessionStorage.getItem(liffLoginPendingKey) === "1";
+  } catch {
+    return false;
+  }
+}
+
+
 export default function LineLoginPanel({
   context,
   shopId,
@@ -66,6 +111,7 @@ export default function LineLoginPanel({
   const [statusMessage, setStatusMessage] = useState("");
   const [linkCode, setLinkCode] = useState("");
   const [linking, setLinking] = useState(false);
+  const autoAuthTriedRef = useRef(false);
 
   const isOwner = useMemo(
     () => Boolean(identity?.ownerShopIds?.includes(shopId)),
@@ -106,14 +152,18 @@ export default function LineLoginPanel({
     }
   }, [publishIdentity, refreshOwnerStatus]);
 
-  const loginWithLine = async () => {
+  const authenticateCurrentLineSession = useCallback(async (options?: { allowRedirect?: boolean; silent?: boolean }) => {
     if (!liffId) {
-      setStatusMessage("ยังไม่ได้ตั้งค่า NEXT_PUBLIC_LINE_LIFF_ID จึงยังล็อกอิน LINE จริงไม่ได้");
+      if (!options?.silent) {
+        setStatusMessage("ยังไม่ได้ตั้งค่า NEXT_PUBLIC_LINE_LIFF_ID จึงยังล็อกอิน LINE จริงไม่ได้");
+      }
       return;
     }
 
-    setIsLoading(true);
-    setStatusMessage("");
+    if (!options?.silent) {
+      setIsLoading(true);
+      setStatusMessage("");
+    }
 
     try {
       await loadLiffSdk();
@@ -125,9 +175,23 @@ export default function LineLoginPanel({
       await window.liff.init({ liffId });
 
       if (!window.liff.isLoggedIn()) {
-        window.liff.login({ redirectUri: window.location.href });
+        if (!options?.allowRedirect) {
+          return;
+        }
+
+        if (wasLiffLoginPending()) {
+          clearLiffLoginPending();
+          throw new Error(
+            "LINE Login กลับมาที่เว็บแล้ว แต่ยังไม่พบ session ของ LINE โปรดตรวจว่า NEXT_PUBLIC_LINE_LIFF_ID ใน Vercel ตรงกับ LIFF ID ที่เปิดอยู่ และกด Redeploy แล้ว",
+          );
+        }
+
+        markLiffLoginPending();
+        window.liff.login({ redirectUri: getCleanRedirectUri() });
         return;
       }
+
+      clearLiffLoginPending();
 
       const [profile, idToken] = await Promise.all([
         window.liff.getProfile(),
@@ -154,14 +218,35 @@ export default function LineLoginPanel({
       }
 
       publishIdentity(result.identity);
-      setStatusMessage(result.identity.verified
-        ? "ยืนยันตัวตน LINE สำเร็จ"
-        : "บันทึกโปรไฟล์ LINE สำเร็จ แต่ยังไม่ได้ verify ID token ฝั่ง server");
+      if (!options?.silent) {
+        setStatusMessage(result.identity.verified
+          ? "ยืนยันตัวตน LINE สำเร็จ"
+          : "บันทึกโปรไฟล์ LINE สำเร็จ แต่ยังไม่ได้ verify ID token ฝั่ง server");
+      }
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "เข้าสู่ระบบด้วย LINE ไม่สำเร็จ");
+      if (!options?.silent) {
+        setStatusMessage(error instanceof Error ? error.message : "เข้าสู่ระบบด้วย LINE ไม่สำเร็จ");
+      }
     } finally {
-      setIsLoading(false);
+      if (!options?.silent) {
+        setIsLoading(false);
+      }
     }
+  }, [context, liffId, publishIdentity, shopId]);
+
+  useEffect(() => {
+    if (!liffId || identity || autoAuthTriedRef.current) return;
+
+    autoAuthTriedRef.current = true;
+
+    // When the page is opened through https://liff.line.me/{LIFF_ID}, LIFF often
+    // already has a LINE session after initialization. In that case, authenticate
+    // quietly without forcing another redirect loop.
+    authenticateCurrentLineSession({ allowRedirect: false, silent: true });
+  }, [authenticateCurrentLineSession, identity, liffId]);
+
+  const loginWithLine = async () => {
+    await authenticateCurrentLineSession({ allowRedirect: true });
   };
 
   const logout = () => {

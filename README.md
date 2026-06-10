@@ -182,3 +182,8 @@ MERCHANT_OWNER_LINK_CODE=""
 ```
 
 อ่านรายละเอียดที่ `docs/LINE_AUTH_FOUNDATION_PHASE5D_TH.md`
+
+
+## Phase 5D.1 — LIFF Login Stability Fix
+
+แก้ปัญหา Login with LINE redirect วนและเพิ่ม recovery URL `?resetLine=1` สำหรับล้าง LINE session ชั่วคราว ดูรายละเอียดใน `docs/LIFF_LOGIN_STABILITY_FIX_PHASE5D1_TH.md`.
