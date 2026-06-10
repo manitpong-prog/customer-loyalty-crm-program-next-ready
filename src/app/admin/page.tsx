@@ -1,10 +1,10 @@
-import App from '../../App';
 import AccessGate from '../../components/AccessGate';
+import PlatformAdminDashboard from '../../components/PlatformAdminDashboard';
 
 export default function AdminPage() {
   return (
     <AccessGate area="admin">
-      <App initialRole="webmaster" mode="admin" />
+      <PlatformAdminDashboard />
     </AccessGate>
   );
 }

@@ -32,6 +32,7 @@ DATABASE_URL="postgresql://..."
 DATABASE_URL_UNPOOLED="postgresql://..."
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
 NEXT_PUBLIC_DEFAULT_SHOP_ID="im_sticker"
+NEXT_PUBLIC_DEFAULT_SHOP_SLUG="im-sticker"
 CRM_AUTO_SEED="pilot"
 ALLOW_DB_RESET="false"
 NEXT_PUBLIC_MERCHANT_ACCESS_PIN="1234"
@@ -98,4 +99,19 @@ NEXT_PUBLIC_DEFAULT_SHOP_SLUG=im-sticker
 ```
 
 หน้า Landing จะพาเจ้าของร้านไปที่ route ของร้าน default โดยใช้ `NEXT_PUBLIC_DEFAULT_SHOP_SLUG`
+
+## Phase 4D: Admin Dashboard Cleanup
+
+ปรับ `/admin` ให้เป็น Platform Admin Dashboard แบบใช้งานจริงเบื้องต้นแทนหน้า webmaster mock-up เดิม โดยยังถูกกั้นด้วย Admin PIN เหมือนเดิม
+
+สิ่งที่หน้า `/admin` แสดง:
+
+- สถานะ Neon จาก `/api/db/health`
+- snapshot ข้อมูลจาก `/api/db/snapshot`
+- จำนวนร้านค้า ลูกค้า rewards banners transactions และ coupons
+- ลิงก์สำหรับ LINE OA Pilot: `/customer/im-sticker`
+- ลิงก์หลังบ้านร้านค้า: `/merchant/im-sticker`
+- ทางลัดเปิด health/snapshot JSON และ `/demo`
+
+รายละเอียดเพิ่มเติมดู `docs/ADMIN_DASHBOARD_PHASE4D_TH.md`
 
