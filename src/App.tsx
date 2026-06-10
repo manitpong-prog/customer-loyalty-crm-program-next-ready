@@ -56,6 +56,12 @@ export default function App({
   };
 
   useEffect(() => {
+    if (!isDemoMode && selectedShopId !== defaultShopId) {
+      setSelectedShopId(defaultShopId);
+    }
+  }, [defaultShopId, isDemoMode, selectedShopId]);
+
+  useEffect(() => {
     let isMounted = true;
 
     const bootstrap = async () => {
@@ -269,6 +275,7 @@ export default function App({
               selectedShopId={selectedShopId}
               setSelectedShopId={setSelectedShopId}
               onTriggerSimulatedLink={handleTriggerSimulatedLink}
+              displayMode={isDemoMode ? "demo" : "production"}
             />
           </div>
         )}

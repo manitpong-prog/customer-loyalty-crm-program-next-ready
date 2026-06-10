@@ -39,6 +39,13 @@ import {
   getGeneratedCoupons,
   saveGeneratedCoupons,
 } from "../data/mockData";
+import {
+  assertCouponBelongsToShop,
+  filterBannersByShop,
+  filterCustomersByShop,
+  filterRewardsByShop,
+  filterTransactionsByShop,
+} from "../lib/shopScope";
 
 interface CustomerDashboardProps {
   key?: string;
@@ -102,7 +109,7 @@ export default function CustomerDashboard({
         (c: any) => c.code.toUpperCase() === codeClean,
       );
 
-      if (matched) {
+      if (matched && assertCouponBelongsToShop(matched.shopId, selectedShopId)) {
         setPendingCoupon(matched);
         setShowCouponConfirm(true);
       } else {
@@ -131,27 +138,40 @@ export default function CustomerDashboard({
 
   // Load latest data on mount and tab switch
   const loadData = () => {
+    const allTransactions = getTransactions();
+    const scopedTransactions = filterTransactionsByShop(allTransactions, selectedShopId);
     const allCustomers = getCustomers();
+    const scopedCustomers = filterCustomersByShop(
+      allCustomers,
+      selectedShopId,
+      allTransactions,
+      true,
+    );
     const currCust =
-      allCustomers.find((c) => c.id === currentCustomerId) || allCustomers[0];
+      scopedCustomers.find((c) => c.id === currentCustomerId) ||
+      allCustomers.find((c) => c.id === currentCustomerId) ||
+      scopedCustomers[0] ||
+      allCustomers[0];
     setCustomer(currCust);
 
-    // Get approved shops
-    const allShops = getShops().filter(
+    // Production route is locked to one shop slug. Demo can still switch shops.
+    const approvedShops = getShops().filter(
       (s) => s.registrationStatus === "approved",
     );
-    setShops(allShops);
+    const scopedShops = isProductionView
+      ? approvedShops.filter((s) => s.id === selectedShopId)
+      : approvedShops;
+    setShops(scopedShops.length > 0 ? scopedShops : approvedShops);
 
-    // Keep caffeine craft as default or switch to the first approved
-    if (allShops.length > 0 && !allShops.some((s) => s.id === selectedShopId)) {
-      setSelectedShopId(allShops[0].id);
+    if (!isProductionView && approvedShops.length > 0 && !approvedShops.some((s) => s.id === selectedShopId)) {
+      setSelectedShopId(approvedShops[0].id);
     }
 
     setRewards(
-      getRewards().filter((r) => r.shopId === selectedShopId && r.isAvailable),
+      filterRewardsByShop(getRewards(), selectedShopId).filter((r) => r.isAvailable),
     );
-    setBanners(getBanners());
-    setTransactions(getTransactions().filter((t) => t.userId === currCust.id));
+    setBanners(filterBannersByShop(getBanners(), selectedShopId, true));
+    setTransactions(scopedTransactions.filter((t) => t.userId === currCust.id));
   };
 
   useEffect(() => {
@@ -219,6 +239,11 @@ export default function CustomerDashboard({
     );
 
     if (matchedCoupon) {
+      if (!assertCouponBelongsToShop(matchedCoupon.shopId, selectedShopId)) {
+        setErrorMessage("รหัสนี้เป็นของร้านอื่น ไม่สามารถใช้กับร้านนี้ได้");
+        setTimeout(() => setErrorMessage(""), 3500);
+        return;
+      }
       if (matchedCoupon.isUsed) {
         setErrorMessage(
           "ลิงก์หรือรหัสรวบรวมแต้มนี้ถูกใช้ไปแล้ว คูปองสามารถสะสมสิทธิ์ได้ครั้งเดียว!",
@@ -242,6 +267,12 @@ export default function CustomerDashboard({
 
     let pointsEarned = 0;
     let description = "";
+
+    if (isProductionView) {
+      setErrorMessage("รหัสนี้ไม่อยู่ในระบบของร้านนี้ กรุณารับรหัสจากร้านค้าอีกครั้ง");
+      setTimeout(() => setErrorMessage(""), 3500);
+      return;
+    }
 
     if (code === "WELCOME50") {
       pointsEarned = 50;
@@ -327,6 +358,12 @@ export default function CustomerDashboard({
     }
 
     const matched = coupons[matchedIdx];
+    if (!assertCouponBelongsToShop(matched.shopId, selectedShopId)) {
+      setErrorMessage("รหัสนี้เป็นของร้านอื่น ไม่สามารถใช้กับร้านนี้ได้");
+      setShowCouponConfirm(false);
+      return;
+    }
+
     if (matched.isUsed) {
       setErrorMessage("รหัสสะสมแต้มนี้ถูกใช้งานไปก่อนหน้าแล้ว");
       setShowCouponConfirm(false);
@@ -751,8 +788,8 @@ export default function CustomerDashboard({
             {/* Active Store Promotions slider */}
             <div className="space-y-3">
               {banners.map((ban) => {
-                const isShopPromo = ban.shopId === selectedShopId || !ban.isAd;
-                if (!isShopPromo) return null;
+                const isVisiblePromo = ban.isAd || ban.shopId === selectedShopId;
+                if (!isVisiblePromo) return null;
                 return (
                   <div
                     key={ban.id}

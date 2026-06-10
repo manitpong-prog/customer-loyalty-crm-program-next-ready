@@ -90,8 +90,14 @@ export async function ensureCrmSchema() {
     lifetime_points integer not null default 0 check (lifetime_points >= 0),
     tier text not null default 'Silver' check (tier in ('Silver', 'Gold', 'Platinum')),
     created_at timestamptz not null default now(),
+    shop_ids jsonb not null default '[]'::jsonb,
     updated_at timestamptz not null default now()
   )`;
+
+  await sql`alter table customers add column if not exists shop_ids jsonb not null default '[]'::jsonb`;
+
+  // Backfill the current pilot customer created in earlier phases so Phase 5A scoping works without resetting Neon.
+  await sql`update customers set shop_ids = jsonb_build_array('im_sticker') where id = 'cust_pilot_001' and jsonb_array_length(shop_ids) = 0 and exists (select 1 from shops where id = 'im_sticker')`;
 
   await sql`create table if not exists rewards (
     id text primary key,
@@ -199,7 +205,7 @@ export async function getCrmSnapshot(): Promise<CrmSnapshot> {
 
   const [shops, customers, rewards, banners, transactions, coupons] = await Promise.all([
     sql`select id, name, description, logo, category, points_rate as "pointsRate", is_active as "isActive", registration_status as "registrationStatus", phone, created_at as "createdAt" from shops order by created_at asc`,
-    sql`select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt" from customers order by created_at asc`,
+    sql`select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds" from customers order by created_at asc`,
     sql`select id, name, image, description, points_cost as "pointsCost", stock, is_available as "isAvailable", shop_id as "shopId" from rewards order by created_at asc`,
     sql`select id, title, image, description, is_ad as "isAd", shop_id as "shopId", url, expiration_date as "expirationDate" from promo_banners order by created_at asc`,
     sql`select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", created_at as "createdAt" from transactions order by created_at desc`,
@@ -261,9 +267,9 @@ async function syncCustomers(rows: Customer[]) {
   if (!rows.length) return;
 
   await sql`
-    insert into customers (id, name, phone, line_name, line_id, avatar, current_points, lifetime_points, tier, created_at, updated_at)
-    select id, name, coalesce(phone, ''), coalesce("lineName", ''), coalesce("lineId", ''), coalesce(avatar, ''), coalesce("currentPoints", 0), coalesce("lifetimePoints", 0), coalesce(tier, 'Silver'), coalesce("createdAt"::timestamptz, now()), now()
-    from jsonb_to_recordset(${payload}::jsonb) as x(id text, name text, phone text, "lineName" text, "lineId" text, avatar text, "currentPoints" integer, "lifetimePoints" integer, tier text, "createdAt" text)
+    insert into customers (id, name, phone, line_name, line_id, avatar, current_points, lifetime_points, tier, created_at, shop_ids, updated_at)
+    select id, name, coalesce(phone, ''), coalesce("lineName", ''), coalesce("lineId", ''), coalesce(avatar, ''), coalesce("currentPoints", 0), coalesce("lifetimePoints", 0), coalesce(tier, 'Silver'), coalesce("createdAt"::timestamptz, now()), coalesce("shopIds", '[]'::jsonb), now()
+    from jsonb_to_recordset(${payload}::jsonb) as x(id text, name text, phone text, "lineName" text, "lineId" text, avatar text, "currentPoints" integer, "lifetimePoints" integer, tier text, "createdAt" text, "shopIds" jsonb)
     on conflict (id) do update set
       name = excluded.name,
       phone = excluded.phone,
@@ -273,6 +279,7 @@ async function syncCustomers(rows: Customer[]) {
       current_points = excluded.current_points,
       lifetime_points = excluded.lifetime_points,
       tier = excluded.tier,
+      shop_ids = excluded.shop_ids,
       updated_at = now()
   `;
 }

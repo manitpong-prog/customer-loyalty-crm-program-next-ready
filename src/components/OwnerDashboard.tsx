@@ -11,6 +11,15 @@ import {
   getRewards, saveRewards, getTransactions, saveTransactions,
   getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons
 } from '../data/mockData';
+import { shopIdToSlug } from '../lib/shopSlug';
+import {
+  filterBannersByShop,
+  filterCouponsByShop,
+  filterCustomersByShop,
+  filterRewardsByShop,
+  filterTransactionsByShop,
+  scopeApprovedShops,
+} from '../lib/shopScope';
 
 interface OwnerDashboardProps {
   key?: string;
@@ -18,14 +27,17 @@ interface OwnerDashboardProps {
   selectedShopId: string;
   setSelectedShopId: (id: string) => void;
   onTriggerSimulatedLink?: (code: string) => void;
+  displayMode?: 'demo' | 'production';
 }
 
 export default function OwnerDashboard({
   onDataChange,
   selectedShopId,
   setSelectedShopId,
-  onTriggerSimulatedLink
+  onTriggerSimulatedLink,
+  displayMode = 'demo'
 }: OwnerDashboardProps) {
+  const isProductionView = displayMode === 'production';
   // Navigation tabs: 'approvals', 'customers', 'rewards', 'promotions', 'generator'
   const [activeTab, setActiveTab] = useState<'approvals' | 'customers' | 'rewards' | 'promotions' | 'generator'>('approvals');
   const [approvalsSubTab, setApprovalsSubTab] = useState<'queue' | 'history'>('queue');
@@ -83,8 +95,7 @@ export default function OwnerDashboard({
     saveGeneratedCoupons(coupons);
 
     // Construct app's URL
-    const currentOrigin = window.location.origin + window.location.pathname;
-    const generatedUrl = `${currentOrigin}?code=${uniqueCode}`;
+    const generatedUrl = `${window.location.origin}/customer/${shopIdToSlug(selectedShopId)}?code=${uniqueCode}`;
 
     setGeneratedQRValue(generatedUrl);
     setActiveCoupon(newCoupon);
@@ -130,15 +141,16 @@ export default function OwnerDashboard({
 
   // Load latest data on focus or change
   const loadData = () => {
-    setShops(getShops().filter(s => s.registrationStatus === 'approved'));
-    setCustomers(getCustomers());
-    setRewards(getRewards().filter(r => r.shopId === selectedShopId));
-    setBanners(getBanners().filter(b => b.shopId === selectedShopId));
-    setTransactions(getTransactions().filter(t => t.shopId === selectedShopId));
+    const allShops = getShops();
+    const allTransactions = getTransactions();
+    setShops(scopeApprovedShops(allShops, selectedShopId, isProductionView));
+    setCustomers(filterCustomersByShop(getCustomers(), selectedShopId, allTransactions, true));
+    setRewards(filterRewardsByShop(getRewards(), selectedShopId));
+    setBanners(filterBannersByShop(getBanners(), selectedShopId, false));
+    setTransactions(filterTransactionsByShop(allTransactions, selectedShopId));
 
     try {
-      const coupons = getGeneratedCoupons();
-      const shopCoupons = coupons.filter((c: any) => c.shopId === selectedShopId);
+      const shopCoupons = filterCouponsByShop(getGeneratedCoupons(), selectedShopId);
       shopCoupons.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setGeneratedCouponsList(shopCoupons);
     } catch (e) {
@@ -234,8 +246,8 @@ export default function OwnerDashboard({
 
   // 3. GENERATED LINK SIMULATION (Adds points to current user context immediately!)
   const simulateCustomerScanned = () => {
-    const allCustomers = getCustomers();
-    // Default is U11aa (which is the customer tab user)
+    const allCustomers = filterCustomersByShop(getCustomers(), selectedShopId, getTransactions(), true);
+    // Pick the first member scoped to the active shop only.
     const victim = allCustomers[0];
     if (!victim) {
       showStatus('❌ ไม่ลองแต้มเนื่องจากไม่มีโปรไฟล์ลูกค้าจำลองในฐานข้อมูล');
@@ -467,16 +479,24 @@ export default function OwnerDashboard({
 
         {/* Change Store selector inside owner view */}
         <div className="flex items-center gap-2.5">
-          <span className="text-xs text-slate-500 font-black whitespace-nowrap">เปลี่ยนร้านค้าจำลองแอดมิน:</span>
-          <select 
-            value={selectedShopId}
-            onChange={(e) => setSelectedShopId(e.target.value)}
-            className="bg-slate-50 border border-slate-200 px-3.5 py-1.5 rounded-xl text-xs text-slate-800 font-bold max-w-[190px] cursor-pointer outline-none focus:ring-1 focus:ring-amber-500"
-          >
-            {shops.map(s => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </select>
+          {isProductionView ? (
+            <span className="text-[11px] text-emerald-700 font-black whitespace-nowrap bg-emerald-50 border border-emerald-200 px-3.5 py-1.5 rounded-xl">
+              ล็อกข้อมูลร้าน: {activeShopDetail?.name || selectedShopId}
+            </span>
+          ) : (
+            <>
+              <span className="text-xs text-slate-500 font-black whitespace-nowrap">เปลี่ยนร้านค้าจำลองแอดมิน:</span>
+              <select 
+                value={selectedShopId}
+                onChange={(e) => setSelectedShopId(e.target.value)}
+                className="bg-slate-50 border border-slate-200 px-3.5 py-1.5 rounded-xl text-xs text-slate-800 font-bold max-w-[190px] cursor-pointer outline-none focus:ring-1 focus:ring-amber-500"
+              >
+                {shops.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
 
       </div>
@@ -490,7 +510,7 @@ export default function OwnerDashboard({
           </p>
         </div>
         <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 shadow-3xs">
-          <span className="text-[10px] text-slate-500 font-extrabold font-sans uppercase block">สมาชิกทั้งหมดของแบรนด์</span>
+          <span className="text-[10px] text-slate-500 font-extrabold font-sans uppercase block">สมาชิกของร้านนี้</span>
           <p className="text-2xl font-black font-mono text-slate-855 mt-1">
             {customers.length} <span className="text-[11px] font-bold text-slate-500 font-sans">คน</span>
           </p>

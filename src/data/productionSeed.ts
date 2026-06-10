@@ -27,6 +27,7 @@ export const PILOT_CUSTOMERS: Customer[] = [
     lifetimePoints: 0,
     tier: 'Silver',
     createdAt: new Date('2026-06-09T00:00:00.000Z').toISOString(),
+    shopIds: ['im_sticker'],
   },
 ];
 

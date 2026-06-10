@@ -115,3 +115,16 @@ NEXT_PUBLIC_DEFAULT_SHOP_SLUG=im-sticker
 
 รายละเอียดเพิ่มเติมดู `docs/ADMIN_DASHBOARD_PHASE4D_TH.md`
 
+
+
+## Phase 5A - Shop-scoped Data Filtering
+
+เพิ่มการกรองข้อมูลตามร้านสำหรับ route production:
+
+- `/customer/im-sticker` ใช้ข้อมูลร้าน `im_sticker` เท่านั้น
+- `/merchant/im-sticker` ถูกล็อกกับร้าน `im_sticker` และไม่แสดงตัวเลือกเปลี่ยนร้าน
+- coupon แจกแต้มตรวจ `shopId` ก่อนรับแต้ม
+- ลิงก์แจกแต้มจากหลังบ้านชี้ไป `/customer/im-sticker?code=...`
+- เพิ่ม `customers.shop_ids` ใน Neon schema เพื่อเตรียมรองรับสมาชิกแยกร้าน
+
+ดูรายละเอียด: `docs/SHOP_SCOPED_DATA_PHASE5A_TH.md`

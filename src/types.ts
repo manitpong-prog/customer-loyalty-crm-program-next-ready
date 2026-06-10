@@ -24,6 +24,8 @@ export interface Customer {
   lifetimePoints: number;
   tier: TierType;
   createdAt: string;
+  /** Shop membership ids. Phase 5A uses this to prevent customer data from leaking across shop routes. */
+  shopIds?: string[];
 }
 
 export interface Reward {
