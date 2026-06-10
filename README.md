@@ -128,3 +128,17 @@ NEXT_PUBLIC_DEFAULT_SHOP_SLUG=im-sticker
 - เพิ่ม `customers.shop_ids` ใน Neon schema เพื่อเตรียมรองรับสมาชิกแยกร้าน
 
 ดูรายละเอียด: `docs/SHOP_SCOPED_DATA_PHASE5A_TH.md`
+
+## Phase 5B - Merchant Real CRUD
+
+ปรับ `/merchant/im-sticker` ให้ใช้งานหน้าร้านจริงขึ้น:
+
+- เพิ่มสมาชิกใหม่จากหลังบ้านร้านค้า
+- บันทึกยอดซื้อและแจกแต้มตาม `pointsRate` ของร้าน
+- บันทึก transaction ลง Neon ผ่าน sync API
+- เพิ่ม/แก้ไข/ลบ/เปิด-ปิดของรางวัล
+- สร้างโปรโมชั่นร้าน
+- สร้างลิงก์แจกแต้มแบบใช้ครั้งเดียวโดยกดปุ่มสร้างเท่านั้น
+- แก้ลิงก์คูปองให้ชี้ไป `/customer/im-sticker?code=...`
+
+ดูรายละเอียด: `docs/MERCHANT_CRUD_PHASE5B_TH.md`

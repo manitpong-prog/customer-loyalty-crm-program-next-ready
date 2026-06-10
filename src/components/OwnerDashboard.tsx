@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Store, QrCode, Users, Plus, Edit, Trash2, Check, X,
   ShoppingBag, Award, PlusCircle, MinusCircle, Search, 
-  Image, HelpCircle, Calendar, RefreshCw, AlertCircle, FileText, Copy
+  Image, HelpCircle, Calendar, RefreshCw, AlertCircle, FileText, Copy, UserPlus, ReceiptText
 } from 'lucide-react';
 import { Shop, Customer, Reward, Transaction, PromoBanner } from '../types';
 import { 
@@ -132,6 +132,15 @@ export default function OwnerDashboard({
   const [adjustType, setAdjustType] = useState<'add' | 'deduct'>('add');
   const [adjustReason, setAdjustReason] = useState('ปรับคะแนนกรณีพิเศษหน้าร้าน');
 
+  // Real merchant workflow states: create members and record purchases.
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerPhone, setNewCustomerPhone] = useState('');
+  const [newCustomerLineName, setNewCustomerLineName] = useState('');
+  const [selectedSaleCustomerId, setSelectedSaleCustomerId] = useState('');
+  const [saleAmount, setSaleAmount] = useState(100);
+  const [saleReason, setSaleReason] = useState('บันทึกยอดซื้อหน้าร้าน');
+
   // Promotion Banner creation states
   const [showBannerModal, setShowBannerModal] = useState(false);
   const [newBannerTitle, setNewBannerTitle] = useState('');
@@ -162,16 +171,139 @@ export default function OwnerDashboard({
     loadData();
   }, [selectedShopId, activeTab]);
 
-  // Synchronize dynamic coupon and link on state modification
   useEffect(() => {
-    if (activeTab === 'generator') {
-      generateNewCouponAndLink();
+    if (customers.length > 0 && !customers.some((customer) => customer.id === selectedSaleCustomerId)) {
+      setSelectedSaleCustomerId(customers[0].id);
     }
-  }, [generatePoints, generateDesc, expiryMinutes, selectedShopId, activeTab]);
+  }, [customers, selectedSaleCustomerId]);
+
+  const pointsRate = Math.max(1, activeShopDetail?.pointsRate || 10);
+  const calculatedSalePoints = Math.max(0, Math.floor((Number(saleAmount) || 0) / pointsRate));
+
+  const getTierForLifetime = (lifetimePoints: number): Customer['tier'] => {
+    if (lifetimePoints >= 1000) return 'Platinum';
+    if (lifetimePoints >= 300) return 'Gold';
+    return 'Silver';
+  };
 
   const showStatus = (text: string) => {
     setStatusMsg(text);
     setTimeout(() => setStatusMsg(''), 3000);
+  };
+
+  const handleCreateCustomer = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const trimmedName = newCustomerName.trim();
+    const trimmedPhone = newCustomerPhone.trim();
+    const trimmedLineName = newCustomerLineName.trim();
+
+    if (!trimmedName) {
+      showStatus('❌ กรุณาระบุชื่อลูกค้าก่อนบันทึกสมาชิก');
+      return;
+    }
+
+    const allCustomers = getCustomers();
+    const duplicatedPhone = trimmedPhone && allCustomers.some((customer) => customer.phone === trimmedPhone);
+    if (duplicatedPhone) {
+      showStatus('❌ เบอร์โทรนี้มีอยู่ในระบบแล้ว กรุณาค้นหาสมาชิกเดิมก่อน');
+      return;
+    }
+
+    const newCustomer: Customer = {
+      id: `cust_${Date.now()}`,
+      name: trimmedName,
+      phone: trimmedPhone || '-',
+      lineName: trimmedLineName || trimmedName,
+      lineId: `manual_${Date.now()}`,
+      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(trimmedName)}&background=f59e0b&color=111827`,
+      currentPoints: 0,
+      lifetimePoints: 0,
+      tier: 'Silver',
+      createdAt: new Date().toISOString(),
+      shopIds: [selectedShopId],
+    };
+
+    saveCustomers([...allCustomers, newCustomer]);
+    setSelectedSaleCustomerId(newCustomer.id);
+    setNewCustomerName('');
+    setNewCustomerPhone('');
+    setNewCustomerLineName('');
+    setShowCustomerModal(false);
+    showStatus(`✓ เพิ่มสมาชิก ${newCustomer.name} ให้ร้านนี้เรียบร้อยแล้ว`);
+    onDataChange();
+    loadData();
+  };
+
+  const handleRecordPurchase = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const allCustomers = getCustomers();
+    const customer = allCustomers.find((item) => item.id === selectedSaleCustomerId);
+
+    if (!customer) {
+      showStatus('❌ กรุณาเลือกสมาชิกก่อนบันทึกยอดซื้อ');
+      return;
+    }
+
+    if (calculatedSalePoints <= 0) {
+      showStatus(`❌ ยอดซื้อยังไม่ถึงอัตราแจกแต้มของร้าน (${pointsRate} บาท = 1 แต้ม)`);
+      return;
+    }
+
+    const updatedCustomers = allCustomers.map((item) => {
+      if (item.id !== customer.id) return item;
+
+      const nextLifetime = item.lifetimePoints + calculatedSalePoints;
+      const nextShopIds = Array.from(new Set([...(item.shopIds || []), selectedShopId]));
+
+      return {
+        ...item,
+        currentPoints: item.currentPoints + calculatedSalePoints,
+        lifetimePoints: nextLifetime,
+        tier: getTierForLifetime(nextLifetime),
+        shopIds: nextShopIds,
+      };
+    });
+
+    saveCustomers(updatedCustomers);
+
+    const newTx: Transaction = {
+      id: `tx_${Date.now()}`,
+      userId: customer.id,
+      userName: customer.name,
+      userPhone: customer.phone,
+      shopId: selectedShopId,
+      shopName: activeShopDetail?.name || selectedShopId,
+      type: 'earn',
+      points: calculatedSalePoints,
+      description: `${saleReason || 'บันทึกยอดซื้อหน้าร้าน'}: ยอดซื้อ ${Number(saleAmount).toLocaleString('th-TH')} บาท`,
+      status: 'completed',
+      createdAt: new Date().toISOString(),
+    };
+
+    saveTransactions([newTx, ...getTransactions()]);
+    showStatus(`✓ บันทึกยอดซื้อสำเร็จ: +${calculatedSalePoints} แต้มให้ ${customer.name}`);
+    onDataChange();
+    loadData();
+  };
+
+  const handleToggleRewardAvailability = (rewardId: string) => {
+    const allRewards = getRewards();
+    const reward = allRewards.find((item) => item.id === rewardId && item.shopId === selectedShopId);
+    if (!reward) return;
+
+    const updatedRewards = allRewards.map((item) => {
+      if (item.id === rewardId && item.shopId === selectedShopId) {
+        return { ...item, isAvailable: !item.isAvailable };
+      }
+      return item;
+    });
+
+    saveRewards(updatedRewards);
+    showStatus(reward.isAvailable ? '✓ ปิดการแสดงของรางวัลนี้แล้ว' : '✓ เปิดให้ลูกค้าเห็นของรางวัลนี้แล้ว');
+    onDataChange();
+    loadData();
   };
 
   // 1. APPROVE CUSTOMER CLAIM
@@ -246,9 +378,10 @@ export default function OwnerDashboard({
 
   // 3. GENERATED LINK SIMULATION (Adds points to current user context immediately!)
   const simulateCustomerScanned = () => {
-    const allCustomers = filterCustomersByShop(getCustomers(), selectedShopId, getTransactions(), true);
+    const allCustomers = getCustomers();
+    const scopedCustomers = filterCustomersByShop(allCustomers, selectedShopId, getTransactions(), true);
     // Pick the first member scoped to the active shop only.
-    const victim = allCustomers[0];
+    const victim = scopedCustomers[0];
     if (!victim) {
       showStatus('❌ ไม่ลองแต้มเนื่องจากไม่มีโปรไฟล์ลูกค้าจำลองในฐานข้อมูล');
       return;
@@ -258,11 +391,9 @@ export default function OwnerDashboard({
       if (c.id === victim.id) {
         const newPts = c.currentPoints + generatePoints;
         const newLifetime = c.lifetimePoints + generatePoints;
-        let newTier = c.tier;
-        if (newLifetime >= 1000) newTier = 'Platinum';
-        else if (newLifetime >= 300) newTier = 'Gold';
+        const newTier = getTierForLifetime(newLifetime);
 
-        return { ...c, currentPoints: newPts, lifetimePoints: newLifetime, tier: newTier };
+        return { ...c, currentPoints: newPts, lifetimePoints: newLifetime, tier: newTier, shopIds: Array.from(new Set([...(c.shopIds || []), selectedShopId])) };
       }
       return c;
     });
@@ -306,11 +437,9 @@ export default function OwnerDashboard({
       if (c.id === selectedCustForAdjust.id) {
         const finalPts = c.currentPoints + finalAmount;
         const finalLifetime = adjustType === 'add' ? c.lifetimePoints + adjustPoints : c.lifetimePoints;
-        let newTier = c.tier;
-        if (finalLifetime >= 1000) newTier = 'Platinum';
-        else if (finalLifetime >= 300) newTier = 'Gold';
+        const newTier = getTierForLifetime(finalLifetime);
 
-        return { ...c, currentPoints: finalPts, lifetimePoints: finalLifetime, tier: newTier };
+        return { ...c, currentPoints: finalPts, lifetimePoints: finalLifetime, tier: newTier, shopIds: Array.from(new Set([...(c.shopIds || []), selectedShopId])) };
       }
       return c;
     });
@@ -500,6 +629,12 @@ export default function OwnerDashboard({
         </div>
 
       </div>
+
+      {statusMsg && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800 shadow-sm">
+          {statusMsg}
+        </div>
+      )}
 
       {/* Stats Quick strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -735,7 +870,7 @@ export default function OwnerDashboard({
           <div className="space-y-4">
             
             {/* Search filter bar */}
-            <div className="flex gap-2">
+            <div className="flex flex-col lg:flex-row gap-2">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-500" />
                 <input 
@@ -746,7 +881,58 @@ export default function OwnerDashboard({
                   className="w-full bg-neutral-900 border border-neutral-800 rounded-xl px-9 py-2 text-xs text-white"
                 />
               </div>
+              <button
+                type="button"
+                onClick={() => setShowCustomerModal(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-2 rounded-xl flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
+              >
+                <UserPlus className="w-3.5 h-3.5" /> เพิ่มสมาชิก
+              </button>
             </div>
+
+            <form onSubmit={handleRecordPurchase} className="grid grid-cols-1 lg:grid-cols-12 gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4 text-slate-800">
+              <div className="lg:col-span-4 space-y-1">
+                <label className="text-[10px] font-black text-amber-700 uppercase tracking-wider">เลือกลูกค้า</label>
+                <select
+                  value={selectedSaleCustomerId}
+                  onChange={(e) => setSelectedSaleCustomerId(e.target.value)}
+                  className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300"
+                >
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>{customer.name} • {customer.phone}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="lg:col-span-3 space-y-1">
+                <label className="text-[10px] font-black text-amber-700 uppercase tracking-wider">ยอดซื้อ / บาท</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={saleAmount}
+                  onChange={(e) => setSaleAmount(parseInt(e.target.value) || 0)}
+                  className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300"
+                />
+              </div>
+              <div className="lg:col-span-3 space-y-1">
+                <label className="text-[10px] font-black text-amber-700 uppercase tracking-wider">หมายเหตุ</label>
+                <input
+                  type="text"
+                  value={saleReason}
+                  onChange={(e) => setSaleReason(e.target.value)}
+                  className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300"
+                />
+              </div>
+              <div className="lg:col-span-2 flex flex-col justify-end gap-1">
+                <span className="text-[10px] text-slate-500 font-bold text-center">คำนวณ: {pointsRate} บาท = 1 แต้ม</span>
+                <button
+                  type="submit"
+                  disabled={customers.length === 0}
+                  className="bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 disabled:text-slate-500 text-neutral-950 font-black text-xs px-3 py-2 rounded-xl flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
+                >
+                  <ReceiptText className="w-3.5 h-3.5" /> บันทึก +{calculatedSalePoints} แต้ม
+                </button>
+              </div>
+            </form>
 
             {/* Customer tabular grid */}
             <div className="overflow-x-auto">
@@ -795,6 +981,13 @@ export default function OwnerDashboard({
                       </td>
                     </tr>
                   ))}
+                  {filteredCustomers.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-neutral-500 font-medium font-sans">
+                        ยังไม่พบสมาชิกของร้านนี้ กด “เพิ่มสมาชิก” หรือให้ลูกค้ารับแต้มจากลิงก์ Rich Menu เพื่อเริ่มต้นได้เลย
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
@@ -889,6 +1082,75 @@ export default function OwnerDashboard({
               </div>
             )}
 
+            {showCustomerModal && (
+              <div className="fixed inset-0 bg-neutral-950/80 z-50 flex items-center justify-center p-4">
+                <form
+                  onSubmit={handleCreateCustomer}
+                  className="bg-neutral-900 border border-neutral-800 rounded-3xl p-5 w-full max-w-sm space-y-4 shadow-2xl relative"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomerModal(false)}
+                    className="absolute top-4 right-4 text-neutral-400 hover:text-white"
+                  >
+                    ✕
+                  </button>
+                  <div>
+                    <h4 className="text-sm font-bold text-neutral-100">เพิ่มสมาชิกใหม่ของร้าน</h4>
+                    <p className="text-[10px] text-neutral-400 mt-1">ใช้สำหรับเพิ่มลูกค้าที่สมัครหน้าร้านก่อนเชื่อม LINE Login จริง</p>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10.5px] text-neutral-400 block">ชื่อลูกค้า</label>
+                      <input
+                        type="text"
+                        value={newCustomerName}
+                        onChange={(e) => setNewCustomerName(e.target.value)}
+                        placeholder="เช่น คุณแมน"
+                        className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg outline-none"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10.5px] text-neutral-400 block">เบอร์โทรศัพท์</label>
+                      <input
+                        type="tel"
+                        value={newCustomerPhone}
+                        onChange={(e) => setNewCustomerPhone(e.target.value)}
+                        placeholder="เช่น 0812345678"
+                        className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10.5px] text-neutral-400 block">ชื่อ LINE / หมายเหตุ</label>
+                      <input
+                        type="text"
+                        value={newCustomerLineName}
+                        onChange={(e) => setNewCustomerLineName(e.target.value)}
+                        placeholder="เช่น Manit LINE"
+                        className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowCustomerModal(false)}
+                      className="flex-1 bg-neutral-800 hover:bg-neutral-750 text-xs py-2 rounded-lg"
+                    >
+                      ยกเลิก
+                    </button>
+                    <button
+                      type="submit"
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 rounded-lg transition"
+                    >
+                      เพิ่มสมาชิก
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+
           </div>
         )}
 
@@ -914,9 +1176,18 @@ export default function OwnerDashboard({
                       <h4 className="text-xs font-bold text-neutral-100 truncate">{rew.name}</h4>
                       <p className="text-[10px] text-neutral-400 line-clamp-1">{rew.description}</p>
                       <p className="text-[10px] font-semibold text-yellow-500 mt-1">ใช้แต้ม : {rew.pointsCost} แต้ม • สต็อก: {rew.stock} ชิ้น</p>
+                      <span className={`inline-flex w-fit mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${rew.isAvailable ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-neutral-800 text-neutral-500 border-neutral-700'}`}>
+                        {rew.isAvailable ? 'แสดงบนหน้าลูกค้า' : 'ปิดการแสดงผล'}
+                      </span>
                     </div>
                     
                     <div className="flex justify-end gap-1.5 mt-2">
+                      <button 
+                        onClick={() => handleToggleRewardAvailability(rew.id)}
+                        className="bg-neutral-850 hover:bg-neutral-800 text-neutral-350 px-2 py-1.5 rounded-lg active:scale-90 transition cursor-pointer text-[9px] font-bold"
+                      >
+                        {rew.isAvailable ? 'ปิด' : 'เปิด'}
+                      </button>
                       <button 
                         onClick={() => openEditReward(rew)}
                         className="bg-neutral-850 hover:bg-neutral-800 text-neutral-350 p-1.5 rounded-lg active:scale-90 transition cursor-pointer"
@@ -933,6 +1204,11 @@ export default function OwnerDashboard({
                   </div>
                 </div>
               ))}
+              {rewards.length === 0 && (
+                <div className="md:col-span-2 py-12 text-center bg-neutral-950 rounded-2xl border border-neutral-850 text-neutral-500 font-sans text-xs">
+                  ยังไม่มีของรางวัลของร้านนี้ กด “เพิ่มของรางวัลใหม่” เพื่อเริ่มสร้างรายการแลกแต้มจริง
+                </div>
+              )}
             </div>
 
             {/* ADD OR EDIT REWARD CATALOG POPUP FORM */}
@@ -1235,20 +1511,29 @@ export default function OwnerDashboard({
                       </span>
                     )}
                   </div>
-                  <p className="font-mono text-neutral-350 break-all select-all text-xs leading-normal bg-neutral-950 p-2.5 rounded border border-neutral-850">
-                    {generatedQRValue}
+                  <p className="font-mono text-neutral-350 break-all select-all text-xs leading-normal bg-neutral-950 p-2.5 rounded border border-neutral-850 min-h-12">
+                    {generatedQRValue || 'ยังไม่ได้สร้างลิงก์ กด “สร้างลิงก์ใหม่” เพื่อออกคูปองรับแต้มแบบใช้ครั้งเดียว'}
                   </p>
                   
                   {/* Link action copy buttons underneath link */}
                   <div className="flex gap-2 pt-1">
                     <button
                       type="button"
+                      onClick={generateNewCouponAndLink}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-lg text-xs duration-150 flex items-center gap-1 cursor-pointer active:scale-95"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" /> สร้างลิงก์ใหม่
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!generatedQRValue}
                       onClick={() => {
+                        if (!generatedQRValue) return;
                         navigator.clipboard.writeText(generatedQRValue);
                         setCopiedLink(true);
                         setTimeout(() => setCopiedLink(false), 2000);
                       }}
-                      className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-neutral-950 font-bold py-2 px-3 rounded-lg text-xs duration-150 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                      className="flex-1 bg-yellow-500 hover:bg-yellow-600 disabled:bg-neutral-800 disabled:text-neutral-500 text-neutral-950 font-bold py-2 px-3 rounded-lg text-xs duration-150 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                     >
                       {copiedLink ? (
                         <>
@@ -1259,14 +1544,6 @@ export default function OwnerDashboard({
                           <Copy className="w-4 h-4" /> คัดลอกลิ้งค์
                         </>
                       )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={generateNewCouponAndLink}
-                      className="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold py-2 px-3 rounded-lg text-[11px] duration-150 flex items-center gap-1 cursor-pointer active:scale-95 border border-neutral-750"
-                      title="กดรีเฟรชโค้ดชุดใหม่ล่าสุด"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" /> รีโค้ดใหม่
                     </button>
                   </div>
                 </div>
@@ -1355,8 +1632,7 @@ export default function OwnerDashboard({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const currentOrigin = window.location.origin + window.location.pathname;
-                                  const url = `${currentOrigin}?code=${c.code}`;
+                                  const url = `${window.location.origin}/customer/${shopIdToSlug(selectedShopId)}?code=${c.code}`;
                                   navigator.clipboard.writeText(url);
                                   showStatus(`✓ คัดลอกลิงก์สากลของ ${c.code} เรียบร้อย!`);
                                 }}
