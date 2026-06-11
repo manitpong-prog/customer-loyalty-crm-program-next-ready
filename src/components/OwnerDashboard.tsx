@@ -85,7 +85,7 @@ export default function OwnerDashboard({
       points: generatePoints,
       shopId: selectedShopId,
       shopName: activeShop?.name || 'ร้านกาแฟ KOFFEE CRAFT',
-      description: generateDesc || 'สะสมคะแนนพรีเมี่ยมพิเศษ',
+      description: generateDesc || 'รับแต้มจากร้าน',
       createdAt: new Date().toISOString(),
       expiresAt: expiresAt,
       isUsed: false
@@ -130,7 +130,7 @@ export default function OwnerDashboard({
   const [selectedCustForAdjust, setSelectedCustForAdjust] = useState<Customer | null>(null);
   const [adjustPoints, setAdjustPoints] = useState(20);
   const [adjustType, setAdjustType] = useState<'add' | 'deduct'>('add');
-  const [adjustReason, setAdjustReason] = useState('ปรับคะแนนกรณีพิเศษหน้าร้าน');
+  const [adjustReason, setAdjustReason] = useState('ปรับแต้มโดยร้านค้า');
 
   // Real merchant workflow states: create members and record purchases.
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -383,7 +383,7 @@ export default function OwnerDashboard({
     // Pick the first member scoped to the active shop only.
     const victim = scopedCustomers[0];
     if (!victim) {
-      showStatus('❌ ไม่ลองแต้มเนื่องจากไม่มีโปรไฟล์ลูกค้าจำลองในฐานข้อมูล');
+      showStatus('❌ ยังไม่มีลูกค้าให้ทดสอบรับแต้ม');
       return;
     }
 
@@ -408,18 +408,18 @@ export default function OwnerDashboard({
       shopName: shops.find(s => s.id === selectedShopId)?.name || 'Koffee Craft',
       type: 'earn',
       points: generatePoints,
-      description: `สแกนลิงค์/คิวอาร์ QR Generator: ${generateDesc}`,
+      description: `รับแต้มจากลิงก์ของร้าน: ${generateDesc}`,
       status: 'completed',
       createdAt: new Date().toISOString()
     };
 
     saveTransactions([newTx, ...getTransactions()]);
-    showStatus(`✓ จำลองสำเร็จ! มอบแต้ม +${generatePoints} ให้ลูกค้า ${victim.name} เรียบร้อยแล้ว`);
+    showStatus(`✓ ทดสอบรับแต้มสำเร็จ มอบ +${generatePoints} ให้ลูกค้า ${victim.name} เรียบร้อยแล้ว`);
     onDataChange();
     loadData();
   };
 
-  // 4. MANUAL ADJUST POINTS FOR CRM
+  // 4. MANUAL ADJUST POINTS FOR สมาชิก
   const handleManualAdjustPoints = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedCustForAdjust) return;
@@ -429,7 +429,7 @@ export default function OwnerDashboard({
     
     // Validate deduction
     if (adjustType === 'deduct' && selectedCustForAdjust.currentPoints < adjustPoints) {
-      showStatus('❌ แต้มไม่พอลด! คะแนนของคุณสามารถติดลบไม่ได้');
+      showStatus('❌ แต้มไม่พอสำหรับการหักรายการนี้');
       return;
     }
 
@@ -456,14 +456,14 @@ export default function OwnerDashboard({
       shopName: shops.find(s => s.id === selectedShopId)?.name || 'Koffee Craft',
       type: adjustType === 'add' ? 'earn' : 'redeem',
       points: adjustPoints,
-      description: `ปรับคะแนนโดยผู้ดูแลระบบ: ${adjustReason}`,
+      description: `ปรับแต้มโดยร้าน: ${adjustReason}`,
       status: 'completed',
       createdAt: new Date().toISOString()
     };
 
     saveTransactions([newTx, ...getTransactions()]);
     setSelectedCustForAdjust(null);
-    showStatus(`✓ ปรับคะแนนลูกค้า ${selectedCustForAdjust.name} จำนวน ${finalAmount} แต้ม สำเร็จ!`);
+    showStatus(`✓ ปรับแต้มลูกค้า ${selectedCustForAdjust.name} จำนวน ${finalAmount} แต้ม สำเร็จ!`);
     onDataChange();
     loadData();
   };
@@ -567,7 +567,7 @@ export default function OwnerDashboard({
     const newBan: PromoBanner = {
       id: `ban_${Date.now()}`,
       title: newBannerTitle,
-      description: newBannerDesc || 'สะสมแต้มพรีเมี่ยมพิเศษเฉพาะสมาชิก',
+      description: newBannerDesc || 'โปรโมชันพิเศษสำหรับสมาชิก',
       image: newBannerImage || 'https://images.unsplash.com/photo-1517142089942-ba376ce32a2e?w=400',
       expirationDate: new Date(newBannerExp || '2026-06-30').toISOString(),
       shopId: selectedShopId,
@@ -598,7 +598,7 @@ export default function OwnerDashboard({
             <Store className="w-6 h-6" />
           </div>
           <div>
-            <span className="text-[10px] text-amber-700 font-extrabold tracking-wider uppercase">Store Administration Side (B2B Control)</span>
+            <span className="text-[10px] text-amber-700 font-extrabold tracking-wider uppercase">หลังบ้านร้านค้า</span>
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-black text-slate-900">{activeShopDetail?.name || 'กำลังโหลดร้านค้า...'}</h2>
               <span className="bg-emerald-550/10 text-emerald-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-500/20">ออนไลน์</span>
@@ -610,11 +610,11 @@ export default function OwnerDashboard({
         <div className="flex items-center gap-2.5">
           {isProductionView ? (
             <span className="text-[11px] text-emerald-700 font-black whitespace-nowrap bg-emerald-50 border border-emerald-200 px-3.5 py-1.5 rounded-xl">
-              ล็อกข้อมูลร้าน: {activeShopDetail?.name || selectedShopId}
+              กำลังจัดการร้าน: {activeShopDetail?.name || selectedShopId}
             </span>
           ) : (
             <>
-              <span className="text-xs text-slate-500 font-black whitespace-nowrap">เปลี่ยนร้านค้าจำลองแอดมิน:</span>
+              <span className="text-xs text-slate-500 font-black whitespace-nowrap">เปลี่ยนร้านทดสอบ:</span>
               <select 
                 value={selectedShopId}
                 onChange={(e) => setSelectedShopId(e.target.value)}
@@ -639,7 +639,7 @@ export default function OwnerDashboard({
       {/* Stats Quick strip */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 shadow-3xs">
-          <span className="text-[10px] text-slate-500 font-extrabold font-sans uppercase block">คำร้องขอแลกแต้มรออนุมัติ</span>
+          <span className="text-[10px] text-slate-500 font-extrabold font-sans uppercase block">รางวัลที่รอยืนยัน</span>
           <p className="text-2xl font-black font-mono text-amber-600 mt-1">
             {transactions.filter(t => t.status === 'pending').length} <span className="text-[11px] font-bold text-slate-500 font-sans">รายการ</span>
           </p>
@@ -651,13 +651,13 @@ export default function OwnerDashboard({
           </p>
         </div>
         <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 shadow-3xs">
-          <span className="text-[10px] text-slate-500 font-extrabold font-sans uppercase block">จำนวนสินค้าของพรีเมี่ยม</span>
+          <span className="text-[10px] text-slate-500 font-extrabold font-sans uppercase block">ของรางวัลทั้งหมด</span>
           <p className="text-2xl font-black font-mono text-slate-855 mt-1">
             {rewards.length} <span className="text-[11px] font-bold text-slate-500 font-sans">รายการ</span>
           </p>
         </div>
         <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 shadow-3xs">
-          <span className="text-[10px] text-slate-500 font-extrabold font-sans uppercase block">โปรโมชั่นที่กำลังประกาศใช้</span>
+          <span className="text-[10px] text-slate-500 font-extrabold font-sans uppercase block">โปรโมชันที่แสดงอยู่</span>
           <p className="text-2xl font-black font-mono text-slate-855 mt-1">
             {banners.length} <span className="text-[11px] font-bold text-slate-500 font-sans">ชิ้น</span>
           </p>
@@ -676,25 +676,25 @@ export default function OwnerDashboard({
           onClick={() => setActiveTab('customers')}
           className={`px-4 py-2.5 font-extrabold whitespace-nowrap rounded-t-xl transition cursor-pointer ${activeTab === 'customers' ? 'bg-slate-50 border-t-2 border-amber-600 text-amber-700' : 'text-slate-500 hover:text-slate-800'}`}
         >
-          👥 สมาชิก CRM ({customers.length})
+          👥 สมาชิก ({customers.length})
         </button>
         <button 
           onClick={() => setActiveTab('rewards')}
           className={`px-4 py-2.5 font-extrabold whitespace-nowrap rounded-t-xl transition cursor-pointer ${activeTab === 'rewards' ? 'bg-slate-50 border-t-2 border-amber-600 text-amber-700' : 'text-slate-500 hover:text-slate-800'}`}
         >
-          💎 ของรางวัลสะสมแต้ม ({rewards.length})
+          🎁 ของรางวัล ({rewards.length})
         </button>
         <button 
           onClick={() => setActiveTab('promotions')}
           className={`px-4 py-2.5 font-extrabold whitespace-nowrap rounded-t-xl transition cursor-pointer ${activeTab === 'promotions' ? 'bg-slate-50 border-t-2 border-amber-600 text-amber-700' : 'text-slate-500 hover:text-slate-800'}`}
         >
-          📢 แคมเปญย่อย ({banners.length})
+          📢 โปรโมชัน ({banners.length})
         </button>
         <button 
           onClick={() => setActiveTab('generator')}
           className={`px-4 py-2.5 font-extrabold whitespace-nowrap rounded-t-xl transition cursor-pointer ${activeTab === 'generator' ? 'bg-slate-50 border-t-2 border-amber-600 text-amber-700' : 'text-slate-500 hover:text-slate-800'}`}
         >
-          🔗 ลิงก์&คิวอาร์โค้ดแจกแต้ม
+          🔗 ลิงก์รับแต้ม
         </button>
       </div>
 
@@ -710,14 +710,14 @@ export default function OwnerDashboard({
                 onClick={() => setApprovalsSubTab('queue')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition duration-150 cursor-pointer ${approvalsSubTab === 'queue' ? 'bg-yellow-500 text-neutral-950 shadow' : 'text-neutral-400 hover:text-neutral-200'}`}
               >
-                🕒 คิวอนุมัติแลกรางวัล ({transactions.filter(t => t.type === 'redeem' && t.status === 'pending').length} รายการ)
+                🕒 รายการรอยืนยัน ({transactions.filter(t => t.type === 'redeem' && t.status === 'pending').length} รายการ)
               </button>
               <button
                 type="button"
                 onClick={() => setApprovalsSubTab('history')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition duration-150 cursor-pointer ${approvalsSubTab === 'history' ? 'bg-yellow-500 text-neutral-950 shadow' : 'text-neutral-400 hover:text-neutral-200'}`}
               >
-                📜 ประวัติธุรกรรมสาขาทั้งหมด ({transactions.length} รายการ)
+                📜 ประวัติรายการทั้งหมด ({transactions.length} รายการ)
               </button>
             </div>
 
@@ -726,7 +726,7 @@ export default function OwnerDashboard({
                 <div className="flex justify-between items-center bg-yellow-500/5 px-4 py-3 rounded-xl border border-yellow-500/10">
                   <div className="flex items-center gap-2 text-xs text-yellow-500 font-medium font-sans">
                     <AlertCircle className="w-4 h-4" />
-                    <span>คำเตือน: โปรดตรวจสอบบิลหรือสิทธิ์หน้าแอปพลิเคชันลูกค้า เพื่อความถูกต้องตรงกันทางบัญชีคลัง</span>
+                    <span>ก่อนกดยืนยัน กรุณาตรวจสอบกับลูกค้าหรือของรางวัลที่หน้าร้านให้เรียบร้อย</span>
                   </div>
                 </div>
 
@@ -738,7 +738,7 @@ export default function OwnerDashboard({
                         <th className="pb-3">ของรางวัลที่ขอแลก</th>
                         <th className="pb-3">แต้มที่ใช้</th>
                         <th className="pb-3 font-mono">วันที่ทำรายการ</th>
-                        <th className="pb-3 pl-2">การด่วนตัดสินใจ</th>
+                        <th className="pb-3 pl-2">การจัดการ</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
@@ -810,7 +810,7 @@ export default function OwnerDashboard({
                         <th className="pb-3 pl-2">รหัสธุรกรรม / อ้างอิง</th>
                         <th className="pb-3">ประเภทกิจกรรม</th>
                         <th className="pb-3">รายละเอียดบัญชี</th>
-                        <th className="pb-3">ปริมาณคะแนน</th>
+                        <th className="pb-3">แต้ม</th>
                         <th className="pb-3 font-mono">วันที่ทำรายการ</th>
                         <th className="pb-3 text-right pr-2">การดำเนินการถาวร</th>
                       </tr>
@@ -865,7 +865,7 @@ export default function OwnerDashboard({
           </div>
         )}
 
-        {/* TAB B: CUSTOMERS CRM DIRECTORY */}
+        {/* TAB B: CUSTOMERS สมาชิก DIRECTORY */}
         {activeTab === 'customers' && (
           <div className="space-y-4">
             
@@ -944,7 +944,7 @@ export default function OwnerDashboard({
                     <th className="pb-3">แต้มปัจจุบัน</th>
                     <th className="pb-3">แต้มสะสมทั้งหมด</th>
                     <th className="pb-3">เข้าระบบเมื่อ</th>
-                    <th className="pb-3 text-right">ปรับสมดุลคะแนน</th>
+                    <th className="pb-3 text-right">ปรับแต้ม</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -964,8 +964,8 @@ export default function OwnerDashboard({
                           {c.tier}
                         </span>
                       </td>
-                      <td className="py-3.5 font-bold font-mono text-amber-700 text-sm">{c.currentPoints} Pts</td>
-                      <td className="py-3.5 font-mono text-slate-700">{c.lifetimePoints} Pts</td>
+                      <td className="py-3.5 font-bold font-mono text-amber-700 text-sm">{c.currentPoints} แต้ม</td>
+                      <td className="py-3.5 font-mono text-slate-700">{c.lifetimePoints} แต้ม</td>
                       <td className="py-3.5 font-mono text-slate-500">{new Date(c.createdAt).toLocaleDateString('th-TH')}</td>
                       <td className="py-3.5 text-right font-medium">
                         <button 
@@ -1008,7 +1008,7 @@ export default function OwnerDashboard({
                   </button>
 
                   <div className="space-y-1">
-                    <h4 className="text-sm font-bold text-neutral-100">ปรับสมดุลคะแนนลูกค้าด้วยมือ</h4>
+                    <h4 className="text-sm font-bold text-neutral-100">ปรับแต้มลูกค้าด้วยมือ</h4>
                     <p className="text-[10px] text-slate-600">ลูกค้าปัจจุบัน: {selectedCustForAdjust.name}</p>
                   </div>
 
@@ -1032,13 +1032,13 @@ export default function OwnerDashboard({
                           onClick={() => setAdjustType('deduct')}
                           className={`py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 ${adjustType === 'deduct' ? 'bg-rose-600 text-white' : 'bg-neutral-950 text-neutral-400'}`}
                         >
-                          <MinusCircle className="w-3.5 h-3.5" /> หักคะแนนออก (-)
+                          <MinusCircle className="w-3.5 h-3.5" /> หักแต้ม (-)
                         </button>
                       </div>
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[10.5px] text-neutral-400 block font-medium">จำนวนแต้ม (Points) :</label>
+                      <label className="text-[10.5px] text-neutral-400 block font-medium">จำนวนแต้ม</label>
                       <input 
                         type="number"
                         min={1}
@@ -1056,7 +1056,7 @@ export default function OwnerDashboard({
                         type="text"
                         value={adjustReason}
                         onChange={(e) => setAdjustReason(e.target.value)}
-                        placeholder="อย่างเช่น เติมแต้มบิลตกหล่นหน้าร้านค้าคลาดเคลื่อน"
+                        placeholder="เช่น เพิ่มแต้มย้อนหลังจากบิลที่ตกหล่น"
                         className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg outline-none"
                         required
                       />
@@ -1158,7 +1158,7 @@ export default function OwnerDashboard({
         {activeTab === 'rewards' && (
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <h3 className="text-xs font-bold text-slate-700 uppercase font-mono tracking-wider">บัญชีคูปองพรีเมี่ยมของร้าน</h3>
+              <h3 className="text-xs font-bold text-slate-700 uppercase font-mono tracking-wider">รายการของรางวัลของร้าน</h3>
               <button 
                 onClick={openAddReward}
                 className="bg-yellow-500 hover:bg-yellow-600 text-neutral-950 font-bold text-xs px-3 py-2 rounded-xl flex items-center gap-1 cursor-pointer transition active:scale-95"
@@ -1227,7 +1227,7 @@ export default function OwnerDashboard({
                   </button>
 
                   <h4 className="text-sm font-bold text-neutral-100">
-                    {editingReward ? 'แก้ไขสินค้าพรีเมี่ยม' : 'เพิ่มของรางวัลชิ้นใหม่ของร้าน'}
+                    {editingReward ? 'แก้ไขของรางวัล' : 'เพิ่มของรางวัลใหม่'}
                   </h4>
 
                   <div className="space-y-3.5">
@@ -1315,7 +1315,7 @@ export default function OwnerDashboard({
           <div className="space-y-4">
             <div className="flex justify-between items-center">
               <div>
-                <h3 className="text-xs font-bold text-slate-700 uppercase font-mono tracking-wider">แคมเปญกระตุ้นยอดขายสะสม</h3>
+                <h3 className="text-xs font-bold text-slate-700 uppercase font-mono tracking-wider">โปรโมชันหน้าลูกค้า</h3>
                 <p className="text-[10px] text-slate-600">โปรโมชั่นที่ประกาศหน้าบ้านของคุณจะนำเสนอในหน้าจอ Line OA ในวันเดียวกัน</p>
               </div>
               <button 
@@ -1366,11 +1366,11 @@ export default function OwnerDashboard({
                   onSubmit={handleCreatePromoBanner}
                   className="bg-neutral-900 border border-neutral-800 p-5 rounded-3xl w-full max-w-sm space-y-4 animate-scale-up"
                 >
-                  <h4 className="text-sm font-bold text-neutral-100">กระทำออกแคมเปญสะสมโฆษณาตัวใหม่</h4>
+                  <h4 className="text-sm font-bold text-neutral-100">เพิ่มโปรโมชันใหม่</h4>
                   
                   <div className="space-y-3">
                     <div className="space-y-1">
-                      <label className="text-[10.5px] text-neutral-400 block font-sans">พาดหัวแคมเปญหลัก (Banner Title) :</label>
+                      <label className="text-[10.5px] text-neutral-400 block font-sans">ชื่อโปรโมชัน</label>
                       <input 
                         type="text"
                         value={newBannerTitle}
@@ -1382,7 +1382,7 @@ export default function OwnerDashboard({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="text-[10.5px] text-neutral-400 block font-sans">ลิ้งค์ภาพแคมเปญ (Image Web URL) :</label>
+                      <label className="text-[10.5px] text-neutral-400 block font-sans">ลิงก์รูปภาพโปรโมชัน</label>
                       <input 
                         type="url"
                         value={newBannerImage}
@@ -1395,7 +1395,7 @@ export default function OwnerDashboard({
 
                     <div className="grid grid-cols-1 gap-3">
                       <div className="space-y-1">
-                        <label className="text-[10.5px] text-neutral-400 block font-sans">วันหมดเขตของแคมเปญ :</label>
+                        <label className="text-[10.5px] text-neutral-400 block font-sans">วันสิ้นสุดโปรโมชัน</label>
                         <input 
                           type="date"
                           value={newBannerExp}
@@ -1444,7 +1444,7 @@ export default function OwnerDashboard({
           <div className="space-y-6">
             <div className="space-y-1">
               <h3 className="text-xs font-bold text-slate-700 uppercase font-mono tracking-wider">ระบบสร้างลิ้งก์และ QR Code แจกแต้มด่วน</h3>
-              <p className="text-[10px] text-slate-600">กำหนดพิกัดความเหมาะสมของคะแนนแล้วสร้างรูปคิวอาร์ แปะหน้าเครื่องคิดเงินหน้าร้านเพื่อกระตุ้นให้ลูกค้ากรอกสแกนรับแต้ม</p>
+              <p className="text-[10px] text-slate-600">กำหนดจำนวนแต้ม แล้วสร้างลิงก์หรือ QR สำหรับส่งให้ลูกค้ารับแต้ม</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
@@ -1454,17 +1454,17 @@ export default function OwnerDashboard({
                 <span className="text-[11px] font-bold text-yellow-500 font-mono uppercase block font-sans">การตั้งค่าพารามิเตอร์แต้มสแกน</span>
                 
                 <div className="space-y-1 flex flex-col">
-                  <label className="text-[10px] text-slate-600 block font-sans">ปริมาณแต้มที่ต้องการแจก (Points) :</label>
+                  <label className="text-[10px] text-slate-600 block font-sans">จำนวนแต้มที่ต้องการแจก</label>
                   <select 
                     value={generatePoints}
                     onChange={(e) => setGeneratePoints(parseInt(e.target.value))}
                     className="w-full bg-neutral-900 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 cursor-pointer font-sans"
                   >
-                    <option value={10}>+10 Points (ซื้อกาแฟเล็กน้อย)</option>
-                    <option value={20}>+20 Points (ซื้อเครื่องคู่เบเกอรี่)</option>
-                    <option value={50}>+50 Points (กิจกรรมพิเศษต้อนรับเชลซี)</option>
-                    <option value={100}>+100 Points (ทานบิลใหญ่ครอบครัว)</option>
-                    <option value={250}>+250 Points (สิทธิประดับแต่งแคมเปญบิ๊ก)</option>
+                    <option value={10}>+10 แต้ม</option>
+                    <option value={20}>+20 แต้ม</option>
+                    <option value={50}>+50 แต้ม</option>
+                    <option value={100}>+100 แต้ม</option>
+                    <option value={250}>+250 แต้ม</option>
                   </select>
                 </div>
 
@@ -1474,7 +1474,7 @@ export default function OwnerDashboard({
                     type="text"
                     value={generateDesc}
                     onChange={(e) => setGenerateDesc(e.target.value)}
-                    placeholder="ตัวอย่างเช่น ซื้อเครื่องดื่มคราฟต์พรีเมี่ยม"
+                    placeholder="เช่น ซื้อสินค้าครบ 500 บาท"
                     className="w-full bg-neutral-900 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg outline-none font-sans"
                     required
                   />
@@ -1499,7 +1499,7 @@ export default function OwnerDashboard({
                     />
                     <span className="text-xs text-neutral-300 font-sans">นาที (นับจากเวลาที่สถิติกำหนดไว้)</span>
                   </div>
-                  <p className="text-[9px] text-neutral-500 italic block mt-1 font-sans">ลิงก์และคิวอาร์นี้จะหมดอายุและใช้ได้เพียง "ครั้งเดียว" เท่านั้นเพื่อความปลอดภัยระดับสถาบัน</p>
+                  <p className="text-[9px] text-neutral-500 italic block mt-1 font-sans">ลิงก์นี้ใช้ได้ครั้งเดียวและมีวันหมดอายุ เพื่อป้องกันการรับแต้มซ้ำ</p>
                 </div>
 
                 <div className="bg-neutral-900/60 rounded-xl p-3 text-[10px] text-slate-600 space-y-2 border border-neutral-800/40">
@@ -1537,11 +1537,11 @@ export default function OwnerDashboard({
                     >
                       {copiedLink ? (
                         <>
-                          <Check className="w-4 h-4" /> คัดลอกลิ้งค์สำเร็จแล้ว! ✓
+                          <Check className="w-4 h-4" /> คัดลอกลิงก์สำเร็จแล้ว! ✓
                         </>
                       ) : (
                         <>
-                          <Copy className="w-4 h-4" /> คัดลอกลิ้งค์
+                          <Copy className="w-4 h-4" /> คัดลอกลิงก์
                         </>
                       )}
                     </button>
@@ -1551,7 +1551,7 @@ export default function OwnerDashboard({
 
               {/* Created QR display box with scan simulator */}
               <div className="bg-neutral-950 p-5 rounded-2xl border border-neutral-850 text-center space-y-4 font-sans">
-                <span className="text-[11px] font-bold text-neutral-300 font-mono uppercase block">คิวอาร์โค้ดแจกคะแนนลูกค้า</span>
+                <span className="text-[11px] font-bold text-neutral-300 font-mono uppercase block">QR รับแต้มสำหรับลูกค้า</span>
                 
                 {/* Visual vector simulation of qr code */}
                 <div className="bg-white p-3.5 rounded-2xl w-40 h-40 mx-auto flex items-center justify-center shadow-lg relative border-4 border-yellow-500">
@@ -1560,7 +1560,7 @@ export default function OwnerDashboard({
 
                 <div className="space-y-2">
                   <div className="text-[10px] text-neutral-300">
-                    เมื่อผู้ใช้งานสแกนคิวอาร์นี้ผ่านแอป จะเข้าสู่หน้ายืนยันแต้มพิเศษทันที 
+                    เมื่อลูกค้าเปิดลิงก์หรือสแกน QR จะเข้าสู่หน้ารับแต้มทันที 
                     <span className="font-bold text-yellow-500 font-mono"> +{generatePoints} แต้ม</span>
                   </div>
 
@@ -1570,9 +1570,9 @@ export default function OwnerDashboard({
                     onClick={simulateCustomerScanned}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-[11px] py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-lg"
                   >
-                    🚀 จำลองสวมรอยลูกค้ากดลิงก์ (เปิดป็อปอัพยืนยันสะสมแต้ม)
+                    ทดสอบเปิดลิงก์ในมุมลูกค้า
                   </button>
-                  <p className="text-[9px] text-neutral-500 italic">การจำลองจะนำพาผู้ขายสลับมุมมองไปยังหน้าระบบลูกค้าพร้อมกล่องยืนยันเคลมสิทธิ์แต้มพิเศษนี้แบบออโต้</p>
+                  <p className="text-[9px] text-neutral-500 italic">ใช้สำหรับทดสอบว่าลิงก์รับแต้มทำงานถูกต้องก่อนส่งให้ลูกค้า</p>
                 </div>
               </div>
 
@@ -1582,8 +1582,8 @@ export default function OwnerDashboard({
             <div className="bg-neutral-950 p-4 rounded-2xl border border-neutral-850 space-y-3 font-sans">
               <div className="flex justify-between items-center">
                 <div className="space-y-0.5">
-                  <span className="text-xs font-bold text-neutral-200">📜 ประวัติข้อมูลลิงก์คูปองระบบสแกนด่วน ({generatedCouponsList.length} รายการ)</span>
-                  <p className="text-[10px] text-slate-600">ควบคุม ตรวจสอง และยกเลิกรหัสบัตรของขวัญที่ผ่านการแชร์ทางลิงก์อินเตอร์เน็ตในทุกๆ รายการ</p>
+                  <span className="text-xs font-bold text-neutral-200">📜 ประวัติลิงก์รับแต้ม ({generatedCouponsList.length} รายการ)</span>
+                  <p className="text-[10px] text-slate-600">ดูสถานะลิงก์ที่สร้างไว้ คัดลอกใหม่ หรือลบลิงก์ที่ไม่ต้องการใช้</p>
                 </div>
               </div>
 
@@ -1591,13 +1591,13 @@ export default function OwnerDashboard({
                 <table className="w-full text-left text-xs border-collapse font-sans">
                   <thead>
                     <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider font-mono">
-                      <th className="pb-2.5 pl-2 text-left">รหัสสกินคูปอง (Coupon Code)</th>
-                      <th className="pb-2.5 text-left">คำอธิบายงาน</th>
-                      <th className="pb-2.5 text-left">คะแนนบวก</th>
+                      <th className="pb-2.5 pl-2 text-left">รหัสรับแต้ม</th>
+                      <th className="pb-2.5 text-left">รายละเอียด</th>
+                      <th className="pb-2.5 text-left">แต้มที่ให้</th>
                       <th className="pb-2.5 font-mono text-left">สร้างเมื่อ</th>
                       <th className="pb-2.5 font-mono text-left">หมดอายุเมื่อ</th>
-                      <th className="pb-2.5 text-left">ผลลัพธ์</th>
-                      <th className="pb-2.5 text-right pr-2 text-left font-sans">การดำเนินการจัดการ</th>
+                      <th className="pb-2.5 text-left">สถานะ</th>
+                      <th className="pb-2.5 text-right pr-2 text-left font-sans">จัดการ</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 font-sans">
@@ -1607,19 +1607,19 @@ export default function OwnerDashboard({
 
                       let statusBadge = (
                         <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded text-[9px] font-bold">
-                          พร้อมใช้งาน (ครั้งเดียว)
+                          พร้อมใช้
                         </span>
                       );
                       if (isUsed) {
                         statusBadge = (
                           <span className="bg-neutral-800 text-neutral-500 border border-neutral-750 px-2 py-0.5 rounded text-[9px] font-bold">
-                            ถูกเคลมไปเรียบร้อยแล้ว
+                            ใช้ไปแล้ว
                           </span>
                         );
                       } else if (isExpired) {
                         statusBadge = (
                           <span className="bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded text-[9px] font-bold">
-                            คูปองหมดอายุแล้ว
+                            หมดอายุ
                           </span>
                         );
                       }
@@ -1634,7 +1634,7 @@ export default function OwnerDashboard({
                                 onClick={() => {
                                   const url = `${window.location.origin}/customer/${shopIdToSlug(selectedShopId)}?code=${c.code}`;
                                   navigator.clipboard.writeText(url);
-                                  showStatus(`✓ คัดลอกลิงก์สากลของ ${c.code} เรียบร้อย!`);
+                                  showStatus(`✓ คัดลอกลิงก์ของ ${c.code} เรียบร้อย!`);
                                 }}
                                 className="text-neutral-500 hover:text-yellow-400 transition duration-150 p-1 cursor-pointer"
                                 title="คัดลอกลิงก์รับแต้มนี้"
@@ -1657,7 +1657,7 @@ export default function OwnerDashboard({
                               type="button"
                               onClick={() => handleDeleteGeneratedCoupon(c.code)}
                               className="p-1 px-2 border border-red-500/20 bg-red-500/10 hover:bg-rose-600 text-rose-400 hover:text-white rounded-lg transition duration-150 text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
-                              title="ลบรหัสคูปองนี้ออกจากระบบอย่างถาวร"
+                              title="ลบรหัสนี้"
                             >
                               <Trash2 className="w-3.5 h-3.5" /> ลบถาวร
                             </button>
@@ -1669,7 +1669,7 @@ export default function OwnerDashboard({
                     {generatedCouponsList.length === 0 && (
                       <tr>
                         <td colSpan={7} className="py-8 text-center text-neutral-500 font-sans">
-                          ไม่พบประวัติการเปิดโค้ดสแกนรับแต้มด่วนของสาขานี้เลย คุณสามารถสุ่มรับคะแนนโดยเลือกตั้งค่าด้านบน
+                          ยังไม่มีลิงก์รับแต้มที่สร้างไว้ กดสร้างลิงก์ใหม่ได้ด้านบน
                         </td>
                       </tr>
                     )}

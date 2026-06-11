@@ -229,10 +229,10 @@ export default function App({
               </span>
               <div>
                 <h1 className="text-xs sm:text-sm font-extrabold text-slate-900 tracking-tight">
-                  ระบบสะสมแต้ม Loyalty Program MiniApp สลับสิทธิ์
+                  หน้าทดสอบระบบสะสมแต้ม iM Sticker
                 </h1>
                 <span className="text-[10px] text-slate-500 font-mono font-medium">
-                  Platform Integration Prototype (LINE OA & Browser Multi-User)
+                  ใช้สำหรับทีมงานทดสอบก่อนเปิดใช้งานจริง
                 </span>
               </div>
             </div>
@@ -246,7 +246,7 @@ export default function App({
                 <span
                   className={`w-1.5 h-1.5 rounded-full ${activeRole === "customer" ? "bg-white animate-pulse" : "bg-emerald-500"}`}
                 />
-                📱 1. หน้าบ้านลูกค้า (Line OA MiniApp)
+                📱 หน้าลูกค้า
               </button>
 
               <button
@@ -259,7 +259,7 @@ export default function App({
                   </span>
                 )}
                 <Store className="w-3.5 h-3.5" />
-                🏬 2. หลังบ้านร้านค้า (B2B Control)
+                🏬 หลังบ้านร้านค้า
               </button>
 
               <button
@@ -272,7 +272,7 @@ export default function App({
                   </span>
                 )}
                 <Shield className="w-3.5 h-3.5" />
-                🛡️ 3. ผู้ดูแลเว็ปไซต์ (Webmaster System)
+                🛡️ ผู้ดูแลระบบ
               </button>
             </div>
           </div>
@@ -288,23 +288,17 @@ export default function App({
 
               {activeRole === "customer" && (
                 <span>
-                  💡 **หน้าสมาร์ทโฟนจําลองลูกค้า**: คุณเข้าใช้งานในฐานะลูกค้า
-                  VIP ของแบรนด์ ลองกด **"แลกรางวัล"** หรือสแกนเพื่อรับแต้ม
-                  และลองไปกดอนุมัติที่หลังบ้านร้านค้าได้เลย!
+                  ทดสอบมุมมองลูกค้า ลองดูแต้ม แลกรางวัล หรือรับแต้มจากรหัสที่ร้านสร้างไว้
                 </span>
               )}
               {activeRole === "owner" && (
                 <span>
-                  💡 **หน้าร้านค้าแอดมิน**: ควบคุมสาขา จัดระเบียบแต้ม กด
-                  **อนุมัติบิลการแลกสินค้า** ด้านบน หรือคลิกสร้างคิวอาร์แจกแต้ม
-                  แล้วลองเข้าไปดูผลลัพธ์หน้ามือถือลูกค้า!
+                  ทดสอบมุมมองเจ้าของร้าน ใช้จัดการสมาชิก แจกแต้ม สร้างรางวัล และตรวจคำขอแลกรางวัล
                 </span>
               )}
               {activeRole === "webmaster" && (
                 <span>
-                  💡 **หน้าเว็ปบอร์ดแอดมิน**:
-                  ตรวจสอบคำขอร่วมแฟรนไชส์แบรนด์และยอดข้อมูลแพลตฟอร์ม CRM
-                  ทั้งระบบ สมัครร้านค้าเสร็จจะไปปรากฏให้เปิดสะสมแต้ม!
+                  ทดสอบมุมมองผู้ดูแลระบบ ใช้ดูสถานะระบบ ลิงก์ LINE OA และข้อมูลภาพรวมของร้าน
                 </span>
               )}
             </div>
@@ -321,15 +315,15 @@ export default function App({
         <header className="bg-white border-b border-slate-200/80 px-4 py-3 sticky top-0 z-40 shadow-sm">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-1">
             <div>
-              <p className="text-[10px] font-mono uppercase tracking-[0.25em] text-slate-400">
-                CRM 2026
+              <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-slate-400">
+                iM Sticker Loyalty
               </p>
               <h1 className="text-sm sm:text-base font-extrabold text-slate-900">
-                {activeRole === "owner" ? "หลังบ้านร้านค้า" : "ผู้ดูแลเว็บไซต์"}
+                {activeRole === "owner" ? "หลังบ้านร้านค้า" : "ผู้ดูแลระบบ"}
               </h1>
             </div>
-            <div className="text-[10px] font-mono text-slate-400 flex items-center gap-2">
-              <span>ฐานข้อมูล: {databaseLabel}</span>
+            <div className="text-[11px] font-semibold text-slate-500 flex items-center gap-2">
+              <span>{activeRole === "owner" ? "จัดการแต้มและของรางวัล" : "ตรวจความพร้อมของระบบ"}</span>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
             </div>
           </div>
@@ -348,10 +342,10 @@ export default function App({
             {isDemoMode && (
               <div className="text-center mb-4 space-y-1">
                 <span className="text-[10px] tracking-wider uppercase opacity-40 font-mono text-slate-500 font-bold">
-                  Mobile Simulated Device Iframe Layout
+                  ตัวอย่างหน้าจอบนมือถือ
                 </span>
                 <p className="text-xs text-slate-500">
-                  หน้าจอนี้ปรับขนาดแสดงผลสัดส่วนเหมาะสมกับโมบายล์สกรีน LINE LIFF
+                  ตัวอย่างนี้ช่วยให้ดูได้ใกล้เคียงกับตอนเปิดใน LINE
                 </p>
               </div>
             )}
@@ -399,8 +393,7 @@ export default function App({
       {isDemoMode && (
         <footer className="bg-white border-t border-slate-200/80 py-5 px-6 text-center text-xs text-slate-500 shadow-2xs mt-auto">
           <p>
-            © 2026 CRM Customer Loyalty Platform.
-            โครงร่างสร้างเว็บแอพสะสมแต้มพรีเมี่ยมยุคใหม่
+            © 2026 iM Sticker Loyalty. ใช้สำหรับทดสอบระบบสะสมแต้มก่อนเปิดใช้งานจริง
           </p>
         </footer>
       )}

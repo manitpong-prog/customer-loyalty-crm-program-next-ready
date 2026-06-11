@@ -114,9 +114,9 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
       setSnapshot(nextSnapshot);
 
       if (!nextHealth.ok) {
-        setError(nextHealth.message || "Neon health check ไม่ผ่าน");
+        setError(nextHealth.message || "ตรวจฐานข้อมูลไม่ผ่าน");
       } else if (!nextSnapshot.ok) {
-        setError(nextSnapshot.message || "โหลด snapshot ไม่สำเร็จ");
+        setError(nextSnapshot.message || "โหลดข้อมูลล่าสุดไม่สำเร็จ");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "โหลดสถานะระบบไม่สำเร็จ");
@@ -205,13 +205,13 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
     {
       label: "ร้านค้าในระบบ",
       value: counts.shops,
-      helper: pilotShop ? `Pilot: ${pilotShop.name}` : "ยังไม่พบร้าน pilot",
+      helper: pilotShop ? `ร้าน: ${pilotShop.name}` : "ยังไม่พบร้านทดสอบ",
       icon: Store,
     },
     {
       label: "สมาชิกทั้งหมด",
       value: counts.customers,
-      helper: "ลูกค้าที่อยู่ใน Neon snapshot",
+      helper: "สมาชิกที่มีอยู่ในระบบ",
       icon: Users,
     },
     {
@@ -236,12 +236,12 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
             <div className="space-y-2">
               <div className="inline-flex items-center gap-2 rounded-full border border-violet-200 bg-violet-50 px-3 py-1 text-[11px] font-black uppercase tracking-[0.22em] text-violet-700">
                 <ShieldCheck className="h-4 w-4" />
-                Platform Admin
+                ผู้ดูแลระบบ
               </div>
               <div>
-                <h1 className="text-2xl font-black tracking-tight sm:text-3xl">ศูนย์ควบคุมระบบ iM Sticker Loyalty</h1>
+                <h1 className="text-2xl font-black tracking-tight sm:text-3xl">ศูนย์ดูแลระบบ iM Sticker Loyalty</h1>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                  หน้านี้เป็น admin dashboard แบบใช้งานจริงเบื้องต้น ใช้ดูสถานะ Neon, จำนวนข้อมูลหลัก, ลิงก์ Rich Menu Pilot และทางลัดสำหรับตรวจระบบ โดยเข้าสู่ระบบด้วย email/password แยกจาก LINE
+                  หน้านี้ใช้สำหรับตรวจความพร้อมของระบบ ดูจำนวนข้อมูลหลัก และคัดลอกลิงก์ที่ต้องใช้กับ LINE OA โดยผู้ดูแลเข้าสู่ระบบด้วยอีเมลและรหัสผ่าน
                 </p>
               </div>
             </div>
@@ -283,17 +283,17 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
             <div className={`rounded-2xl border p-4 ${health?.ok ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50"}`}>
               <div className="flex items-center gap-2 text-xs font-black text-slate-700">
                 <Database className="h-4 w-4" />
-                Database Status
+                สถานะฐานข้อมูล
               </div>
               <p className={`mt-2 text-lg font-black ${health?.ok ? "text-emerald-700" : "text-rose-700"}`}>
-                {loading ? "กำลังตรวจสอบ..." : health?.ok ? "Neon พร้อมใช้งาน" : "ต้องตรวจสอบ"}
+                {loading ? "กำลังตรวจสอบ..." : health?.ok ? "ฐานข้อมูลพร้อมใช้งาน" : "ต้องตรวจสอบ"}
               </p>
-              <p className="mt-1 text-xs text-slate-600">source: {health?.source || "-"}</p>
+              <p className="mt-1 text-xs text-slate-600">แหล่งข้อมูล: {health?.source || "-"}</p>
             </div>
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
               <div className="flex items-center gap-2 text-xs font-black text-slate-700">
                 <BadgeCheck className="h-4 w-4" />
-                Pilot Shop
+                ร้านที่กำลังทดสอบ
               </div>
               <p className="mt-2 text-lg font-black text-amber-800">{pilotShop?.name || "ยังไม่พบร้าน"}</p>
               <p className="mt-1 text-xs text-slate-600">slug: {defaultShopSlug} / id: {pilotShop?.id || defaultShopId}</p>
@@ -301,10 +301,10 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-center gap-2 text-xs font-black text-slate-700">
                 <LockKeyhole className="h-4 w-4" />
-                Admin Auth
+                การเข้าสู่ระบบผู้ดูแล
               </div>
-              <p className="mt-2 text-lg font-black text-slate-800">Email Session</p>
-              <p className="mt-1 text-xs text-slate-600">Reset API ควรปิดไว้: ALLOW_DB_RESET=false</p>
+              <p className="mt-2 text-lg font-black text-slate-800">เข้าสู่ระบบด้วยอีเมลแล้ว</p>
+              <p className="mt-1 text-xs text-slate-600">ระบบล้างข้อมูลควรปิดไว้: ALLOW_DB_RESET=false</p>
             </div>
           </div>
 
@@ -326,7 +326,7 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
                   <div className="rounded-2xl bg-slate-100 p-3 text-slate-700">
                     <Icon className="h-5 w-5" />
                   </div>
-                  <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-mono text-slate-500">LIVE</span>
+                  <span className="rounded-full bg-slate-50 px-2.5 py-1 text-[10px] font-mono text-slate-500">พร้อมใช้</span>
                 </div>
                 <p className="mt-5 text-xs font-bold text-slate-500">{card.label}</p>
                 <p className="mt-1 text-3xl font-black tracking-tight text-slate-950">{formatNumber(card.value)}</p>
@@ -340,8 +340,8 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
           <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.22em] text-emerald-600">LINE OA Pilot</p>
-                <h2 className="mt-1 text-xl font-black">ลิงก์สำหรับ Rich Menu / ทดลองใช้งาน</h2>
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-emerald-600">LINE OA</p>
+                <h2 className="mt-1 text-xl font-black">ลิงก์สำหรับผูกใน Rich Menu</h2>
               </div>
               <Smartphone className="h-8 w-8 text-emerald-500" />
             </div>
@@ -350,10 +350,10 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <p className="text-sm font-black text-emerald-900">LIFF หลักสำหรับลูกค้า iM Sticker</p>
+                    <p className="text-sm font-black text-emerald-900">ลิงก์หลักสำหรับลูกค้า</p>
                     <p className="mt-1 break-all font-mono text-xs text-emerald-700">{liffBaseUrl || customerUrl}</p>
                     <p className="mt-2 text-xs leading-5 text-emerald-800/80">
-                      ใช้กับปุ่มหลักใน Rich Menu ได้ทันที ถ้ายังไม่ได้ตั้ง LIFF ID ระบบจะแสดง URL เว็บตรงแทน
+                      นำลิงก์นี้ไปใส่ปุ่มหลักใน Rich Menu ได้เลย
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-2">
@@ -375,14 +375,14 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-sm font-black text-slate-900">Mapping ปุ่ม Rich Menu ที่ระบบรองรับแล้ว</p>
+                    <p className="text-sm font-black text-slate-900">ปุ่มที่แนะนำใน Rich Menu</p>
                     <p className="mt-1 text-xs leading-5 text-slate-500">
-                      คุณสามารถนำ URL เหล่านี้ไปผูกใน LINE OA เองได้เลย ระบบรองรับ query <span className="font-mono">?tab=...</span> และ <span className="font-mono">liff.state</span> แล้ว
+                      คัดลอก URL เหล่านี้ไปผูกใน LINE OA ได้ตามต้องการ ระบบรองรับ <span className="font-mono">?tab=...</span> และ <span className="font-mono">liff.state</span> แล้ว
                     </p>
                   </div>
                   {!liffBaseUrl && (
                     <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-black text-amber-700">
-                      ยังไม่พบ NEXT_PUBLIC_LINE_LIFF_ID
+                      ยังไม่ได้ตั้งค่า LIFF ID
                     </span>
                   )}
                 </div>
@@ -424,7 +424,7 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
                     <p className="text-sm font-black text-amber-950">หลังบ้านร้านค้า</p>
                     <p className="mt-1 break-all font-mono text-xs text-amber-800">{merchantUrl}</p>
                     <p className="mt-2 text-xs leading-5 text-amber-900/75">
-                      ใช้สำหรับเจ้าของร้านหรือทีมงาน ไม่ควรใส่ใน Rich Menu ลูกค้า
+                      ลิงก์นี้สำหรับเจ้าของร้านหรือทีมงานเท่านั้น ไม่ควรใส่ใน Rich Menu ลูกค้า
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-2">
@@ -447,14 +447,14 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
 
           <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
             <div>
-              <p className="text-xs font-black uppercase tracking-[0.22em] text-violet-600">System Check</p>
+              <p className="text-xs font-black uppercase tracking-[0.22em] text-violet-600">ตรวจระบบ</p>
               <h2 className="mt-1 text-xl font-black">ทางลัดตรวจระบบ</h2>
             </div>
             <div className="mt-5 grid gap-3">
               <a href="/api/db/health" target="_blank" rel="noreferrer" className="group rounded-2xl border border-slate-200 p-4 transition hover:border-violet-200 hover:bg-violet-50">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-black">Database Health JSON</p>
+                    <p className="text-sm font-black">ตรวจสถานะฐานข้อมูล</p>
                     <p className="mt-1 break-all font-mono text-xs text-slate-500">{healthUrl}</p>
                   </div>
                   <ExternalLink className="h-4 w-4 text-slate-400 group-hover:text-violet-600" />
@@ -463,7 +463,7 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
               <a href="/api/db/snapshot" target="_blank" rel="noreferrer" className="group rounded-2xl border border-slate-200 p-4 transition hover:border-violet-200 hover:bg-violet-50">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-black">CRM Snapshot JSON</p>
+                    <p className="text-sm font-black">ดูข้อมูลล่าสุด</p>
                     <p className="mt-1 break-all font-mono text-xs text-slate-500">{snapshotUrl}</p>
                   </div>
                   <ExternalLink className="h-4 w-4 text-slate-400 group-hover:text-violet-600" />
@@ -472,8 +472,8 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
               <Link href="/demo" className="group rounded-2xl border border-slate-200 p-4 transition hover:border-sky-200 hover:bg-sky-50">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-black">Prototype Debug</p>
-                    <p className="mt-1 text-xs text-slate-500">ยังถูกกั้นด้วย Demo PIN และไม่อยู่บนหน้าแรก</p>
+                    <p className="text-sm font-black">หน้าเทสต์ภายใน</p>
+                    <p className="mt-1 text-xs text-slate-500">ยังซ่อนไว้สำหรับทดสอบภายใน</p>
                   </div>
                   <ArrowRight className="h-4 w-4 text-slate-400 group-hover:text-sky-600" />
                 </div>
@@ -486,15 +486,15 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
           <section className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
             <div className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5 text-slate-500" />
-              <h2 className="text-xl font-black">ภาพรวมร้าน Pilot</h2>
+              <h2 className="text-xl font-black">ภาพรวมร้าน iM Sticker</h2>
             </div>
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-xs font-bold text-slate-500">คะแนนที่แจกแล้ว</p>
+                <p className="text-xs font-bold text-slate-500">แต้มที่แจกแล้ว</p>
                 <p className="mt-2 text-2xl font-black text-emerald-700">{formatNumber(completedEarnPoints)}</p>
               </div>
               <div className="rounded-2xl bg-slate-50 p-4">
-                <p className="text-xs font-bold text-slate-500">คะแนนที่แลกสำเร็จ</p>
+                <p className="text-xs font-bold text-slate-500">แต้มที่ใช้แลกแล้ว</p>
                 <p className="mt-2 text-2xl font-black text-rose-700">{formatNumber(completedRedeemPoints)}</p>
               </div>
               <div className="rounded-2xl bg-slate-50 p-4">
@@ -525,16 +525,16 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
             </div>
             <div className="mt-5 space-y-3 text-sm leading-6 text-slate-600">
               <div className="rounded-2xl bg-emerald-50 p-4 text-emerald-900">
-                <p className="font-black">Phase 5A</p>
-                <p className="mt-1">ทำ shop-scoped data filtering ให้ customer/merchant อ่านและเขียนเฉพาะร้าน iM Sticker</p>
+                <p className="font-black">ตรวจหน้าลูกค้า</p>
+                <p className="mt-1">เปิด /customer/im-sticker ผ่าน LINE แล้วเช็กว่า Login, แต้ม และเมนูต่าง ๆ ใช้งานได้ลื่น</p>
               </div>
               <div className="rounded-2xl bg-amber-50 p-4 text-amber-950">
-                <p className="font-black">Phase 5B</p>
-                <p className="mt-1">จัดหน้า merchant ให้เหมาะกับการแจกแต้ม ลดแต้ม และจัดการของรางวัลจริง</p>
+                <p className="font-black">ตรวจหลังบ้านร้าน</p>
+                <p className="mt-1">ลองเพิ่มสมาชิก แจกแต้ม สร้างของรางวัล และยืนยันรายการแลกรางวัลจาก /merchant/im-sticker</p>
               </div>
               <div className="rounded-2xl bg-sky-50 p-4 text-sky-950">
-                <p className="font-black">Phase 6</p>
-                <p className="mt-1">นำลิงก์ในกล่อง LINE OA Pilot ไปผูกใน Rich Menu และทดสอบเปิดผ่าน LINE</p>
+                <p className="font-black">ทดสอบ Rich Menu</p>
+                <p className="mt-1">นำลิงก์ด้านบนไปผูกใน LINE OA แล้วทดสอบกับมือถือจริงก่อนเปิดให้ลูกค้าใช้</p>
               </div>
             </div>
           </section>

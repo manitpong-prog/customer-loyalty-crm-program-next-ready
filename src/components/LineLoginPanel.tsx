@@ -252,7 +252,7 @@ export default function LineLoginPanel({
   const logout = () => {
     clearLineIdentity();
     setIdentity(null);
-    setStatusMessage("ออกจากบัญชี LINE ในระบบ CRM แล้ว");
+    setStatusMessage("ออกจากระบบ LINE แล้ว");
     onAuthenticated?.(null);
   };
 
@@ -260,12 +260,12 @@ export default function LineLoginPanel({
     event.preventDefault();
 
     if (!identity) {
-      setStatusMessage("กรุณาเข้าสู่ระบบ LINE ก่อนผูกบัญชีเจ้าของร้าน");
+      setStatusMessage("กรุณาเข้าสู่ระบบด้วย LINE ก่อน");
       return;
     }
 
     if (!linkCode.trim()) {
-      setStatusMessage("กรุณากรอกรหัสผูกเจ้าของร้าน");
+      setStatusMessage("กรุณากรอกรหัสสำหรับเจ้าของร้าน");
       return;
     }
 
@@ -288,14 +288,14 @@ export default function LineLoginPanel({
       const result = (await response.json()) as LineAuthResponse;
 
       if (!response.ok || !result.ok || !result.identity) {
-        throw new Error(result.message || "ผูกบัญชีเจ้าของร้านไม่สำเร็จ");
+        throw new Error(result.message || "ยังผูกบัญชีเจ้าของร้านไม่สำเร็จ");
       }
 
       publishIdentity(result.identity);
       setLinkCode("");
-      setStatusMessage("ผูก LINE นี้เป็นเจ้าของร้านสำเร็จแล้ว");
+      setStatusMessage("บันทึกบัญชี LINE นี้เป็นเจ้าของร้านแล้ว");
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "ผูกบัญชีเจ้าของร้านไม่สำเร็จ");
+      setStatusMessage(error instanceof Error ? error.message : "ยังผูกบัญชีเจ้าของร้านไม่สำเร็จ");
     } finally {
       setLinking(false);
     }
@@ -320,7 +320,7 @@ export default function LineLoginPanel({
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.18em] opacity-70">
-                {isMerchant ? "Merchant LINE Auth" : "LINE Member Auth"}
+                {isMerchant ? "เข้าสู่ระบบร้านค้า" : "สมาชิก LINE"}
               </p>
               <h3 className="mt-1 text-sm font-black">
                 {identity ? `เชื่อมต่อ LINE: ${identity.displayName}` : "เข้าสู่ระบบด้วย LINE"}
@@ -345,7 +345,7 @@ export default function LineLoginPanel({
                   className={`inline-flex items-center gap-1.5 rounded-2xl px-3 py-2 text-xs font-extrabold transition disabled:cursor-not-allowed disabled:opacity-50 ${actionTone}`}
                 >
                   <LogIn className="h-4 w-4" />
-                  {isLoading ? "กำลังเชื่อมต่อ..." : "Login with LINE"}
+                  {isLoading ? "กำลังเชื่อมต่อ..." : "เข้าสู่ระบบด้วย LINE"}
                 </button>
               )}
             </div>
@@ -355,21 +355,21 @@ export default function LineLoginPanel({
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
               <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-black ${identity.verified ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}>
                 <BadgeCheck className="h-3.5 w-3.5" />
-                {identity.verified ? "Verified LINE ID Token" : "Profile fallback"}
+                {identity.verified ? "ยืนยันผ่าน LINE แล้ว" : "ใช้ข้อมูลโปรไฟล์ LINE"}
               </span>
               {isMerchant && (
                 <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-black ${isOwner ? "bg-emerald-100 text-emerald-800" : "bg-white text-amber-800"}`}>
                   <UserCheck className="h-3.5 w-3.5" />
-                  {isOwner ? "เป็นเจ้าของร้านนี้" : "ยังไม่ได้ผูกเป็นเจ้าของร้านนี้"}
+                  {isOwner ? "เป็นเจ้าของร้านนี้" : "ยังไม่ได้ยืนยันเป็นเจ้าของร้านนี้"}
                 </span>
               )}
-              <span className="font-mono text-[10px] opacity-70">LINE: {identity.lineUserId.slice(0, 8)}...</span>
+              <span className="font-mono text-[10px] opacity-70">LINE ID: {identity.lineUserId.slice(0, 8)}...</span>
             </div>
           ) : (
             <p className="mt-2 text-xs leading-5 opacity-80">
               {liffId
-                ? "เมื่อลูกค้าหรือเจ้าของร้านเปิดผ่าน LIFF ระบบจะใช้ LINE user id เพื่อผูกแต้มและสิทธิ์ร้าน"
-                : "ยังไม่ได้ตั้ง LIFF ID ใน Environment Variables จึงยังใช้งาน LINE Login จริงไม่ได้ แต่ระบบส่วนอื่นยังใช้ได้ตามปกติ"}
+                ? "เข้าสู่ระบบด้วย LINE เพื่อดูแต้มของคุณ และให้ร้านรู้ว่าเป็นสมาชิกคนเดิม"
+                : "ยังไม่ได้ตั้งค่า LIFF ID จึงยังเข้าสู่ระบบด้วย LINE ไม่ได้"}
             </p>
           )}
 
@@ -378,7 +378,7 @@ export default function LineLoginPanel({
               <input
                 value={linkCode}
                 onChange={(event) => setLinkCode(event.target.value)}
-                placeholder="รหัสผูกเจ้าของร้าน"
+                placeholder="รหัสสำหรับเจ้าของร้าน"
                 className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-semibold text-slate-900 outline-none focus:border-amber-400"
               />
               <button
@@ -387,7 +387,7 @@ export default function LineLoginPanel({
                 className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-950 px-3 py-2 text-xs font-extrabold text-white transition hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60"
               >
                 <Link2 className="h-4 w-4" />
-                {linking ? "กำลังผูก..." : "ผูกเป็นเจ้าของ"}
+                {linking ? "กำลังตรวจสอบ..." : "ยืนยันเป็นเจ้าของร้าน"}
               </button>
             </form>
           )}
@@ -401,7 +401,7 @@ export default function LineLoginPanel({
 
           {!compact && isMerchant && (
             <p className="mt-3 text-[11px] leading-5 opacity-75">
-              ระยะ pilot นี้ LINE owner check เป็นฐานใหม่ ส่วน PIN เดิมยังคงเป็น fallback ชั่วคราวจนกว่าจะย้ายเป็น auth/session เต็มระบบ
+              ระยะ pilot นี้ ตอนนี้ใช้ LINE เป็นหลักสำหรับเจ้าของร้าน ส่วน PIN เดิมยังเก็บไว้เผื่อกรณีฉุกเฉินระหว่างทดสอบ
             </p>
           )}
         </div>

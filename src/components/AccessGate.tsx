@@ -38,12 +38,12 @@ const areaConfig = {
     icon: ShieldCheck,
     accent: "from-violet-400 to-fuchsia-700",
     helper:
-      "หน้าผู้ดูแลระบบควรถูกใช้เฉพาะคนดูแลระบบ ใน Production จริงควรเปลี่ยนเป็น auth ฝั่ง server",
+      "หน้านี้ควรใช้เฉพาะผู้ดูแลระบบเท่านั้น",
   },
   demo: {
-    title: "Prototype Debug Mode",
-    subtitle: "หน้า debug ภายในสำหรับทดสอบทุกบทบาทในหน้าจอเดียว",
-    label: "Demo PIN",
+    title: "โหมดทดสอบภายใน",
+    subtitle: "สำหรับทีมงานใช้ทดสอบหลายมุมมองในหน้าเดียว",
+    label: "รหัสทดสอบ",
     storageKey: "im_crm_demo_access_granted",
     defaultPin: "demo2026",
     envPin: process.env.NEXT_PUBLIC_DEMO_ACCESS_PIN,
@@ -163,7 +163,7 @@ export default function AccessGate({ area, children, shopId }: AccessGateProps) 
               <div className={`mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br ${config.accent} shadow-lg`}>
                 <Icon className="h-7 w-7 text-white" />
               </div>
-              <p className="text-xs font-mono uppercase tracking-[0.28em] text-slate-400">Access Control</p>
+              <p className="text-xs font-mono uppercase tracking-[0.28em] text-slate-400">ตรวจสอบสิทธิ์</p>
               <h1 className="mt-3 text-3xl font-black tracking-tight">{config.title}</h1>
               <p className="mt-3 text-sm leading-7 text-slate-300">{config.subtitle}</p>
             </div>

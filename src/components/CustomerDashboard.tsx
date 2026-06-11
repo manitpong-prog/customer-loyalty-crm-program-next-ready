@@ -163,7 +163,7 @@ export default function CustomerDashboard({
           );
           setTimeout(() => setSuccessMessage(""), 4500);
         } else {
-          setErrorMessage("ไม่พบข้อมูลรหัสแจกแต้มนี้ หรือคูปองสะสมหมดอายุแล้ว");
+          setErrorMessage("ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว");
           setTimeout(() => setErrorMessage(""), 4500);
         }
       }
@@ -258,9 +258,9 @@ export default function CustomerDashboard({
 
         <div className="flex min-h-[55vh] items-center justify-center p-6 text-center">
           <div className="max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="text-sm font-black text-slate-900">กำลังรอข้อมูลสมาชิกของร้านนี้</div>
+            <div className="text-sm font-black text-slate-900">ยังไม่พบข้อมูลสมาชิกของคุณ</div>
             <p className="mt-2 text-xs leading-5 text-slate-600">
-              ถ้าเพิ่งกด Login with LINE ระบบอาจกำลังสร้างสมาชิกใหม่ใน Neon ให้กดโหลดข้อมูลใหม่หนึ่งครั้ง หรือกดล้าง session ถ้ายังวนซ้ำ
+              ถ้าเพิ่งเข้าสู่ระบบด้วย LINE ให้กดโหลดใหม่อีกครั้ง ระบบอาจกำลังสร้างบัตรสมาชิกให้คุณ
             </p>
             <div className="mt-4 grid gap-2">
               <button
@@ -277,7 +277,7 @@ export default function CustomerDashboard({
                 }}
                 className="rounded-2xl border border-slate-200 px-4 py-2 text-xs font-extrabold text-slate-700"
               >
-                ล้าง LINE session ชั่วคราว
+                ล้างข้อมูล LINE ชั่วคราว
               </button>
             </div>
           </div>
@@ -356,16 +356,16 @@ export default function CustomerDashboard({
 
     if (code === "WELCOME50") {
       pointsEarned = 50;
-      description = "ยินดีต้อนรับสู่โปรแกรมสะสมแต้มพรีเมี่ยม WELCOME50";
+      description = "รับแต้มต้อนรับ WELCOME50";
     } else if (code === "KOFFEELOVER100" && selectedShopId === "koffee_craft") {
       pointsEarned = 100;
-      description = "สิทธิพิเศษคอกาแฟชั้นเลิศ KOFFEELOVER100";
+      description = "รับแต้มพิเศษ KOFFEELOVER100";
     } else if (code === "CHICSTYLE80" && selectedShopId === "chic_boutique") {
       pointsEarned = 80;
-      description = "คูปองแต้มแต่งตัวสุดหรู CHICSTYLE80";
+      description = "รับแต้มพิเศษ CHICSTYLE80";
     } else if (code === "CRM2026") {
       pointsEarned = 150;
-      description = "โบนัสเปิดตัว CRM ยุคใหม่ปี 2026";
+      description = "รับแต้มพิเศษ CRM2026";
     } else {
       setErrorMessage("รหัสโค้ดไม่ถูกต้องหรือหมดอายุแล้ว กรุณาลองใหม่อีกครั้ง");
       setTimeout(() => setErrorMessage(""), 3500);
@@ -432,7 +432,7 @@ export default function CustomerDashboard({
       (c: any) => c.code.toUpperCase() === pendingCoupon.code.toUpperCase(),
     );
     if (matchedIdx === -1) {
-      setErrorMessage("เกิดปัญหาระบบตรวจสอบสิทธิ์ สแกนตรวจสอบใหม่อีกครั้ง");
+      setErrorMessage("ตรวจรหัสไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
       setShowCouponConfirm(false);
       return;
     }
@@ -483,7 +483,7 @@ export default function CustomerDashboard({
       shopName: matched.shopName,
       type: "earn",
       points: pointsToAdd,
-      description: `สะสมแต้มจากคิวอาร์แจกสิทธิ์แคมเปญ: ${matched.description} (รหัส: ${matched.code})`,
+      description: `รับแต้มจากลิงก์ของร้าน: ${matched.description} (รหัส: ${matched.code})`,
       status: "completed",
       createdAt: new Date().toISOString(),
     };
@@ -491,7 +491,7 @@ export default function CustomerDashboard({
 
     setShowCouponConfirm(false);
     setSuccessMessage(
-      `รับแต้มสำเร็จ! ได้รับ +${pointsToAdd} แต้มจากร้าน ${matched.shopName}`,
+      `รับแต้มเรียบร้อย ได้รับ +${pointsToAdd} แต้มจากร้าน ${matched.shopName}`,
     );
     setPromoCode("");
     setPendingCoupon(null);
@@ -650,7 +650,7 @@ export default function CustomerDashboard({
     });
 
     saveCustomers(updated);
-    setSuccessMessage("อัปเดตข้อมูลโปรไฟล์ส่วนตัวสำเร็จแล้ว");
+    setSuccessMessage("บันทึกข้อมูลโปรไฟล์แล้ว");
     onDataChange();
     loadData();
     setTimeout(() => setSuccessMessage(""), 3000);
@@ -669,7 +669,7 @@ export default function CustomerDashboard({
         <div className="flex items-center gap-1.5 min-w-0">
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-200 animate-pulse flex-shrink-0" />
           <span className="font-bold text-xs tracking-wide truncate">
-            {activeShop?.name || "CRM Line MiniApp"}
+            {activeShop?.name || "iM Sticker"}
           </span>
         </div>
         <div className="flex items-center gap-3">
@@ -744,7 +744,7 @@ export default function CustomerDashboard({
         {/* TAB 1: HOME */}
         {activeTab === "home" && (
           <div className="space-y-4">
-            {/* 🏅 Premium Gold/Platinum Member Card Card */}
+            {/* 🏅 Premium Gold/Platinum สมาชิก Card Card */}
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
@@ -766,12 +766,12 @@ export default function CustomerDashboard({
               {/* Card Title */}
               <div className="flex flex-col">
                 <span className="text-[9px] tracking-wider uppercase opacity-75 text-amber-950 font-bold font-mono">
-                  Loyalty Privilege Club
+                  บัตรสมาชิก iM Sticker
                 </span>
                 <span className="text-base font-black tracking-tight text-amber-950 italic">
                   {customer.tier === "Platinum"
-                    ? "⭐️ PLATINUM VIP MEMBER"
-                    : "👑 GOLD MEMBER CARD"}
+                    ? "⭐️ สมาชิก PLATINUM"
+                    : "👑 สมาชิก GOLD"}
                 </span>
               </div>
 
@@ -779,7 +779,7 @@ export default function CustomerDashboard({
               <div className="mt-8 flex justify-between items-end">
                 <div className="space-y-0.5">
                   <p className="text-[9px] text-amber-900/80 font-bold">
-                    ชื่อสมาชิก / Member Name
+                    ชื่อสมาชิก
                   </p>
                   <p className="font-extrabold text-sm text-stone-900">
                     {customer.name}
@@ -802,9 +802,9 @@ export default function CustomerDashboard({
 
               {/* Bottom footer bar on Card */}
               <div className="mt-4 pt-3 border-t border-amber-900/15 flex justify-between text-[11px] text-amber-950 font-bold">
-                <span>คะแนนปัจจุบัน :</span>
+                <span>แต้มที่ใช้ได้ตอนนี้</span>
                 <span className="font-mono text-stone-950 font-extrabold text-xs">
-                  {customer.currentPoints} แต้ม (Points)
+                  {customer.currentPoints} แต้ม
                 </span>
               </div>
             </motion.div>
@@ -841,12 +841,12 @@ export default function CustomerDashboard({
                 <div className="flex items-center gap-1.5">
                   <Award className="w-4 h-4 text-amber-500" />
                   <span className="font-extrabold text-slate-800">
-                    สถานะ VIP ระดับล่าสุด
+                    ระดับสมาชิก
                   </span>
                 </div>
                 <span className="text-[10px] text-slate-500 font-medium">
                   {customer.tier === "Platinum"
-                    ? "สิทธิ์ประโยชน์ Platinum ครบครัน"
+                    ? "คุณอยู่ระดับ Platinum แล้ว"
                     : `สะสมอีก ${tierInfo.target - customer.currentPoints} เพื่ออัปเกรด`}
                 </span>
               </div>
@@ -870,13 +870,13 @@ export default function CustomerDashboard({
             {/* Quick Promo Store Swiper Header */}
             <div className="flex justify-between items-center pt-2">
               <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-widest">
-                โปรโมชั่นและสิทธิพิเศษ
+                สิทธิพิเศษและของรางวัล
               </h3>
               <span
                 className="text-[10px] text-amber-600 font-bold flex items-center gap-0.5 cursor-pointer hover:underline"
                 onClick={() => setActiveTab("rewards")}
               >
-                ดูของรางวัลทั้งหมด <ChevronRight className="w-3 h-3" />
+                ดูรางวัลทั้งหมด <ChevronRight className="w-3 h-3" />
               </span>
             </div>
 
@@ -900,7 +900,7 @@ export default function CustomerDashboard({
                       <span
                         className={`absolute top-2 right-2 text-[8px] font-black uppercase px-2.5 py-1 rounded-full text-white shadow-sm ${ban.isAd ? "bg-amber-500 text-stone-950" : "bg-[#06C755]"}`}
                       >
-                        {ban.isAd ? "ADVERTISEMENT" : "PROMOTION"}
+                        {ban.isAd ? "แนะนำ" : "โปรโมชัน"}
                       </span>
                     </div>
                     <div className="p-3.5 space-y-1">
@@ -932,10 +932,10 @@ export default function CustomerDashboard({
             <div className="space-y-1">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
                 <Gift className="w-4 h-4 text-amber-550" />
-                ของรางวัลของร้าน {activeShop?.name}
+                ของรางวัลจากร้าน {activeShop?.name}
               </h3>
               <p className="text-[10px] text-slate-500 font-medium font-sans">
-                เลือกของรางวัลสุดพิเศษเพื่อรวบรวมรหัสไปเพื่อยืนยันที่หน้าร้านได้ทันที
+                เลือกของรางวัลที่ต้องการแลก แล้วรอให้ร้านยืนยันตอนรับของ
               </p>
             </div>
 
@@ -1007,7 +1007,7 @@ export default function CustomerDashboard({
               <div className="p-8 text-center text-slate-400 border border-dashed border-slate-250 rounded-2xl bg-white space-y-2.5 shadow-2xs">
                 <Gift className="w-8 h-8 mx-auto stroke-1 text-slate-350" />
                 <p className="text-xs font-semibold">
-                  ขณะนี้ยังไม่มีของรางวัลเปิดให้บริการสำหรับร้านหมวดนี้
+                  ตอนนี้ยังไม่มีของรางวัลให้แลก
                 </p>
               </div>
             )}
@@ -1023,7 +1023,7 @@ export default function CustomerDashboard({
                 รับแต้มจากร้าน {activeShop?.name}
               </h3>
               <p className="text-[10px] text-slate-500 font-medium leading-relaxed">
-                ใช้สำหรับลิงก์หรือ QR ที่ร้านสร้างจากหลังบ้าน เมื่อเปิดจาก LINE OA ระบบจะตรวจสิทธิ์และให้ลูกค้ากดยืนยันรับแต้มเอง
+                ถ้าร้านส่งลิงก์หรือ QR แจกแต้มมาให้ เปิดลิงก์แล้วกดยืนยันรับแต้มได้จากหน้านี้
               </p>
             </div>
 
@@ -1038,7 +1038,7 @@ export default function CustomerDashboard({
                     <p className={`text-[10px] font-mono font-black uppercase tracking-[0.18em] ${
                       pendingCouponState === "ready" ? "text-emerald-700" : "text-rose-700"
                     }`}>
-                      {pendingCouponState === "ready" ? "ตรวจพบรหัสแจกแต้ม" : "รหัสนี้ใช้ไม่ได้"}
+                      {pendingCouponState === "ready" ? "พบรหัสรับแต้มแล้ว" : "รหัสนี้ใช้ไม่ได้"}
                     </p>
                     <h4 className="mt-1 text-base font-black text-slate-950">
                       {pendingCouponState === "ready" ? `รับ +${pendingCoupon.points} แต้ม` : "ไม่สามารถรับแต้มได้"}
@@ -1055,7 +1055,7 @@ export default function CustomerDashboard({
                       : "bg-white text-rose-700 border border-rose-200"
                   }`}>
                     <span className="block text-lg leading-none">+{pendingCoupon.points}</span>
-                    <span className="text-[9px]">POINTS</span>
+                    <span className="text-[9px]">แต้ม</span>
                   </div>
                 </div>
 
@@ -1130,17 +1130,17 @@ export default function CustomerDashboard({
 
               {isProductionView ? (
                 <div className="bg-emerald-50 rounded-2xl p-3 space-y-2 text-[10.5px] border border-emerald-100 text-emerald-900">
-                  <p className="font-extrabold">วิธีรับแต้มจากร้าน</p>
+                  <p className="font-extrabold">วิธีรับแต้ม</p>
                   <ol className="list-decimal list-inside space-y-1 font-semibold leading-relaxed">
-                    <li>ร้านสร้างลิงก์หรือ QR แจกแต้มจากหลังบ้าน</li>
-                    <li>ลูกค้าเปิดลิงก์ผ่าน LINE OA หรือกรอกรหัสในช่องนี้</li>
-                    <li>กดยืนยันรับแต้ม 1 ครั้ง ระบบจะบันทึกลงบัญชีสมาชิกทันที</li>
+                    <li>ร้านส่งลิงก์หรือ QR รับแต้มให้ลูกค้า</li>
+                    <li>เปิดลิงก์จาก LINE หรือกรอกรหัสในช่องนี้</li>
+                    <li>กดยืนยัน 1 ครั้ง แต้มจะเข้าบัตรสมาชิกทันที</li>
                   </ol>
                 </div>
               ) : (
                 <div className="bg-slate-50/80 rounded-2xl p-3 space-y-2 text-[10px] border border-slate-200/60 shadow-inner">
                   <p className="text-amber-700 font-bold">
-                    รหัสสะสมแต้มสาธารณะเปิดซิมจำลอง:
+                    รหัสทดสอบสำหรับหน้า demo:
                   </p>
                   <div className="grid grid-cols-2 gap-2 font-mono text-slate-500 font-semibold">
                     <div
@@ -1190,7 +1190,7 @@ export default function CustomerDashboard({
                     <div className="space-y-3">
                       <div className="w-9 h-9 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto" />
                       <p className="text-[11px] font-mono font-bold text-slate-500">
-                        กำลังสแกนและยืนยันความปลอดภัยเข้ารับแต้ม...
+                        กำลังสแกนรับแต้ม...
                       </p>
                     </div>
                   ) : (
@@ -1199,7 +1199,7 @@ export default function CustomerDashboard({
                         <QrCode className="w-7 h-7" />
                       </div>
                       <p className="text-xs font-semibold text-slate-500">
-                        กดปุ่มจำลองการแสกนคิวอาร์รับแต้มด้านล่าง
+                        กดปุ่มด้านล่างเพื่อทดสอบการรับแต้ม
                       </p>
                     </div>
                   )}
@@ -1211,7 +1211,7 @@ export default function CustomerDashboard({
 
                 <div className="space-y-2.5">
                   <span className="text-[9px] uppercase font-mono text-slate-400 font-bold block">
-                    จำลองรหัสสแกนคิวอาร์รับแต้มพิเศษ:
+                    ตัวอย่างรับแต้ม:
                   </span>
                   <div className="grid grid-cols-2 gap-2">
                     <button
@@ -1257,10 +1257,10 @@ export default function CustomerDashboard({
             <div className="space-y-1">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
                 <History className="w-4 h-4 text-amber-550" />
-                ประวัติแต้มและของรางวัลของคุณ
+                ประวัติของคุณ
               </h3>
               <p className="text-[10px] text-slate-500 font-medium font-sans">
-                ติดตามการใช้งานและสถานะคูปองของรางวัลได้ตลอด 24 ชั่วโมง
+                ดูรายการรับแต้ม แลกรางวัล และสถานะล่าสุดได้ที่นี่
               </p>
             </div>
 
@@ -1348,7 +1348,7 @@ export default function CustomerDashboard({
                             <>
                               <span className="w-1.5 h-1.5 bg-rose-500 rounded-full" />
                               <span className="text-rose-500 font-bold uppercase text-decoration-line: line-through">
-                                ปฏิเสธ / ยกเลิก
+                                ยกเลิก
                               </span>
                             </>
                           )}
@@ -1366,7 +1366,7 @@ export default function CustomerDashboard({
                 <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-white shadow-2xs">
                   <History className="w-8 h-8 mx-auto stroke-1 text-slate-350" />
                   <p className="text-xs mt-2 font-semibold">
-                    ยังไม่พบรายการกิจกรรมของคุณในหน้านี้
+                    ยังไม่มีรายการในหน้านี้
                   </p>
                 </div>
               )}
@@ -1380,10 +1380,10 @@ export default function CustomerDashboard({
             <div className="space-y-1">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
                 <User className="w-4 h-4 text-amber-550" />
-                โปรไฟล์สมาชิก Line Loyalty
+                โปรไฟล์สมาชิก
               </h3>
               <p className="text-[10px] text-slate-500 font-medium">
-                จัดการข้อมูลประจําตัวและช่องทางเพื่อรับข่าวสารพิเศษเฉพาะคนพิเศษ
+                แก้ไขชื่อและเบอร์โทรสำหรับให้ร้านติดต่อหรือยืนยันของรางวัล
               </p>
             </div>
 
@@ -1403,10 +1403,10 @@ export default function CustomerDashboard({
                     {customer.lineName}
                   </h4>
                   <p className="text-[9px] text-slate-400 font-mono font-semibold">
-                    LINE UUID: U11aa2...26ff
+                    ข้อมูลจาก LINE
                   </p>
                   <span className="inline-block mt-1 bg-amber-500/10 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full border border-amber-500/20 shadow-2xs">
-                    👑 VIP {customer.tier.toUpperCase()} MEMBER
+                    👑 ระดับ {customer.tier}
                   </span>
                 </div>
               </div>
@@ -1414,7 +1414,7 @@ export default function CustomerDashboard({
               <div className="space-y-3.5">
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-500 font-bold">
-                    ชื่อจริง-นามสกุล :
+                    ชื่อ-นามสกุล
                   </label>
                   <input
                     type="text"
@@ -1427,7 +1427,7 @@ export default function CustomerDashboard({
 
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-500 font-bold">
-                    เบอร์โทรศัพท์มือถือ :
+                    เบอร์โทรศัพท์
                   </label>
                   <input
                     type="tel"
@@ -1439,7 +1439,7 @@ export default function CustomerDashboard({
 
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-500 font-bold">
-                    ชื่อไลน์ (LINE Name) :
+                    ชื่อใน LINE
                   </label>
                   <input
                     type="text"
@@ -1466,7 +1466,7 @@ export default function CustomerDashboard({
               <ul className="space-y-1.5 text-stone-700 list-disc list-inside font-semibold font-sans">
                 <li>สะสมแต้มแลกเครื่องดื่มและของรางวัลพิเศษหน้าร้าน</li>
                 <li>
-                  สิทธิ์ในการเข้าร่วมปาร์ตี้กาแฟเวิร์กชอปกราบนมัสการปีละ 2 ครั้ง
+                  รับสิทธิ์ร่วมกิจกรรมพิเศษของร้านตามเงื่อนไข
                 </li>
                 {customer.tier === "Platinum" ? (
                   <>
@@ -1474,11 +1474,11 @@ export default function CustomerDashboard({
                       ส่วนลดวันเกิดทันที 20% และเค้กวันเกิดจานพิเศษฟรี
                     </li>
                     <li className="text-amber-700 font-bold">
-                      สิทธิ์แลกของขวัญจำกัดสต็อกล่วงหน้าก่อนสมาชิกปกติ 7 วัน
+                      มีโอกาสแลกของรางวัลพิเศษก่อนสมาชิกทั่วไป
                     </li>
                   </>
                 ) : (
-                  <li>สะสมครบ 1000 แต้มเพื่อสิทธิ์เบิร์นมาร์แกตดิสเคาท์</li>
+                  <li>สะสมครบ 1000 แต้มเพื่ออัปเกรดเป็น Platinum</li>
                 )}
               </ul>
             </div>
@@ -1561,10 +1561,10 @@ export default function CustomerDashboard({
 
               <div className="space-y-1">
                 <h4 className="text-sm font-extrabold text-amber-650 tracking-wider">
-                  คิวอาร์สะสมแต้มของหนู
+                  คิวอาร์สมาชิกของคุณ
                 </h4>
                 <p className="text-[10.5px] text-slate-500 font-semibold font-sans">
-                  ยื่นให้เจ้าหน้าที่หน้าร้านเพื่อสะสมแต้มพรีเมี่ยมได้ทันที
+                  ยื่นหน้านี้ให้ร้านสแกนหรือใช้ยืนยันสมาชิก
                 </p>
               </div>
 
@@ -1577,7 +1577,7 @@ export default function CustomerDashboard({
 
               <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 space-y-1 shadow-inner">
                 <p className="text-[10px] text-slate-400 font-mono font-bold">
-                  รหัสคิวอาร์ส่วนตัวสมาชิก
+                  รหัสสมาชิก
                 </p>
                 <p className="text-xs font-bold font-mono tracking-widest text-slate-800">
                   {customer.phone.replace(/-/g, "")}-
@@ -1615,7 +1615,7 @@ export default function CustomerDashboard({
             >
               <div className="flex justify-between items-center pb-2.5 border-b border-slate-100">
                 <span className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                  รายละเอียดสิทธิ์แลกรางวัล
+                  รายละเอียดของรางวัล
                 </span>
                 <button
                   type="button"
@@ -1657,13 +1657,13 @@ export default function CustomerDashboard({
                     </span>
                   </div>
                   <div className="flex justify-between text-slate-500">
-                    <span>แต้มที่ต้องใช้รวบรวม:</span>
+                    <span>แต้มที่ใช้แลก:</span>
                     <span className="font-mono font-bold text-rose-600">
                       -{selectedReward.pointsCost} แต้ม
                     </span>
                   </div>
                   <div className="flex justify-between border-t border-slate-200 pt-1.5 text-slate-650 font-bold">
-                    <span>แต้มคงเหลือสำรอง:</span>
+                    <span>แต้มคงเหลือ:</span>
                     <span
                       className={`font-mono ${customer.currentPoints - selectedReward.pointsCost >= 0 ? "text-emerald-600" : "text-rose-600"}`}
                     >
@@ -1683,12 +1683,12 @@ export default function CustomerDashboard({
                         className="w-full bg-amber-550 hover:bg-amber-600 text-white font-extrabold text-xs py-3 rounded-xl transition duration-150 active:scale-95 text-center block cursor-pointer shadow-md"
                       >
                         {isRedeeming
-                          ? "กำลังตรวจสอบสิทธิ์..."
-                          : "ยืนยันเพื่อ แลกรับของรางวัล"}
+                          ? "กำลังส่งคำขอ..."
+                          : "ยืนยันแลกรางวัล"}
                       </button>
                     ) : (
                       <div className="text-center p-3 bg-rose-50 border border-rose-100 rounded-xl text-[10px] text-rose-650 font-bold">
-                        คะแนนแต้มปัจจุบันของคุณไม่เพียงพอสำหรับการแลก
+                        แต้มของคุณยังไม่พอสำหรับรางวัลนี้
                       </div>
                     )}
                   </div>
@@ -1697,11 +1697,10 @@ export default function CustomerDashboard({
                     <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
                     <div className="space-y-1">
                       <h5 className="text-xs font-black text-emerald-600">
-                        ยื่นคำขอแลกสำเร็จแล้ว!
+                        ส่งคำขอแลกรางวัลแล้ว
                       </h5>
                       <p className="text-[10px] font-semibold text-slate-500 leading-relaxed px-5 font-sans">
-                        กรุณาแจ้งเบอร์โทรศัพท์หรือเปิดหน้าประวัติรับคูปอง
-                        เพื่อให้แคชเชียร์สาขากดยืนยันทางระบบ
+                        เมื่อไปรับของรางวัลที่ร้าน ให้แจ้งชื่อหรือเบอร์โทร เพื่อให้ร้านกดยืนยันรายการ
                       </p>
                     </div>
                     <button
@@ -1713,7 +1712,7 @@ export default function CustomerDashboard({
                       }}
                       className="bg-emerald-600 hover:bg-emerald-700 font-extrabold text-white text-[10.5px] px-4.5 py-2 rounded-xl active:scale-95 transition cursor-pointer"
                     >
-                      เปิดเช็คในคูปองส่วนตัว
+                      ดูสถานะในประวัติ
                     </button>
                   </div>
                 )}
@@ -1744,10 +1743,10 @@ export default function CustomerDashboard({
 
               <div className="pt-6 space-y-1">
                 <span className="text-[9.5px] tracking-wider text-emerald-600 font-mono font-bold uppercase block animate-pulse">
-                  ตรวจสอบสิทธิ์สะสมแต้มสำเร็จ
+                  พบสิทธิ์รับแต้ม
                 </span>
                 <h4 className="text-base font-black text-slate-900">
-                  ยืนยันรับแต้มจากหน้าร้านค้า
+                  ยืนยันรับแต้มจากร้าน
                 </h4>
                 <p className="text-xs text-slate-500 font-bold font-sans">
                   ✨ {pendingCoupon.shopName}
@@ -1764,7 +1763,7 @@ export default function CustomerDashboard({
                   <span className="text-xs font-bold">แต้ม</span>
                 </span>
                 <p className="text-[10px] text-slate-500 font-semibold font-sans">
-                  รายละเอียดแคมเปญ: {pendingCoupon.description}
+                  รายละเอียด: {pendingCoupon.description}
                 </p>
               </div>
 
@@ -1787,9 +1786,9 @@ export default function CustomerDashboard({
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span>เงื่อนไขความปลอดภัย:</span>
+                  <span>เงื่อนไข:</span>
                   <span className="text-emerald-600">
-                    สะสมคะแนนได้เพียง 1 ครั้งเท่านั้น
+                    ใช้รับแต้มได้ 1 ครั้งเท่านั้น
                   </span>
                 </div>
               </div>
@@ -1804,14 +1803,14 @@ export default function CustomerDashboard({
                   }}
                   className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-705 text-xs py-2.5 font-bold rounded-xl transition cursor-pointer"
                 >
-                  ปฏิเสธ / ยกเลิก
+                  ยกเลิก
                 </button>
                 <button
                   type="button"
                   onClick={handleConfirmClaimDynamicCoupon}
                   className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-xl shadow-lg shadow-emerald-600/10 transition active:scale-[0.98] cursor-pointer"
                 >
-                  อนุมัติรับแต้ม
+                  รับแต้ม
                 </button>
               </div>
             </motion.div>

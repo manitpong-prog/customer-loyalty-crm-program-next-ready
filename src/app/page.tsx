@@ -20,7 +20,7 @@ const primaryActions = [
   {
     href: '/admin',
     title: 'ผู้ดูแลระบบ',
-    description: 'ดูภาพรวมระบบผ่าน email/password สำหรับผู้ดูแลแพลตฟอร์ม',
+    description: 'สำหรับผู้ดูแลระบบ ใช้ตรวจสถานะและลิงก์สำคัญของร้าน',
     icon: ShieldCheck,
     badge: 'Admin',
   },
@@ -41,13 +41,13 @@ export default function HomePage() {
                 iM Sticker Loyalty
               </p>
               <h1 className="text-base font-extrabold tracking-tight sm:text-lg">
-                Customer Loyalty CRM Program
+                ระบบสะสมแต้ม iM Sticker
               </h1>
             </div>
           </div>
           <div className="hidden items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold text-emerald-200 sm:flex">
             <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            Neon PostgreSQL Ready
+            พร้อมทดลองใช้งาน
           </div>
         </header>
 
@@ -55,14 +55,14 @@ export default function HomePage() {
           <div className="max-w-3xl space-y-6">
             <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-bold text-slate-200 backdrop-blur">
               <BadgeCheck className="h-4 w-4 text-emerald-300" />
-              Production Pilot Baseline พร้อมทดสอบใช้งานจริง
+              พร้อมทดลองใช้กับ LINE OA
             </div>
             <div className="space-y-4">
               <h2 className="text-4xl font-black leading-tight tracking-tight sm:text-5xl lg:text-6xl">
-                ระบบสะสมแต้มสำหรับร้านค้าและลูกค้า
+                ระบบสะสมแต้มของ iM Sticker
               </h2>
               <p className="max-w-2xl text-base leading-8 text-slate-300 sm:text-lg">
-                เลือกหน้าที่ต้องการเข้าใช้งาน ระบบนี้แยกหน้าลูกค้า หลังบ้านร้านค้า และผู้ดูแลระบบออกจากหน้า Prototype แล้ว เพื่อให้พร้อมเข้าสู่รอบทดสอบ Production มากขึ้น
+                เลือกเข้าใช้งานตามบทบาทของคุณ ลูกค้าเปิดดูแต้มได้ทันที เจ้าของร้านจัดการแต้มและของรางวัล ส่วนผู้ดูแลระบบใช้ตรวจความพร้อมของระบบ
               </p>
             </div>
           </div>
@@ -89,7 +89,7 @@ export default function HomePage() {
                     <p className="min-h-16 text-sm leading-6 text-slate-300">{item.description}</p>
                   </div>
                   <div className="mt-5 flex items-center gap-2 text-sm font-extrabold text-emerald-300">
-                    เปิดหน้านี้
+                    เข้าใช้งาน
                     <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
                   </div>
                 </Link>
@@ -101,18 +101,18 @@ export default function HomePage() {
             <div className="flex gap-3">
               <BarChart3 className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
               <div>
-                <p className="font-bold text-white">สถานะระบบ</p>
+                <p className="font-bold text-white">สถานะตอนนี้</p>
                 <p className="mt-1 leading-6">
-                  ใช้ฐานข้อมูล Neon PostgreSQL และตั้งค่า pilot baseline สำหรับ iM Sticker แล้ว ข้อมูลตัวอย่างเดิมถูกแยกออกจาก flow ใช้งานจริง
+                  ระบบเชื่อมฐานข้อมูลจริงแล้ว และตั้งค่าร้าน iM Sticker เป็นร้านทดสอบหลักเรียบร้อย
                 </p>
               </div>
             </div>
             <div className="flex gap-3 md:justify-end">
               <LockKeyhole className="mt-0.5 h-5 w-5 shrink-0 text-emerald-300" />
               <div className="md:text-right">
-                <p className="font-bold text-white">Simple Access Control</p>
+                <p className="font-bold text-white">การเข้าใช้งาน</p>
                 <p className="mt-1 leading-6">
-                  หลังบ้านร้านค้าและหน้า debug ยังมี PIN ชั่วคราว ส่วนผู้ดูแลระบบเปลี่ยนเป็น email/password แล้ว
+                  ลูกค้าและเจ้าของร้านใช้ LINE Login ส่วนผู้ดูแลระบบเข้าใช้งานด้วยอีเมลและรหัสผ่าน
                 </p>
               </div>
             </div>

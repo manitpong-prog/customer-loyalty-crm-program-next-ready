@@ -87,15 +87,15 @@ export default function AdminLoginForm({ nextPath }: AdminLoginFormProps) {
               <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-400 to-fuchsia-700 shadow-lg">
                 <ShieldCheck className="h-7 w-7 text-white" />
               </div>
-              <p className="text-xs font-mono uppercase tracking-[0.28em] text-slate-400">Platform Admin</p>
-              <h1 className="mt-3 text-3xl font-black tracking-tight">เข้าสู่ระบบผู้ดูแล</h1>
+              <p className="text-xs font-mono uppercase tracking-[0.28em] text-slate-400">ผู้ดูแลระบบ</p>
+              <h1 className="mt-3 text-3xl font-black tracking-tight">เข้าสู่ระบบ</h1>
               <p className="mt-3 text-sm leading-7 text-slate-300">
                 Admin ของระบบแยกจาก LINE Login แล้ว ใช้ email/password ผ่าน browser ปกติเท่านั้น ตาม policy ของระบบ pilot
               </p>
             </div>
 
             <div className="mt-8 rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4 text-xs leading-6 text-emerald-100">
-              ลูกค้าและเจ้าของร้านใช้ LINE Login ส่วน Platform Admin ใช้ session ฝั่ง server ด้วย HttpOnly cookie
+              ลูกค้าและเจ้าของร้านใช้ LINE Login ส่วน ผู้ดูแลระบบ ใช้ session ฝั่ง server ด้วย HttpOnly cookie
             </div>
           </div>
 
@@ -106,13 +106,13 @@ export default function AdminLoginForm({ nextPath }: AdminLoginFormProps) {
               </div>
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">Email Login</p>
-                <h2 className="text-xl font-black">Platform Admin เท่านั้น</h2>
+                <h2 className="text-xl font-black">ผู้ดูแลระบบ เท่านั้น</h2>
               </div>
             </div>
 
             {isChecking ? (
               <div className="rounded-2xl bg-slate-50 px-4 py-4 text-sm font-bold text-slate-600">
-                กำลังตรวจสอบ session เดิม...
+                กำลังตรวจสอบการเข้าสู่ระบบ...
               </div>
             ) : (
               <>
@@ -155,11 +155,11 @@ export default function AdminLoginForm({ nextPath }: AdminLoginFormProps) {
                   disabled={isSubmitting}
                   className="mt-5 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-slate-800 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {isSubmitting ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบผู้ดูแล"}
+                  {isSubmitting ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
                 </button>
 
                 <p className="mt-5 text-xs leading-6 text-slate-500">
-                  ตั้งค่าผ่าน Vercel Environment Variables: <br />
+                  บัญชีผู้ดูแลตั้งค่าไว้ใน Vercel Environment Variables <br />
                   <span className="font-mono font-bold text-slate-700">ADMIN_EMAIL, ADMIN_PASSWORD, ADMIN_SESSION_SECRET</span>
                 </p>
               </>
