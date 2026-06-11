@@ -21,6 +21,8 @@ import {
   scopeApprovedShops,
 } from '../lib/shopScope';
 
+type MerchantTab = 'dashboard' | 'approvals' | 'customers' | 'rewards' | 'promotions' | 'generator' | 'settings';
+
 interface OwnerDashboardProps {
   key?: string;
   onDataChange: () => void;
@@ -38,8 +40,9 @@ export default function OwnerDashboard({
   displayMode = 'demo'
 }: OwnerDashboardProps) {
   const isProductionView = displayMode === 'production';
-  // Navigation tabs: 'approvals', 'customers', 'rewards', 'promotions', 'generator'
-  const [activeTab, setActiveTab] = useState<'approvals' | 'customers' | 'rewards' | 'promotions' | 'generator'>('approvals');
+  // Merchant pages
+  const [activeTab, setActiveTab] = useState<MerchantTab>('dashboard');
+  const [menuOpen, setMenuOpen] = useState(false);
   const [approvalsSubTab, setApprovalsSubTab] = useState<'queue' | 'history'>('queue');
   
   // Database States
@@ -574,7 +577,7 @@ export default function OwnerDashboard({
       isAd: false
     };
     saveBanners([...allBanners, newBan]);
-    showStatus('✓ สร้างและจัดกิจกรรมโปรโมชั่นโฆษณาเรียบร้อยแล้ว');
+    showStatus('✓ สร้างโปรโมชันเรียบร้อยแล้ว');
     setShowBannerModal(false);
     
     // Reset states
@@ -587,8 +590,34 @@ export default function OwnerDashboard({
     loadData();
   };
 
+  const pendingRedeems = transactions.filter(t => t.type === 'redeem' && t.status === 'pending');
+  const completedRedeems = transactions.filter(t => t.type === 'redeem' && t.status === 'completed');
+  const earnTransactions = transactions.filter(t => t.type === 'earn' && t.status === 'completed');
+  const totalPointsIssued = earnTransactions.reduce((sum, tx) => sum + tx.points, 0);
+  const availableRewards = rewards.filter(reward => reward.isAvailable);
+  const usableCoupons = generatedCouponsList.filter((coupon: any) => !coupon.isUsed && new Date(coupon.expiresAt) > new Date());
+  const latestActivities = [...transactions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
+
+  const merchantPages: Array<{ id: MerchantTab; label: string; shortLabel: string; icon: string; count?: number; description: string }> = [
+    { id: 'dashboard', label: 'แดชบอร์ด', shortLabel: 'หน้าแรก', icon: '🏠', description: 'ภาพรวมของร้านวันนี้' },
+    { id: 'generator', label: 'ลิงก์รับแต้ม', shortLabel: 'รับแต้ม', icon: '🔗', count: usableCoupons.length, description: 'สร้างลิงก์หรือ QR สำหรับให้ลูกค้ารับแต้ม' },
+    { id: 'rewards', label: 'ของรางวัล', shortLabel: 'รางวัล', icon: '🎁', count: rewards.length, description: 'เพิ่ม แก้ไข และเปิดปิดของรางวัล' },
+    { id: 'approvals', label: 'อนุมัติรางวัล', shortLabel: 'อนุมัติ', icon: '✅', count: pendingRedeems.length, description: 'ตรวจรายการที่ลูกค้าขอแลกรางวัล' },
+    { id: 'settings', label: 'ตั้งค่า', shortLabel: 'ตั้งค่า', icon: '⚙️', description: 'ข้อมูลร้านและลิงก์สำคัญ' },
+    { id: 'customers', label: 'สมาชิก', shortLabel: 'สมาชิก', icon: '👥', count: customers.length, description: 'รายชื่อลูกค้าและการปรับแต้ม' },
+    { id: 'promotions', label: 'โปรโมชัน', shortLabel: 'โปรโมชัน', icon: '📢', count: banners.length, description: 'แบนเนอร์และโปรโมชันที่แสดงในหน้าลูกค้า' },
+  ];
+
+  const currentPage = merchantPages.find(page => page.id === activeTab) || merchantPages[0];
+
+  const goToTab = (tab: MerchantTab) => {
+    setActiveTab(tab);
+    setMenuOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
-    <div className="bg-white border border-slate-200 rounded-3xl p-6.5 shadow-sm space-y-6.5 text-slate-900">
+    <div className="relative bg-white border border-slate-200 rounded-3xl p-5 md:p-6.5 pb-24 md:pb-6.5 shadow-sm space-y-6.5 text-slate-900">
       
       {/* HEADER SECTION INCLUDES STATS & SWITCH SHOP */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-5">
@@ -636,70 +665,223 @@ export default function OwnerDashboard({
         </div>
       )}
 
-      {/* Stats Quick strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 shadow-3xs">
-          <span className="text-[10px] text-slate-500 font-extrabold font-sans uppercase block">รางวัลที่รอยืนยัน</span>
-          <p className="text-2xl font-black font-mono text-amber-600 mt-1">
-            {transactions.filter(t => t.status === 'pending').length} <span className="text-[11px] font-bold text-slate-500 font-sans">รายการ</span>
-          </p>
-        </div>
-        <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 shadow-3xs">
-          <span className="text-[10px] text-slate-500 font-extrabold font-sans uppercase block">สมาชิกของร้านนี้</span>
-          <p className="text-2xl font-black font-mono text-slate-855 mt-1">
-            {customers.length} <span className="text-[11px] font-bold text-slate-500 font-sans">คน</span>
-          </p>
-        </div>
-        <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 shadow-3xs">
-          <span className="text-[10px] text-slate-500 font-extrabold font-sans uppercase block">ของรางวัลทั้งหมด</span>
-          <p className="text-2xl font-black font-mono text-slate-855 mt-1">
-            {rewards.length} <span className="text-[11px] font-bold text-slate-500 font-sans">รายการ</span>
-          </p>
-        </div>
-        <div className="bg-slate-50/80 rounded-2xl p-4 border border-slate-200 shadow-3xs">
-          <span className="text-[10px] text-slate-500 font-extrabold font-sans uppercase block">โปรโมชันที่แสดงอยู่</span>
-          <p className="text-2xl font-black font-mono text-slate-855 mt-1">
-            {banners.length} <span className="text-[11px] font-bold text-slate-500 font-sans">ชิ้น</span>
-          </p>
-        </div>
-      </div>
+      {/* Merchant page navigation */}
+      <div className="space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-3xl border border-slate-200 bg-slate-50/80 p-3.5">
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-black text-slate-500 tracking-[0.18em] uppercase">หน้าปัจจุบัน</p>
+            <h3 className="text-xl font-black text-slate-950 flex items-center gap-2">
+              <span>{currentPage.icon}</span>
+              {currentPage.label}
+            </h3>
+            <p className="text-xs text-slate-600 font-medium">{currentPage.description}</p>
+          </div>
 
-      {/* TABS SELECTOR SYSTEM */}
-      <div className="flex border-b border-slate-200 text-xs gap-1 select-none overflow-x-auto pb-px mb-4">
-        <button 
-          onClick={() => setActiveTab('approvals')}
-          className={`px-4 py-2.5 font-extrabold whitespace-nowrap rounded-t-xl transition cursor-pointer ${activeTab === 'approvals' ? 'bg-slate-50 border-t-2 border-amber-600 text-amber-700' : 'text-slate-500 hover:text-slate-800'}`}
-        >
-          🎁 อนุมัติแลกรางวัล ({transactions.filter(t => t.type === 'redeem' && t.status === 'pending').length})
-        </button>
-        <button 
-          onClick={() => setActiveTab('customers')}
-          className={`px-4 py-2.5 font-extrabold whitespace-nowrap rounded-t-xl transition cursor-pointer ${activeTab === 'customers' ? 'bg-slate-50 border-t-2 border-amber-600 text-amber-700' : 'text-slate-500 hover:text-slate-800'}`}
-        >
-          👥 สมาชิก ({customers.length})
-        </button>
-        <button 
-          onClick={() => setActiveTab('rewards')}
-          className={`px-4 py-2.5 font-extrabold whitespace-nowrap rounded-t-xl transition cursor-pointer ${activeTab === 'rewards' ? 'bg-slate-50 border-t-2 border-amber-600 text-amber-700' : 'text-slate-500 hover:text-slate-800'}`}
-        >
-          🎁 ของรางวัล ({rewards.length})
-        </button>
-        <button 
-          onClick={() => setActiveTab('promotions')}
-          className={`px-4 py-2.5 font-extrabold whitespace-nowrap rounded-t-xl transition cursor-pointer ${activeTab === 'promotions' ? 'bg-slate-50 border-t-2 border-amber-600 text-amber-700' : 'text-slate-500 hover:text-slate-800'}`}
-        >
-          📢 โปรโมชัน ({banners.length})
-        </button>
-        <button 
-          onClick={() => setActiveTab('generator')}
-          className={`px-4 py-2.5 font-extrabold whitespace-nowrap rounded-t-xl transition cursor-pointer ${activeTab === 'generator' ? 'bg-slate-50 border-t-2 border-amber-600 text-amber-700' : 'text-slate-500 hover:text-slate-800'}`}
-        >
-          🔗 ลิงก์รับแต้ม
-        </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((value) => !value)}
+              className="w-full md:w-auto bg-slate-950 hover:bg-slate-800 text-white font-black px-5 py-3 rounded-2xl text-sm shadow-lg shadow-slate-950/10 transition active:scale-95 flex items-center justify-center gap-2"
+            >
+              <span>เมนู</span>
+              <span className={`transition ${menuOpen ? 'rotate-180' : ''}`}>⌄</span>
+            </button>
+
+            <AnimatePresence>
+              {menuOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.98 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 top-full mt-2 w-[min(92vw,360px)] bg-white border border-slate-200 rounded-3xl shadow-2xl z-30 overflow-hidden p-2"
+                >
+                  <div className="grid grid-cols-1 gap-1.5">
+                    {merchantPages.map((page) => (
+                      <button
+                        key={page.id}
+                        type="button"
+                        onClick={() => goToTab(page.id)}
+                        className={`text-left rounded-2xl px-3.5 py-3 transition flex items-center justify-between gap-3 ${activeTab === page.id ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'hover:bg-slate-50 text-slate-700 border border-transparent'}`}
+                      >
+                        <span className="flex items-center gap-3 min-w-0">
+                          <span className="text-lg">{page.icon}</span>
+                          <span className="min-w-0">
+                            <span className="block text-sm font-black truncate">{page.label}</span>
+                            <span className="block text-[10px] text-slate-500 font-medium truncate">{page.description}</span>
+                          </span>
+                        </span>
+                        {typeof page.count === 'number' && (
+                          <span className="shrink-0 text-[10px] font-black bg-slate-100 text-slate-700 rounded-full px-2 py-0.5">
+                            {page.count}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        <div className="hidden md:flex gap-2 overflow-x-auto pb-1">
+          {merchantPages.slice(0, 5).map((page) => (
+            <button
+              key={page.id}
+              type="button"
+              onClick={() => goToTab(page.id)}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-black whitespace-nowrap border transition ${activeTab === page.id ? 'bg-amber-600 text-white border-amber-600 shadow-lg shadow-amber-600/20' : 'bg-white text-slate-600 border-slate-200 hover:border-amber-200 hover:text-amber-700'}`}
+            >
+              {page.icon} {page.shortLabel}
+              {typeof page.count === 'number' && <span className="ml-1 opacity-75">({page.count})</span>}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* TABS CONTENT SYSTEM */}
       <div className="mt-4">
+        {activeTab === 'dashboard' && (
+          <div className="space-y-5 animate-fade-in">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+              <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+                <p className="text-[11px] font-black text-amber-800">รางวัลที่รอยืนยัน</p>
+                <p className="mt-1 text-3xl font-black text-amber-700 font-mono">{pendingRedeems.length}</p>
+                <p className="text-[10px] text-amber-700/75 font-bold">ควรตรวจรายการก่อนส่งมอบ</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-[11px] font-black text-slate-600">สมาชิกทั้งหมด</p>
+                <p className="mt-1 text-3xl font-black text-slate-950 font-mono">{customers.length}</p>
+                <p className="text-[10px] text-slate-500 font-bold">ลูกค้าของร้านนี้</p>
+              </div>
+              <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+                <p className="text-[11px] font-black text-emerald-800">แต้มที่แจกแล้ว</p>
+                <p className="mt-1 text-3xl font-black text-emerald-700 font-mono">{totalPointsIssued}</p>
+                <p className="text-[10px] text-emerald-700/75 font-bold">รวมจากรายการที่บันทึกสำเร็จ</p>
+              </div>
+              <div className="rounded-3xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
+                <p className="text-[11px] font-black text-sky-800">ลิงก์รับแต้มพร้อมใช้</p>
+                <p className="mt-1 text-3xl font-black text-sky-700 font-mono">{usableCoupons.length}</p>
+                <p className="text-[10px] text-sky-700/75 font-bold">ยังไม่หมดอายุและยังไม่ถูกใช้</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-base font-black text-slate-950">ภาพรวมร้านวันนี้</h4>
+                    <p className="text-xs text-slate-500 font-medium mt-1">สรุปข้อมูลสำคัญสำหรับเจ้าของร้าน ก่อนเข้าไปจัดการแต่ละเมนู</p>
+                  </div>
+                  <button type="button" onClick={() => goToTab('approvals')} className="text-xs font-black text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5">
+                    ดูรายการรออนุมัติ
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                    <p className="text-[10px] font-black text-slate-500">ของรางวัลที่เปิดให้แลก</p>
+                    <p className="text-2xl font-black text-slate-950 font-mono mt-1">{availableRewards.length}</p>
+                    <p className="text-[10px] text-slate-500 font-medium">จากทั้งหมด {rewards.length} รายการ</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                    <p className="text-[10px] font-black text-slate-500">รายการแลกสำเร็จ</p>
+                    <p className="text-2xl font-black text-slate-950 font-mono mt-1">{completedRedeems.length}</p>
+                    <p className="text-[10px] text-slate-500 font-medium">รายการที่ร้านอนุมัติแล้ว</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                    <p className="text-[10px] font-black text-slate-500">โปรโมชันที่แสดงอยู่</p>
+                    <p className="text-2xl font-black text-slate-950 font-mono mt-1">{banners.length}</p>
+                    <p className="text-[10px] text-slate-500 font-medium">แสดงในหน้าลูกค้า</p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <span className="text-xs font-black text-slate-800">รายการล่าสุด</span>
+                    <span className="text-[10px] text-slate-500 font-bold">แสดง 5 รายการล่าสุด</span>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {latestActivities.map((tx) => (
+                      <div key={tx.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-slate-900 truncate">{tx.userName}</p>
+                          <p className="text-[10px] text-slate-500 truncate">{tx.description}</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className={`text-xs font-black font-mono ${tx.type === 'earn' ? 'text-emerald-700' : 'text-rose-600'}`}>{tx.type === 'earn' ? '+' : '-'}{tx.points}</p>
+                          <p className="text-[9px] text-slate-500">{new Date(tx.createdAt).toLocaleDateString('th-TH')}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {latestActivities.length === 0 && (
+                      <div className="px-4 py-8 text-center text-xs text-slate-500 font-medium">ยังไม่มีรายการในร้านนี้</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-slate-950 text-white p-5 shadow-sm space-y-4">
+                <div>
+                  <p className="text-[10px] font-black text-amber-300 tracking-[0.18em] uppercase">ทางลัด</p>
+                  <h4 className="text-lg font-black mt-1">ทำรายการที่ใช้บ่อย</h4>
+                </div>
+                <div className="grid gap-2.5">
+                  <button type="button" onClick={() => goToTab('generator')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-4 py-3 text-left transition">
+                    <span className="block text-sm font-black">สร้างลิงก์รับแต้ม</span>
+                    <span className="block text-[10px] text-slate-300 mt-0.5">ส่งให้ลูกค้าทาง LINE หรือทำ QR หน้าร้าน</span>
+                  </button>
+                  <button type="button" onClick={() => goToTab('rewards')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-4 py-3 text-left transition">
+                    <span className="block text-sm font-black">จัดการของรางวัล</span>
+                    <span className="block text-[10px] text-slate-300 mt-0.5">เพิ่ม ปิด เปิด หรือแก้ไขของรางวัล</span>
+                  </button>
+                  <button type="button" onClick={() => goToTab('customers')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-4 py-3 text-left transition">
+                    <span className="block text-sm font-black">ดูสมาชิก</span>
+                    <span className="block text-[10px] text-slate-300 mt-0.5">ค้นหาลูกค้าและปรับแต้มเมื่อจำเป็น</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'settings' && (
+          <div className="space-y-4 animate-fade-in">
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h4 className="text-base font-black text-slate-950">ตั้งค่าร้านเบื้องต้น</h4>
+              <p className="text-xs text-slate-500 font-medium mt-1">หน้านี้เป็นจุดรวมข้อมูลสำคัญของร้าน ตอนนี้ยังเป็นข้อมูลอ่านอย่างเดียวก่อน รอบถัดไปค่อยเปิดให้แก้ไขได้</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                  <p className="text-[10px] font-black text-slate-500">ชื่อร้าน</p>
+                  <p className="text-sm font-black text-slate-950 mt-1">{activeShopDetail?.name || selectedShopId}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                  <p className="text-[10px] font-black text-slate-500">Slug สำหรับลิงก์</p>
+                  <p className="text-sm font-black text-slate-950 mt-1">{shopIdToSlug(selectedShopId)}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                  <p className="text-[10px] font-black text-slate-500">อัตราแจกแต้ม</p>
+                  <p className="text-sm font-black text-slate-950 mt-1">ทุก {pointsRate} บาท = 1 แต้ม</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                  <p className="text-[10px] font-black text-slate-500">ลิงก์หน้าลูกค้า</p>
+                  <p className="text-xs font-bold text-emerald-700 mt-1 break-all">{typeof window !== 'undefined' ? `${window.location.origin}/customer/${shopIdToSlug(selectedShopId)}` : `/customer/${shopIdToSlug(selectedShopId)}`}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
+              <h4 className="text-sm font-black text-amber-900">ข้อเสนอแนะสำหรับรอบถัดไป</h4>
+              <ul className="mt-3 space-y-2 text-xs text-amber-900 font-medium list-disc pl-5">
+                <li>เพิ่มหน้าแก้ไขข้อมูลร้าน เช่น คำอธิบายร้าน รูปหน้าปก และช่องทางติดต่อ</li>
+                <li>เพิ่มเมนูพนักงานร้าน ถ้าต้องการให้คนอื่นช่วยตรวจรางวัลหรือแจกแต้ม</li>
+                <li>เพิ่มรายงานรายวัน เช่น แต้มที่แจกวันนี้ รางวัลที่แลกวันนี้ และลูกค้าใหม่วันนี้</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
         {/* TAB A: APPROVALS LIST & ALL HISTORIES */}
         {activeTab === 'approvals' && (
           <div className="space-y-4 animate-fade-in">
@@ -1682,6 +1864,27 @@ export default function OwnerDashboard({
         )}
 
       </div>
+
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
+        <div className="grid grid-cols-5 gap-1 max-w-md mx-auto">
+          {merchantPages.slice(0, 5).map((page) => (
+            <button
+              key={page.id}
+              type="button"
+              onClick={() => goToTab(page.id)}
+              className={`relative rounded-2xl px-1.5 py-2 text-[10px] font-black transition flex flex-col items-center gap-0.5 ${activeTab === page.id ? 'text-amber-700 bg-amber-50' : 'text-slate-500 hover:bg-slate-50'}`}
+            >
+              <span className="text-lg leading-none">{page.icon}</span>
+              <span className="leading-none whitespace-nowrap">{page.shortLabel}</span>
+              {typeof page.count === 'number' && page.count > 0 && (
+                <span className="absolute -top-1 right-2 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] leading-4 shadow-sm">
+                  {page.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </nav>
 
     </div>
   );
