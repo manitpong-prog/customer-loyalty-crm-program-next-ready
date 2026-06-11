@@ -351,7 +351,6 @@ export default function App({
             )}
 
             <CustomerDashboard
-              key={`cust-${dataVersion}`}
               currentCustomerId="cust_pilot_001"
               onDataChange={handleDataChange}
               selectedShopId={selectedShopId}
