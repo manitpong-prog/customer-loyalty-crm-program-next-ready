@@ -36,8 +36,11 @@ NEXT_PUBLIC_DEFAULT_SHOP_SLUG="im-sticker"
 CRM_AUTO_SEED="pilot"
 ALLOW_DB_RESET="false"
 NEXT_PUBLIC_MERCHANT_ACCESS_PIN="1234"
-NEXT_PUBLIC_ADMIN_ACCESS_PIN="admin1234"
 NEXT_PUBLIC_DEMO_ACCESS_PIN="demo2026"
+ADMIN_EMAIL="admin@im-crm.local"
+ADMIN_PASSWORD="admin1234"
+ADMIN_SESSION_SECRET="change-this-to-a-long-random-string"
+ADMIN_SESSION_DAYS="7"
 ```
 
 If you connected Neon through the Vercel Marketplace integration, Vercel should already have `DATABASE_URL` and `DATABASE_URL_UNPOOLED`.
@@ -65,10 +68,9 @@ If you connected Neon through the Vercel Marketplace integration, Vercel should 
 รอบนี้เพิ่ม PIN gate แบบเบาสำหรับหน้าที่ไม่ควรเปิดให้ลูกค้าทั่วไปเข้าโดยตรง:
 
 - `/merchant` ใช้ `NEXT_PUBLIC_MERCHANT_ACCESS_PIN` ค่าเริ่มต้น `1234`
-- `/admin` ใช้ `NEXT_PUBLIC_ADMIN_ACCESS_PIN` ค่าเริ่มต้น `admin1234`
 - `/demo` ใช้ `NEXT_PUBLIC_DEMO_ACCESS_PIN` ค่าเริ่มต้น `demo2026`
 
-หมายเหตุ: PIN ชุดนี้เป็น client-side guard สำหรับโปรเจกต์เรียนรู้/ทดสอบ ไม่ใช่ระบบ auth ที่ปลอดภัยแบบ production เต็มรูปแบบ รอบถัดไปควรย้ายไปใช้ระบบ login/session ฝั่ง server
+หมายเหตุ: Merchant/demo PIN เป็น client-side guard สำหรับโปรเจกต์เรียนรู้/ทดสอบ ส่วน `/admin` ถูกย้ายไปใช้ email/password และ session ฝั่ง server ใน Phase 5E แล้ว
 
 รายละเอียดเพิ่มเติมดู `docs/PRODUCTION_UI_CLEANUP_TH.md`
 
@@ -102,7 +104,7 @@ NEXT_PUBLIC_DEFAULT_SHOP_SLUG=im-sticker
 
 ## Phase 4D: Admin Dashboard Cleanup
 
-ปรับ `/admin` ให้เป็น Platform Admin Dashboard แบบใช้งานจริงเบื้องต้นแทนหน้า webmaster mock-up เดิม โดยยังถูกกั้นด้วย Admin PIN เหมือนเดิม
+ปรับ `/admin` ให้เป็น Platform Admin Dashboard แบบใช้งานจริงเบื้องต้นแทนหน้า webmaster mock-up เดิม และใน Phase 5E ถูกเปลี่ยนจาก Admin PIN เป็น email/password แล้ว
 
 สิ่งที่หน้า `/admin` แสดง:
 
@@ -193,3 +195,32 @@ MERCHANT_OWNER_LINK_CODE=""
 - แก้ปัญหา LINE Login/LIFF เด้งสลับหน้า Login กับหน้าไม่พบสมาชิก
 - ป้องกันการ refresh snapshot ซ้ำเมื่อ restore LINE identity เดิมจาก localStorage
 - fallback หน้าไม่พบสมาชิกยังแสดง Login with LINE ให้ใช้งานต่อได้
+
+## Phase 5E - Admin Email Login
+
+แยก Platform Admin ออกจาก LINE ตาม policy ใหม่:
+
+```text
+Customer = LINE Login / LIFF
+Merchant Owner = LINE Login / LIFF
+Platform Admin = Email + Password only
+```
+
+เพิ่ม route/API:
+
+- `/admin/login`
+- `/api/admin/login`
+- `/api/admin/logout`
+- `/api/admin/me`
+
+Environment variables ใหม่:
+
+```env
+ADMIN_EMAIL="admin@im-crm.local"
+ADMIN_PASSWORD="admin1234"
+ADMIN_SESSION_SECRET="change-this-to-a-long-random-string"
+ADMIN_SESSION_DAYS="7"
+```
+
+ดูรายละเอียดที่ `docs/ADMIN_EMAIL_LOGIN_PHASE5E_TH.md`
+

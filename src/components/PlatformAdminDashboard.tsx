@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Gift,
   LockKeyhole,
+  LogOut,
   RefreshCw,
   ShieldCheck,
   Smartphone,
@@ -72,7 +73,11 @@ function formatDate(value?: string) {
   }
 }
 
-export default function PlatformAdminDashboard() {
+interface PlatformAdminDashboardProps {
+  adminEmail?: string;
+}
+
+export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDashboardProps) {
   const defaultShopId = getDefaultShopId();
   const defaultShopSlug = getDefaultShopSlug();
   const customerPath = getDefaultCustomerPath();
@@ -84,6 +89,7 @@ export default function PlatformAdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState<string>("");
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
     const envUrl = process.env.NEXT_PUBLIC_APP_URL;
@@ -165,6 +171,16 @@ export default function PlatformAdminDashboard() {
     }
   };
 
+  const handleAdminLogout = async () => {
+    setIsLoggingOut(true);
+
+    try {
+      await fetch("/api/admin/logout", { method: "POST" });
+    } finally {
+      window.location.href = "/admin/login";
+    }
+  };
+
   const statCards = [
     {
       label: "ร้านค้าในระบบ",
@@ -205,12 +221,17 @@ export default function PlatformAdminDashboard() {
               <div>
                 <h1 className="text-2xl font-black tracking-tight sm:text-3xl">ศูนย์ควบคุมระบบ iM Sticker Loyalty</h1>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                  หน้านี้เป็น admin dashboard แบบใช้งานจริงเบื้องต้น ใช้ดูสถานะ Neon, จำนวนข้อมูลหลัก, ลิงก์ Rich Menu Pilot และทางลัดสำหรับตรวจระบบก่อนเปิดทดสอบผ่าน LINE OA
+                  หน้านี้เป็น admin dashboard แบบใช้งานจริงเบื้องต้น ใช้ดูสถานะ Neon, จำนวนข้อมูลหลัก, ลิงก์ Rich Menu Pilot และทางลัดสำหรับตรวจระบบ โดยเข้าสู่ระบบด้วย email/password แยกจาก LINE
                 </p>
               </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {adminEmail && (
+                <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-xs font-bold text-violet-800">
+                  Admin: <span className="font-mono">{adminEmail}</span>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={loadStatus}
@@ -219,6 +240,15 @@ export default function PlatformAdminDashboard() {
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
                 รีเฟรชสถานะ
+              </button>
+              <button
+                type="button"
+                onClick={handleAdminLogout}
+                disabled={isLoggingOut}
+                className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 py-2.5 text-xs font-extrabold text-rose-700 transition hover:border-rose-300 hover:bg-rose-50 disabled:cursor-wait disabled:opacity-60"
+              >
+                <LogOut className="h-4 w-4" />
+                {isLoggingOut ? "กำลังออก..." : "ออกจากระบบ"}
               </button>
               <Link
                 href="/"
@@ -251,10 +281,10 @@ export default function PlatformAdminDashboard() {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-center gap-2 text-xs font-black text-slate-700">
                 <LockKeyhole className="h-4 w-4" />
-                Reset API
+                Admin Auth
               </div>
-              <p className="mt-2 text-lg font-black text-slate-800">ควรปิดไว้</p>
-              <p className="mt-1 text-xs text-slate-600">ค่าแนะนำ: ALLOW_DB_RESET=false</p>
+              <p className="mt-2 text-lg font-black text-slate-800">Email Session</p>
+              <p className="mt-1 text-xs text-slate-600">Reset API ควรปิดไว้: ALLOW_DB_RESET=false</p>
             </div>
           </div>
 

@@ -20,7 +20,7 @@ const primaryActions = [
   {
     href: '/admin',
     title: 'ผู้ดูแลระบบ',
-    description: 'ดูภาพรวมระบบและจัดการข้อมูลระดับแพลตฟอร์ม',
+    description: 'ดูภาพรวมระบบผ่าน email/password สำหรับผู้ดูแลแพลตฟอร์ม',
     icon: ShieldCheck,
     badge: 'Admin',
   },
@@ -112,7 +112,7 @@ export default function HomePage() {
               <div className="md:text-right">
                 <p className="font-bold text-white">Simple Access Control</p>
                 <p className="mt-1 leading-6">
-                  หลังบ้านร้านค้า ผู้ดูแลระบบ และหน้า debug ถูกกั้นด้วย PIN แบบง่ายแล้ว
+                  หลังบ้านร้านค้าและหน้า debug ยังมี PIN ชั่วคราว ส่วนผู้ดูแลระบบเปลี่ยนเป็น email/password แล้ว
                 </p>
               </div>
             </div>
