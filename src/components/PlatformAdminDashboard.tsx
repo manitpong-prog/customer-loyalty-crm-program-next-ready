@@ -157,8 +157,28 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
 
   const customerUrl = baseUrl ? `${baseUrl}${customerPath}` : customerPath;
   const merchantUrl = baseUrl ? `${baseUrl}${merchantPath}` : merchantPath;
+  const liffId = process.env.NEXT_PUBLIC_LINE_LIFF_ID || "";
+  const liffBaseUrl = liffId ? `https://liff.line.me/${liffId}` : "";
   const healthUrl = baseUrl ? `${baseUrl}/api/db/health` : "/api/db/health";
   const snapshotUrl = baseUrl ? `${baseUrl}/api/db/snapshot` : "/api/db/snapshot";
+
+  const buildCustomerUrl = (tab?: string) => {
+    if (!tab || tab === "home") return customerUrl;
+    return `${customerUrl}?tab=${tab}`;
+  };
+
+  const buildLiffUrl = (tab?: string) => {
+    const targetTab = tab || "home";
+    return liffBaseUrl ? `${liffBaseUrl}?tab=${targetTab}` : buildCustomerUrl(tab);
+  };
+
+  const richMenuLinks = [
+    { label: "แต้มของฉัน", tab: "home", helper: "เปิดหน้าแรกและแต้มปัจจุบัน", url: buildLiffUrl("home"), webUrl: buildCustomerUrl("home") },
+    { label: "ของรางวัล", tab: "rewards", helper: "เปิดรายการของรางวัลที่แลกได้", url: buildLiffUrl("rewards"), webUrl: buildCustomerUrl("rewards") },
+    { label: "รับแต้ม", tab: "code", helper: "เปิดหน้าใส่รหัส/ลิงก์รับแต้ม", url: buildLiffUrl("code"), webUrl: buildCustomerUrl("code") },
+    { label: "ประวัติ", tab: "history", helper: "เปิดประวัติรับแต้มและแลกรางวัล", url: buildLiffUrl("history"), webUrl: buildCustomerUrl("history") },
+    { label: "โปรไฟล์", tab: "profile", helper: "เปิดข้อมูลสมาชิกและ LINE account", url: buildLiffUrl("profile"), webUrl: buildCustomerUrl("profile") },
+  ];
 
   const copyText = async (label: string, text: string) => {
     try {
@@ -326,29 +346,75 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
               <Smartphone className="h-8 w-8 text-emerald-500" />
             </div>
 
-            <div className="mt-5 space-y-3">
+            <div className="mt-5 space-y-4">
               <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <p className="text-sm font-black text-emerald-900">หน้าลูกค้า iM Sticker</p>
-                    <p className="mt-1 break-all font-mono text-xs text-emerald-700">{customerUrl}</p>
+                    <p className="text-sm font-black text-emerald-900">LIFF หลักสำหรับลูกค้า iM Sticker</p>
+                    <p className="mt-1 break-all font-mono text-xs text-emerald-700">{liffBaseUrl || customerUrl}</p>
                     <p className="mt-2 text-xs leading-5 text-emerald-800/80">
-                      ใช้เป็น URL หลักสำหรับปุ่มใน Rich Menu ของ LINE OA
+                      ใช้กับปุ่มหลักใน Rich Menu ได้ทันที ถ้ายังไม่ได้ตั้ง LIFF ID ระบบจะแสดง URL เว็บตรงแทน
                     </p>
                   </div>
                   <div className="flex shrink-0 gap-2">
                     <button
                       type="button"
-                      onClick={() => copyText("customer", customerUrl)}
+                      onClick={() => copyText("liff-main", liffBaseUrl || customerUrl)}
                       className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-extrabold text-white hover:bg-emerald-700"
                     >
                       <Clipboard className="h-4 w-4" />
-                      {copied === "customer" ? "คัดลอกแล้ว" : "คัดลอก"}
+                      {copied === "liff-main" ? "คัดลอกแล้ว" : "คัดลอก"}
                     </button>
-                    <Link href={customerPath} className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-extrabold text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-50">
+                    <a href={liffBaseUrl || customerPath} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-extrabold text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-50">
                       เปิด <ArrowRight className="h-4 w-4" />
-                    </Link>
+                    </a>
                   </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-black text-slate-900">Mapping ปุ่ม Rich Menu ที่ระบบรองรับแล้ว</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">
+                      คุณสามารถนำ URL เหล่านี้ไปผูกใน LINE OA เองได้เลย ระบบรองรับ query <span className="font-mono">?tab=...</span> และ <span className="font-mono">liff.state</span> แล้ว
+                    </p>
+                  </div>
+                  {!liffBaseUrl && (
+                    <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-black text-amber-700">
+                      ยังไม่พบ NEXT_PUBLIC_LINE_LIFF_ID
+                    </span>
+                  )}
+                </div>
+
+                <div className="mt-4 grid gap-3">
+                  {richMenuLinks.map((item) => (
+                    <div key={item.tab} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-sm font-black text-slate-900">{item.label}</p>
+                          <p className="mt-1 text-xs text-slate-500">{item.helper}</p>
+                          <p className="mt-2 break-all font-mono text-[11px] text-slate-700">{item.url}</p>
+                          {liffBaseUrl && (
+                            <p className="mt-1 break-all font-mono text-[10px] text-slate-400">เว็บตรงสำรอง: {item.webUrl}</p>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => copyText(`rich-${item.tab}`, item.url)}
+                            className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-3 py-2 text-xs font-extrabold text-white hover:bg-slate-800"
+                          >
+                            <Clipboard className="h-4 w-4" />
+                            {copied === `rich-${item.tab}` ? "คัดลอกแล้ว" : "คัดลอก"}
+                          </button>
+                          <a href={item.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-extrabold text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50">
+                            เปิด <ArrowRight className="h-4 w-4" />
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -468,7 +534,7 @@ export default function PlatformAdminDashboard({ adminEmail }: PlatformAdminDash
               </div>
               <div className="rounded-2xl bg-sky-50 p-4 text-sky-950">
                 <p className="font-black">Phase 6</p>
-                <p className="mt-1">เตรียมรูป Rich Menu และ mapping ปุ่มไปยัง {customerPath}</p>
+                <p className="mt-1">นำลิงก์ในกล่อง LINE OA Pilot ไปผูกใน Rich Menu และทดสอบเปิดผ่าน LINE</p>
               </div>
             </div>
           </section>

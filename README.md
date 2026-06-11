@@ -224,3 +224,22 @@ ADMIN_SESSION_DAYS="7"
 
 ดูรายละเอียดที่ `docs/ADMIN_EMAIL_LOGIN_PHASE5E_TH.md`
 
+## Phase 6A - Rich Menu / LIFF Pilot Readiness
+
+เพิ่มความพร้อมสำหรับนำระบบไปผูกกับ Rich Menu ของ LINE OA โดยไม่ต้องสร้างเมนูผ่านโค้ด:
+
+- หน้า `/admin` แสดง URL สำหรับปุ่ม Rich Menu แบบคัดลอกได้
+- รองรับ LIFF URL พร้อม query เช่น `https://liff.line.me/{LIFF_ID}?tab=rewards`
+- หน้า customer อ่านค่า `liff.state` เพื่อเปิด tab ที่ถูกต้องเมื่อเข้าผ่าน LIFF
+- มีเว็บตรงสำรองสำหรับทดสอบ เช่น `/customer/im-sticker?tab=history`
+
+Mapping หลัก:
+
+```text
+แต้มของฉัน → ?tab=home
+ของรางวัล → ?tab=rewards
+รับแต้ม → ?tab=code
+ประวัติ → ?tab=history
+โปรไฟล์ → ?tab=profile
+```
+

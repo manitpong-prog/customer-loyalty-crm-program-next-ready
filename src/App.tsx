@@ -32,6 +32,52 @@ type AppRole = "customer" | "owner" | "webmaster";
 type AppMode = "demo" | "customer" | "merchant" | "admin";
 type CustomerTab = "home" | "rewards" | "code" | "history" | "profile";
 
+
+function extractQueryParamsFromLiffState(rawState: string | null): URLSearchParams {
+  if (!rawState) return new URLSearchParams();
+
+  let decoded = rawState;
+  try {
+    decoded = decodeURIComponent(rawState);
+  } catch {
+    decoded = rawState;
+  }
+
+  const queryStart = decoded.indexOf("?");
+  const queryText = decoded.startsWith("?")
+    ? decoded.slice(1)
+    : queryStart >= 0
+      ? decoded.slice(queryStart + 1)
+      : decoded;
+
+  const hashStart = queryText.indexOf("#");
+  const cleanQuery = hashStart >= 0 ? queryText.slice(0, hashStart) : queryText;
+
+  return new URLSearchParams(cleanQuery);
+}
+
+function getEffectiveSearchParams(): URLSearchParams {
+  const directParams = new URLSearchParams(window.location.search);
+  const liffParams = extractQueryParamsFromLiffState(directParams.get("liff.state"));
+  const merged = new URLSearchParams(directParams.toString());
+
+  liffParams.forEach((value, key) => {
+    if (!merged.has(key)) merged.set(key, value);
+  });
+
+  return merged;
+}
+
+function cleanCustomerEntryQuery() {
+  try {
+    const url = new URL(window.location.href);
+    ["tab", "code", "resetLine", "liff.state", "liff.referrer"].forEach((key) => url.searchParams.delete(key));
+    window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ""));
+  } catch (e) {
+    console.error("Failed to clean URL", e);
+  }
+}
+
 interface AppProps {
   initialRole?: AppRole;
   mode?: AppMode;
@@ -97,7 +143,8 @@ export default function App({
     let isMounted = true;
 
     const bootstrap = async () => {
-      const searchParams = new URLSearchParams(window.location.search);
+      const searchParams = getEffectiveSearchParams();
+      const hasLiffState = new URLSearchParams(window.location.search).has("liff.state");
       const shouldResetLine = searchParams.get("resetLine") === "1";
 
       if (shouldResetLine) {
@@ -143,14 +190,9 @@ export default function App({
         setActiveRole("customer");
       }
 
-      if (code || tabParam || shouldResetLine) {
-        // Clean query parameter from address bar after bootstrap to avoid re-triggering on refresh.
-        try {
-          const cleanUrl = window.location.origin + window.location.pathname;
-          window.history.replaceState({}, document.title, cleanUrl);
-        } catch (e) {
-          console.error("Failed to clean URL", e);
-        }
+      if (code || tabParam || shouldResetLine || hasLiffState) {
+        // Clean entry parameters after bootstrap to avoid re-triggering on refresh.
+        cleanCustomerEntryQuery();
       }
     };
 
