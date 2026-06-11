@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Store, QrCode, Users, Plus, Edit, Trash2, Check, X,
   ShoppingBag, Award, PlusCircle, MinusCircle, Search, 
-  Image, HelpCircle, Calendar, RefreshCw, AlertCircle, FileText, Copy, UserPlus, ReceiptText
+  Image, HelpCircle, Calendar, RefreshCw, AlertCircle, FileText, Copy, UserPlus, ReceiptText, Share2
 } from 'lucide-react';
 import { Shop, Customer, Reward, Transaction, PromoBanner } from '../types';
 import { 
@@ -64,31 +64,51 @@ export default function OwnerDashboard({
   );
   
   // Custom QR / Link generator states
-  const [generatePoints, setGeneratePoints] = useState(50);
-  const [generateDesc, setGenerateDesc] = useState('รับประทานอาหารครบกำหนด');
+  const [generatePurchaseAmount, setGeneratePurchaseAmount] = useState(500);
+  const [generateDesc, setGenerateDesc] = useState('ยอดซื้อหน้าร้าน');
   const [generatedQRValue, setGeneratedQRValue] = useState('');
   const [expiryMinutes, setExpiryMinutes] = useState(15);
   const [activeCoupon, setActiveCoupon] = useState<any | null>(null);
   const [generatedCouponsList, setGeneratedCouponsList] = useState<any[]>([]);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [shopPointRateInput, setShopPointRateInput] = useState(10);
+
+  const lineLiffId = process.env.NEXT_PUBLIC_LINE_LIFF_ID?.trim();
+  const buildCustomerClaimUrl = (code: string) => {
+    const encodedCode = encodeURIComponent(code);
+    if (lineLiffId) return `https://liff.line.me/${lineLiffId}?code=${encodedCode}`;
+    if (typeof window !== 'undefined') return `${window.location.origin}/customer/${shopIdToSlug(selectedShopId)}?code=${encodedCode}`;
+    return `/customer/${shopIdToSlug(selectedShopId)}?code=${encodedCode}`;
+  };
 
   const generateNewCouponAndLink = () => {
+    const activeShop = shops.length > 0 ? shops.find(s => s.id === selectedShopId) : getShops().find(s => s.id === selectedShopId);
+    const currentPointsRate = Math.max(1, activeShop?.pointsRate || 10);
+    const purchaseAmount = Math.max(0, Number(generatePurchaseAmount) || 0);
+    const couponPoints = Math.floor(purchaseAmount / currentPointsRate);
+
+    if (couponPoints <= 0) {
+      showStatus(`❌ ยอดซื้อยังไม่ถึงอัตราแจกแต้มของร้าน (${currentPointsRate} บาท = 1 แต้ม)`);
+      return;
+    }
+
     // Generate unique code format CPN-[SHOP_ABBR]-[POINTS]-[RANDOM_5_CHARS]
     const shopAbbr = selectedShopId.split('_').map(w => w[0]).join('').toUpperCase() || 'CPN';
     const randomHex = Math.random().toString(36).substring(2, 7).toUpperCase();
-    const uniqueCode = `CPN-${shopAbbr}-${generatePoints}-${randomHex}`;
+    const uniqueCode = `CPN-${shopAbbr}-${couponPoints}-${randomHex}`;
 
     const coupons = getGeneratedCoupons();
 
-    const activeShop = shops.length > 0 ? shops.find(s => s.id === selectedShopId) : getShops().find(s => s.id === selectedShopId);
     const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString();
 
     const newCoupon = {
       code: uniqueCode,
-      points: generatePoints,
+      points: couponPoints,
       shopId: selectedShopId,
       shopName: activeShop?.name || 'ร้านกาแฟ KOFFEE CRAFT',
-      description: generateDesc || 'รับแต้มจากร้าน',
+      description: generateDesc || `ยอดซื้อ ${purchaseAmount.toLocaleString('th-TH')} บาท`,
+      purchaseAmount,
+      pointsRate: currentPointsRate,
       createdAt: new Date().toISOString(),
       expiresAt: expiresAt,
       isUsed: false
@@ -97,8 +117,8 @@ export default function OwnerDashboard({
     coupons.push(newCoupon);
     saveGeneratedCoupons(coupons);
 
-    // Construct app's URL
-    const generatedUrl = `${window.location.origin}/customer/${shopIdToSlug(selectedShopId)}?code=${uniqueCode}`;
+    // Construct LIFF URL first so customer opens inside LINE when available.
+    const generatedUrl = buildCustomerClaimUrl(uniqueCode);
 
     setGeneratedQRValue(generatedUrl);
     setActiveCoupon(newCoupon);
@@ -107,6 +127,39 @@ export default function OwnerDashboard({
     const shopCoupons = coupons.filter((c: any) => c.shopId === selectedShopId);
     shopCoupons.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     setGeneratedCouponsList(shopCoupons);
+  };
+
+  const handleShareClaimLink = async (url: string, points: number, code?: string) => {
+    if (!url) {
+      showStatus('❌ กรุณาสร้างลิงก์รับแต้มก่อนแชร์');
+      return;
+    }
+
+    const shareText = `รับแต้มจาก ${activeShopDetail?.name || 'ร้านค้า'} จำนวน ${points} แต้ม\nกดรับแต้มที่นี่: ${url}`;
+
+    try {
+      if (window.liff?.shareTargetPicker) {
+        await window.liff.shareTargetPicker([{ type: 'text', text: shareText }]);
+        showStatus('✓ เปิดหน้าส่งลิงก์ใน LINE แล้ว');
+        return;
+      }
+    } catch (error) {
+      console.warn('[line-share] LIFF shareTargetPicker failed, fallback to LINE share URL.', error);
+    }
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'รับแต้มจากร้าน', text: shareText, url });
+        showStatus('✓ เปิดหน้าส่งลิงก์แล้ว');
+        return;
+      } catch (error) {
+        console.warn('[line-share] Web Share API cancelled or failed.', error);
+      }
+    }
+
+    const lineShareUrl = `https://line.me/R/share?text=${encodeURIComponent(shareText)}`;
+    window.open(lineShareUrl, '_blank', 'noopener,noreferrer');
+    showStatus(code ? `✓ เปิด LINE สำหรับแชร์รหัส ${code}` : '✓ เปิด LINE สำหรับแชร์ลิงก์แล้ว');
   };
 
   const handleDeleteGeneratedCoupon = (code: string) => {
@@ -175,6 +228,12 @@ export default function OwnerDashboard({
   }, [selectedShopId, activeTab]);
 
   useEffect(() => {
+    if (activeShopDetail?.pointsRate) {
+      setShopPointRateInput(activeShopDetail.pointsRate);
+    }
+  }, [activeShopDetail?.id, activeShopDetail?.pointsRate]);
+
+  useEffect(() => {
     if (customers.length > 0 && !customers.some((customer) => customer.id === selectedSaleCustomerId)) {
       setSelectedSaleCustomerId(customers[0].id);
     }
@@ -182,6 +241,7 @@ export default function OwnerDashboard({
 
   const pointsRate = Math.max(1, activeShopDetail?.pointsRate || 10);
   const calculatedSalePoints = Math.max(0, Math.floor((Number(saleAmount) || 0) / pointsRate));
+  const calculatedGeneratePoints = Math.max(0, Math.floor((Number(generatePurchaseAmount) || 0) / pointsRate));
 
   const getTierForLifetime = (lifetimePoints: number): Customer['tier'] => {
     if (lifetimePoints >= 1000) return 'Platinum';
@@ -192,6 +252,28 @@ export default function OwnerDashboard({
   const showStatus = (text: string) => {
     setStatusMsg(text);
     setTimeout(() => setStatusMsg(''), 3000);
+  };
+
+  const handleSaveShopPointRate = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const nextRate = Math.max(1, Math.floor(Number(shopPointRateInput) || 1));
+    const allShops = getShops();
+    const targetShop = allShops.find((shop) => shop.id === selectedShopId);
+
+    if (!targetShop) {
+      showStatus('❌ ไม่พบข้อมูลร้าน กรุณาลองโหลดหน้าใหม่อีกครั้ง');
+      return;
+    }
+
+    const updatedShops = allShops.map((shop) => (
+      shop.id === selectedShopId ? { ...shop, pointsRate: nextRate } : shop
+    ));
+
+    saveShops(updatedShops);
+    showStatus(`✓ บันทึกอัตราแจกแต้มแล้ว: ${nextRate} บาท = 1 แต้ม`);
+    onDataChange();
+    loadData();
   };
 
   const handleCreateCustomer = (e: React.FormEvent) => {
@@ -392,8 +474,8 @@ export default function OwnerDashboard({
 
     const updatedCusts = allCustomers.map(c => {
       if (c.id === victim.id) {
-        const newPts = c.currentPoints + generatePoints;
-        const newLifetime = c.lifetimePoints + generatePoints;
+        const newPts = c.currentPoints + calculatedGeneratePoints;
+        const newLifetime = c.lifetimePoints + calculatedGeneratePoints;
         const newTier = getTierForLifetime(newLifetime);
 
         return { ...c, currentPoints: newPts, lifetimePoints: newLifetime, tier: newTier, shopIds: Array.from(new Set([...(c.shopIds || []), selectedShopId])) };
@@ -410,14 +492,14 @@ export default function OwnerDashboard({
       shopId: selectedShopId,
       shopName: shops.find(s => s.id === selectedShopId)?.name || 'Koffee Craft',
       type: 'earn',
-      points: generatePoints,
-      description: `รับแต้มจากลิงก์ของร้าน: ${generateDesc}`,
+      points: calculatedGeneratePoints,
+      description: `รับแต้มจากลิงก์ของร้าน: ${generateDesc || `ยอดซื้อ ${generatePurchaseAmount.toLocaleString('th-TH')} บาท`}`,
       status: 'completed',
       createdAt: new Date().toISOString()
     };
 
     saveTransactions([newTx, ...getTransactions()]);
-    showStatus(`✓ ทดสอบรับแต้มสำเร็จ มอบ +${generatePoints} ให้ลูกค้า ${victim.name} เรียบร้อยแล้ว`);
+    showStatus(`✓ ทดสอบรับแต้มสำเร็จ มอบ +${calculatedGeneratePoints} ให้ลูกค้า ${victim.name} เรียบร้อยแล้ว`);
     onDataChange();
     loadData();
   };
@@ -831,7 +913,7 @@ export default function OwnerDashboard({
           <div className="space-y-4 animate-fade-in">
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <h4 className="text-base font-black text-slate-950">ตั้งค่าร้านเบื้องต้น</h4>
-              <p className="text-xs text-slate-500 font-medium mt-1">หน้านี้เป็นจุดรวมข้อมูลสำคัญของร้าน ตอนนี้ยังเป็นข้อมูลอ่านอย่างเดียวก่อน รอบถัดไปค่อยเปิดให้แก้ไขได้</p>
+              <p className="text-xs text-slate-500 font-medium mt-1">ตั้งค่าอัตราแจกแต้มของร้าน เพื่อให้ระบบคำนวณแต้มจากยอดซื้ออัตโนมัติ</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
                 <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
                   <p className="text-[10px] font-black text-slate-500">ชื่อร้าน</p>
@@ -841,11 +923,26 @@ export default function OwnerDashboard({
                   <p className="text-[10px] font-black text-slate-500">Slug สำหรับลิงก์</p>
                   <p className="text-sm font-black text-slate-950 mt-1">{shopIdToSlug(selectedShopId)}</p>
                 </div>
-                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                  <p className="text-[10px] font-black text-slate-500">อัตราแจกแต้ม</p>
-                  <p className="text-sm font-black text-slate-950 mt-1">ทุก {pointsRate} บาท = 1 แต้ม</p>
-                </div>
-                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                <form onSubmit={handleSaveShopPointRate} className="rounded-2xl bg-amber-50 border border-amber-200 p-4 md:col-span-2 space-y-3">
+                  <div className="flex flex-col md:flex-row md:items-end gap-3">
+                    <div className="flex-1 space-y-1">
+                      <p className="text-[10px] font-black text-amber-700">อัตราแจกแต้ม</p>
+                      <label className="text-xs font-bold text-slate-700 block">ลูกค้าซื้อครบกี่บาท = 1 แต้ม</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={shopPointRateInput}
+                        onChange={(e) => setShopPointRateInput(parseInt(e.target.value) || 1)}
+                        className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
+                      />
+                      <p className="text-[10px] text-slate-500 font-medium">ตอนนี้ระบบคำนวณจากยอดซื้อ: ทุก {pointsRate} บาท = 1 แต้ม</p>
+                    </div>
+                    <button type="submit" className="bg-slate-950 hover:bg-slate-800 text-white font-black text-xs rounded-xl px-4 py-2.5 transition active:scale-95">
+                      บันทึกอัตราแต้ม
+                    </button>
+                  </div>
+                </form>
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 md:col-span-2">
                   <p className="text-[10px] font-black text-slate-500">ลิงก์หน้าลูกค้า</p>
                   <p className="text-xs font-bold text-emerald-700 mt-1 break-all">{typeof window !== 'undefined' ? `${window.location.origin}/customer/${shopIdToSlug(selectedShopId)}` : `/customer/${shopIdToSlug(selectedShopId)}`}</p>
                 </div>
@@ -1606,38 +1703,36 @@ export default function OwnerDashboard({
         {activeTab === 'generator' && (
           <div className="space-y-6">
             <div className="space-y-1">
-              <h3 className="text-xs font-bold text-slate-700 uppercase font-mono tracking-wider">ระบบสร้างลิ้งก์และ QR Code แจกแต้มด่วน</h3>
-              <p className="text-[10px] text-slate-600">กำหนดจำนวนแต้ม แล้วสร้างลิงก์หรือ QR สำหรับส่งให้ลูกค้ารับแต้ม</p>
+              <h3 className="text-xs font-bold text-slate-700 uppercase font-mono tracking-wider">สร้างลิงก์และ QR Code รับแต้ม</h3>
+              <p className="text-[10px] text-slate-600">กรอกยอดซื้อของลูกค้า ระบบจะคำนวณแต้มจากอัตราที่ตั้งไว้ของร้าน แล้วสร้างลิงก์ LIFF สำหรับส่งใน LINE</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
               
               {/* Form settings options */}
               <div className="bg-neutral-950 p-4 rounded-2xl border border-neutral-850 space-y-4">
-                <span className="text-[11px] font-bold text-yellow-500 font-mono uppercase block font-sans">การตั้งค่าพารามิเตอร์แต้มสแกน</span>
+                <span className="text-[11px] font-bold text-yellow-500 font-mono uppercase block font-sans">ข้อมูลยอดซื้อสำหรับออกลิงก์</span>
                 
                 <div className="space-y-1 flex flex-col">
-                  <label className="text-[10px] text-slate-600 block font-sans">จำนวนแต้มที่ต้องการแจก</label>
-                  <select 
-                    value={generatePoints}
-                    onChange={(e) => setGeneratePoints(parseInt(e.target.value))}
-                    className="w-full bg-neutral-900 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 cursor-pointer font-sans"
-                  >
-                    <option value={10}>+10 แต้ม</option>
-                    <option value={20}>+20 แต้ม</option>
-                    <option value={50}>+50 แต้ม</option>
-                    <option value={100}>+100 แต้ม</option>
-                    <option value={250}>+250 แต้ม</option>
-                  </select>
+                  <label className="text-[10px] text-slate-600 block font-sans">ยอดซื้อของลูกค้า (บาท)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={generatePurchaseAmount}
+                    onChange={(e) => setGeneratePurchaseAmount(parseInt(e.target.value) || 0)}
+                    placeholder="เช่น 500"
+                    className="w-full bg-neutral-900 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 outline-none font-sans"
+                  />
+                  <p className="text-[9.5px] text-neutral-400 font-medium">คำนวณจากอัตราร้าน: {pointsRate} บาท = 1 แต้ม → ลูกค้าจะได้รับ +{calculatedGeneratePoints} แต้ม</p>
                 </div>
 
                 <div className="space-y-1 font-sans">
-                  <label className="text-[10px] text-slate-600 block font-sans">คําอธิบายหรือวัตถุประสงค์ในการเติมแต้ม :</label>
+                  <label className="text-[10px] text-slate-600 block font-sans">หมายเหตุบนรายการรับแต้ม</label>
                   <input 
                     type="text"
                     value={generateDesc}
                     onChange={(e) => setGenerateDesc(e.target.value)}
-                    placeholder="เช่น ซื้อสินค้าครบ 500 บาท"
+                    placeholder="เช่น ยอดซื้อหน้าร้าน / ใบเสร็จเลขที่..."
                     className="w-full bg-neutral-900 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg outline-none font-sans"
                     required
                   />
@@ -1700,13 +1795,21 @@ export default function OwnerDashboard({
                     >
                       {copiedLink ? (
                         <>
-                          <Check className="w-4 h-4" /> คัดลอกลิงก์สำเร็จแล้ว! ✓
+                          <Check className="w-4 h-4" /> คัดลอกแล้ว ✓
                         </>
                       ) : (
                         <>
-                          <Copy className="w-4 h-4" /> คัดลอกลิงก์
+                          <Copy className="w-4 h-4" /> คัดลอก
                         </>
                       )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!generatedQRValue}
+                      onClick={() => handleShareClaimLink(generatedQRValue, activeCoupon?.points || calculatedGeneratePoints, activeCoupon?.code)}
+                      className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-neutral-800 disabled:text-neutral-500 text-white font-bold py-2 px-3 rounded-lg text-xs duration-150 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                    >
+                      <Share2 className="w-4 h-4" /> แชร์ไปที่ LINE
                     </button>
                   </div>
                 </div>
@@ -1724,7 +1827,7 @@ export default function OwnerDashboard({
                 <div className="space-y-2">
                   <div className="text-[10px] text-neutral-300">
                     เมื่อลูกค้าเปิดลิงก์หรือสแกน QR จะเข้าสู่หน้ารับแต้มทันที 
-                    <span className="font-bold text-yellow-500 font-mono"> +{generatePoints} แต้ม</span>
+                    <span className="font-bold text-yellow-500 font-mono"> +{calculatedGeneratePoints} แต้ม</span>
                   </div>
 
                   {/* Interactive Button to simulate client scanning this link */}
@@ -1733,7 +1836,7 @@ export default function OwnerDashboard({
                     onClick={simulateCustomerScanned}
                     className="w-full bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold text-[11px] py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-lg"
                   >
-                    ทดสอบเปิดลิงก์ในมุมลูกค้า
+เปิดลิงก์ทดสอบ
                   </button>
                   <p className="text-[9px] text-neutral-500 italic">ใช้สำหรับทดสอบว่าลิงก์รับแต้มทำงานถูกต้องก่อนส่งให้ลูกค้า</p>
                 </div>
@@ -1756,7 +1859,7 @@ export default function OwnerDashboard({
                     <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider font-mono">
                       <th className="pb-2.5 pl-2 text-left">รหัสรับแต้ม</th>
                       <th className="pb-2.5 text-left">รายละเอียด</th>
-                      <th className="pb-2.5 text-left">แต้มที่ให้</th>
+                      <th className="pb-2.5 text-left">ยอดซื้อ / แต้ม</th>
                       <th className="pb-2.5 font-mono text-left">สร้างเมื่อ</th>
                       <th className="pb-2.5 font-mono text-left">หมดอายุเมื่อ</th>
                       <th className="pb-2.5 text-left">สถานะ</th>
@@ -1795,7 +1898,7 @@ export default function OwnerDashboard({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  const url = `${window.location.origin}/customer/${shopIdToSlug(selectedShopId)}?code=${c.code}`;
+                                  const url = buildCustomerClaimUrl(c.code);
                                   navigator.clipboard.writeText(url);
                                   showStatus(`✓ คัดลอกลิงก์ของ ${c.code} เรียบร้อย!`);
                                 }}
@@ -1807,7 +1910,7 @@ export default function OwnerDashboard({
                             </div>
                           </td>
                           <td className="py-3 text-neutral-400 font-sans">{c.description}</td>
-                          <td className="py-3 font-semibold text-yellow-500 font-mono">+{c.points} แต้ม</td>
+                          <td className="py-3 font-semibold text-yellow-500 font-mono">{c.purchaseAmount ? `${Number(c.purchaseAmount).toLocaleString('th-TH')} บาท → ` : ''}+{c.points} แต้ม</td>
                           <td className="py-3 text-neutral-400 font-mono text-[10px]">
                             {new Date(c.createdAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })} ({new Date(c.createdAt).toLocaleDateString('th-TH')})
                           </td>
@@ -1816,14 +1919,24 @@ export default function OwnerDashboard({
                           </td>
                           <td className="py-3 font-sans">{statusBadge}</td>
                           <td className="py-3 text-right pr-2">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteGeneratedCoupon(c.code)}
-                              className="p-1 px-2 border border-red-500/20 bg-red-500/10 hover:bg-rose-600 text-rose-400 hover:text-white rounded-lg transition duration-150 text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
-                              title="ลบรหัสนี้"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" /> ลบถาวร
-                            </button>
+                            <div className="inline-flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleShareClaimLink(buildCustomerClaimUrl(c.code), c.points, c.code)}
+                                className="p-1 px-2 border border-green-500/20 bg-green-500/10 hover:bg-green-600 text-green-400 hover:text-white rounded-lg transition duration-150 text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
+                                title="แชร์ลิงก์นี้ไปที่ LINE"
+                              >
+                                <Share2 className="w-3.5 h-3.5" /> แชร์
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteGeneratedCoupon(c.code)}
+                                className="p-1 px-2 border border-red-500/20 bg-red-500/10 hover:bg-rose-600 text-rose-400 hover:text-white rounded-lg transition duration-150 text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
+                                title="ลบรหัสนี้"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> ลบ
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );

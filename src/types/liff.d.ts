@@ -20,6 +20,7 @@ declare global {
         pictureUrl?: string;
         statusMessage?: string;
       }>;
+      shareTargetPicker?: (messages: Array<{ type: 'text'; text: string }>) => Promise<void | { status?: string }>;
       isInClient?: () => boolean;
     };
   }
