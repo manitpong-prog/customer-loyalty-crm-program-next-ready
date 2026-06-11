@@ -608,7 +608,6 @@ export default function OwnerDashboard({
     { id: 'promotions', label: 'โปรโมชัน', shortLabel: 'โปรโมชัน', icon: '📢', count: banners.length, description: 'แบนเนอร์และโปรโมชันที่แสดงในหน้าลูกค้า' },
   ];
 
-  const currentPage = merchantPages.find(page => page.id === activeTab) || merchantPages[0];
 
   const goToTab = (tab: MerchantTab) => {
     setActiveTab(tab);
@@ -620,27 +619,38 @@ export default function OwnerDashboard({
     <div className="relative bg-white border border-slate-200 rounded-3xl p-5 md:p-6.5 pb-24 md:pb-6.5 shadow-sm space-y-6.5 text-slate-900">
       
       {/* HEADER SECTION INCLUDES STATS & SWITCH SHOP */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+      <div className="flex items-start justify-between gap-3 border-b border-slate-200 pb-4">
         
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-500/35 flex items-center justify-center text-amber-650">
             <Store className="w-6 h-6" />
           </div>
-          <div>
+          <div className="min-w-0">
             <span className="text-[10px] text-amber-700 font-extrabold tracking-wider uppercase">หลังบ้านร้านค้า</span>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-black text-slate-900">{activeShopDetail?.name || 'กำลังโหลดร้านค้า...'}</h2>
+              <h2 className="text-lg font-black text-slate-900 truncate">{activeShopDetail?.name || 'กำลังโหลดร้านค้า...'}</h2>
               <span className="bg-emerald-550/10 text-emerald-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-500/20">ออนไลน์</span>
             </div>
           </div>
         </div>
 
-        {/* Change Store selector inside owner view */}
-        <div className="flex items-center gap-2.5">
+        {/* Compact top menu / shop switch */}
+        <div className="shrink-0 flex items-center justify-end gap-2.5">
           {isProductionView ? (
-            <span className="text-[11px] text-emerald-700 font-black whitespace-nowrap bg-emerald-50 border border-emerald-200 px-3.5 py-1.5 rounded-xl">
-              กำลังจัดการร้าน: {activeShopDetail?.name || selectedShopId}
-            </span>
+            <button
+              type="button"
+              onClick={() => setMenuOpen((value) => !value)}
+              aria-expanded={menuOpen}
+              className="min-w-[96px] sm:min-w-[112px] bg-slate-950 hover:bg-slate-800 text-white font-black px-4 py-2.5 rounded-2xl text-sm shadow-lg shadow-slate-950/10 transition active:scale-95 flex items-center justify-center gap-2"
+            >
+              <span>เมนู</span>
+              <span className={`transition ${menuOpen ? 'rotate-180' : ''}`}>⌄</span>
+              {pendingRedeems.length > 0 && (
+                <span className="ml-0.5 min-w-5 h-5 rounded-full bg-rose-500 text-white text-[10px] leading-5 text-center font-black">
+                  {pendingRedeems.length}
+                </span>
+              )}
+            </button>
           ) : (
             <>
               <span className="text-xs text-slate-500 font-black whitespace-nowrap">เปลี่ยนร้านทดสอบ:</span>
@@ -653,6 +663,15 @@ export default function OwnerDashboard({
                   <option key={s.id} value={s.id}>{s.name}</option>
                 ))}
               </select>
+              <button
+                type="button"
+                onClick={() => setMenuOpen((value) => !value)}
+                aria-expanded={menuOpen}
+                className="bg-slate-950 hover:bg-slate-800 text-white font-black px-4 py-2.5 rounded-2xl text-sm shadow-lg shadow-slate-950/10 transition active:scale-95 flex items-center justify-center gap-2"
+              >
+                <span>เมนู</span>
+                <span className={`transition ${menuOpen ? 'rotate-180' : ''}`}>⌄</span>
+              </button>
             </>
           )}
         </div>
@@ -665,80 +684,42 @@ export default function OwnerDashboard({
         </div>
       )}
 
-      {/* Merchant page navigation */}
-      <div className="space-y-3">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 rounded-3xl border border-slate-200 bg-slate-50/80 p-3.5">
-          <div className="space-y-0.5">
-            <p className="text-[10px] font-black text-slate-500 tracking-[0.18em] uppercase">หน้าปัจจุบัน</p>
-            <h3 className="text-xl font-black text-slate-950 flex items-center gap-2">
-              <span>{currentPage.icon}</span>
-              {currentPage.label}
-            </h3>
-            <p className="text-xs text-slate-600 font-medium">{currentPage.description}</p>
-          </div>
-
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setMenuOpen((value) => !value)}
-              className="w-full md:w-auto bg-slate-950 hover:bg-slate-800 text-white font-black px-5 py-3 rounded-2xl text-sm shadow-lg shadow-slate-950/10 transition active:scale-95 flex items-center justify-center gap-2"
-            >
-              <span>เมนู</span>
-              <span className={`transition ${menuOpen ? 'rotate-180' : ''}`}>⌄</span>
-            </button>
-
-            <AnimatePresence>
-              {menuOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.98 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute right-0 top-full mt-2 w-[min(92vw,360px)] bg-white border border-slate-200 rounded-3xl shadow-2xl z-30 overflow-hidden p-2"
-                >
-                  <div className="grid grid-cols-1 gap-1.5">
-                    {merchantPages.map((page) => (
-                      <button
-                        key={page.id}
-                        type="button"
-                        onClick={() => goToTab(page.id)}
-                        className={`text-left rounded-2xl px-3.5 py-3 transition flex items-center justify-between gap-3 ${activeTab === page.id ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'hover:bg-slate-50 text-slate-700 border border-transparent'}`}
-                      >
-                        <span className="flex items-center gap-3 min-w-0">
-                          <span className="text-lg">{page.icon}</span>
-                          <span className="min-w-0">
-                            <span className="block text-sm font-black truncate">{page.label}</span>
-                            <span className="block text-[10px] text-slate-500 font-medium truncate">{page.description}</span>
-                          </span>
-                        </span>
-                        {typeof page.count === 'number' && (
-                          <span className="shrink-0 text-[10px] font-black bg-slate-100 text-slate-700 rounded-full px-2 py-0.5">
-                            {page.count}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-        </div>
-
-        <div className="hidden md:flex gap-2 overflow-x-auto pb-1">
-          {merchantPages.slice(0, 5).map((page) => (
-            <button
-              key={page.id}
-              type="button"
-              onClick={() => goToTab(page.id)}
-              className={`px-4 py-2.5 rounded-2xl text-xs font-black whitespace-nowrap border transition ${activeTab === page.id ? 'bg-amber-600 text-white border-amber-600 shadow-lg shadow-amber-600/20' : 'bg-white text-slate-600 border-slate-200 hover:border-amber-200 hover:text-amber-700'}`}
-            >
-              {page.icon} {page.shortLabel}
-              {typeof page.count === 'number' && <span className="ml-1 opacity-75">({page.count})</span>}
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Compact expandable top menu. It stays in the normal page flow and pushes content down instead of covering the screen. */}
+      <AnimatePresence initial={false}>
+        {menuOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, y: -6 }}
+            animate={{ opacity: 1, height: 'auto', y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -6 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className="overflow-hidden"
+          >
+            <div className="rounded-3xl border border-slate-200 bg-white p-2 shadow-sm">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2">
+                {merchantPages.map((page) => (
+                  <button
+                    key={page.id}
+                    type="button"
+                    onClick={() => goToTab(page.id)}
+                    className={`relative rounded-2xl px-3 py-2.5 text-left transition border flex items-center gap-2.5 min-h-[52px] ${activeTab === page.id ? 'bg-amber-50 text-amber-800 border-amber-200 shadow-sm' : 'bg-slate-50/70 text-slate-700 border-slate-100 hover:bg-white hover:border-amber-200 hover:text-amber-700'}`}
+                  >
+                    <span className="text-lg leading-none">{page.icon}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-black truncate">{page.shortLabel}</span>
+                      <span className="hidden sm:block text-[10px] font-medium text-slate-500 truncate">{page.label}</span>
+                    </span>
+                    {typeof page.count === 'number' && page.count > 0 && (
+                      <span className={`shrink-0 min-w-5 h-5 rounded-full px-1.5 text-[10px] leading-5 text-center font-black ${page.id === 'approvals' ? 'bg-rose-500 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                        {page.count}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* TABS CONTENT SYSTEM */}
       <div className="mt-4">
