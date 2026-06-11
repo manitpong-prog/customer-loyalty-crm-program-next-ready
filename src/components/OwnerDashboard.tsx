@@ -81,6 +81,71 @@ export default function OwnerDashboard({
     return `/customer/${shopIdToSlug(selectedShopId)}?code=${encodedCode}`;
   };
 
+  const defaultRewardImage = 'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=400&auto=format&fit=crop&q=80';
+  const rewardImageMaxBytes = 2 * 1024 * 1024;
+  const rewardImageAllowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
+  const handleRewardImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    if (!rewardImageAllowedTypes.includes(file.type)) {
+      showStatus('❌ รองรับเฉพาะไฟล์ JPG, PNG หรือ WEBP เท่านั้น');
+      input.value = '';
+      return;
+    }
+
+    if (file.size > rewardImageMaxBytes) {
+      showStatus('❌ ไฟล์รูปใหญ่เกินไป กรุณาใช้ไฟล์ไม่เกิน 2 MB');
+      input.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (!result) {
+        showStatus('❌ อ่านไฟล์รูปไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง');
+        input.value = '';
+        return;
+      }
+
+      const previewImage = new window.Image();
+      previewImage.onload = () => {
+        const width = previewImage.naturalWidth;
+        const height = previewImage.naturalHeight;
+        setNewRewImage(result);
+
+        if (width < 600 || height < 600) {
+          showStatus(`⚠️ อัปโหลดรูปแล้ว แต่รูปค่อนข้างเล็ก (${width}×${height}px) แนะนำ 800×800px`);
+          return;
+        }
+
+        const ratio = width / height;
+        if (ratio < 0.85 || ratio > 1.15) {
+          showStatus(`⚠️ อัปโหลดรูปแล้ว (${width}×${height}px) แนะนำให้ใช้รูปสี่เหลี่ยมจัตุรัส 800×800px`);
+          return;
+        }
+
+        showStatus(`✓ อัปโหลดรูปของรางวัลแล้ว (${width}×${height}px)`);
+      };
+      previewImage.onerror = () => {
+        setNewRewImage(result);
+        showStatus('✓ อัปโหลดรูปของรางวัลแล้ว');
+      };
+      previewImage.src = result;
+    };
+
+    reader.onerror = () => {
+      showStatus('❌ อ่านไฟล์รูปไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง');
+      input.value = '';
+    };
+
+    reader.readAsDataURL(file);
+  };
+
   const generateNewCouponAndLink = () => {
     const activeShop = shops.length > 0 ? shops.find(s => s.id === selectedShopId) : getShops().find(s => s.id === selectedShopId);
     const currentPointsRate = Math.max(1, activeShop?.pointsRate || 10);
@@ -656,7 +721,7 @@ export default function OwnerDashboard({
     setNewRewPoints(100);
     setNewRewStock(20);
     setNewRewDesc('');
-    setNewRewImage('https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=400&auto=format&fit=crop&q=80');
+    setNewRewImage('');
     setShowRewardModal(true);
   };
 
@@ -684,7 +749,7 @@ export default function OwnerDashboard({
             pointsCost: newRewPoints,
             stock: newRewStock,
             description: newRewDesc,
-            image: newRewImage || 'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=400'
+            image: newRewImage || defaultRewardImage
           };
         }
         return r;
@@ -699,7 +764,7 @@ export default function OwnerDashboard({
         pointsCost: newRewPoints,
         stock: newRewStock,
         description: newRewDesc,
-        image: newRewImage || 'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=400',
+        image: newRewImage || defaultRewardImage,
         isAvailable: true,
         shopId: selectedShopId
       };
@@ -1408,7 +1473,7 @@ export default function OwnerDashboard({
               <div className="fixed inset-0 bg-neutral-950/80 z-50 flex items-center justify-center p-4">
                 <form 
                   onSubmit={handleManualAdjustPoints}
-                  className="bg-neutral-900 border border-neutral-800 rounded-3xl p-5 w-full max-w-sm space-y-4 shadow-2xl relative"
+                  className="bg-neutral-900 border border-neutral-800 rounded-3xl p-5 w-full max-w-sm max-h-[92vh] overflow-y-auto space-y-4 shadow-2xl relative"
                 >
                   <button 
                     type="button"
@@ -1497,7 +1562,7 @@ export default function OwnerDashboard({
               <div className="fixed inset-0 bg-neutral-950/80 z-50 flex items-center justify-center p-4">
                 <form
                   onSubmit={handleCreateCustomer}
-                  className="bg-neutral-900 border border-neutral-800 rounded-3xl p-5 w-full max-w-sm space-y-4 shadow-2xl relative"
+                  className="bg-neutral-900 border border-neutral-800 rounded-3xl p-5 w-full max-w-sm max-h-[92vh] overflow-y-auto space-y-4 shadow-2xl relative"
                 >
                   <button
                     type="button"
@@ -1627,7 +1692,7 @@ export default function OwnerDashboard({
               <div className="fixed inset-0 bg-neutral-950/85 z-50 flex items-center justify-center p-4">
                 <form 
                   onSubmit={saveRewardForm}
-                  className="bg-neutral-900 border border-neutral-800 rounded-3xl p-5 w-full max-w-sm space-y-4 shadow-2xl relative"
+                  className="bg-neutral-900 border border-neutral-800 rounded-3xl p-5 w-full max-w-sm max-h-[92vh] overflow-y-auto space-y-4 shadow-2xl relative"
                 >
                   <button 
                     type="button"
@@ -1677,15 +1742,51 @@ export default function OwnerDashboard({
                       </div>
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[10.5px] text-neutral-400 block">ภาพถ่ายของรางวัล (URL รูปภาพอินเตอร์เน็ต) :</label>
-                      <input 
-                        type="url"
-                        value={newRewImage}
-                        onChange={(e) => setNewRewImage(e.target.value)}
-                        placeholder="https://images.unsplash.com/..."
-                        className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg outline-none"
-                      />
+                    <div className="space-y-2">
+                      <div>
+                        <label className="text-[10.5px] text-neutral-300 block font-bold">รูปของรางวัล :</label>
+                        <p className="text-[9.5px] text-neutral-500 leading-relaxed mt-0.5">
+                          แนะนำ 800×800 px • ขั้นต่ำ 600×600 px • JPG/PNG/WEBP • ไม่เกิน 2 MB
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-dashed border-neutral-700 bg-neutral-950/70 p-3 space-y-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-20 h-20 rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800 flex items-center justify-center shrink-0">
+                            {newRewImage ? (
+                              <img
+                                src={newRewImage}
+                                alt="ตัวอย่างรูปของรางวัล"
+                                className="w-full h-full object-cover"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <Image className="w-8 h-8 text-neutral-600" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0 space-y-2">
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              onChange={handleRewardImageUpload}
+                              className="block w-full text-[10px] text-neutral-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-500 file:px-3 file:py-2 file:text-[10px] file:font-black file:text-neutral-950 hover:file:bg-yellow-400"
+                            />
+                            <p className="text-[9px] text-neutral-500 leading-relaxed">
+                              ระบบจะเก็บรูปนี้ไว้กับรายการของรางวัล เพื่อให้แสดงทั้งหลังบ้านและหน้าลูกค้า
+                            </p>
+                          </div>
+                        </div>
+
+                        {newRewImage && (
+                          <button
+                            type="button"
+                            onClick={() => setNewRewImage('')}
+                            className="text-[10px] font-bold text-neutral-400 hover:text-rose-300 underline underline-offset-2"
+                          >
+                            ล้างรูปนี้แล้วเลือกรูปใหม่
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <div className="space-y-1">
@@ -1712,7 +1813,7 @@ export default function OwnerDashboard({
                       type="submit"
                       className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-neutral-950 font-bold text-xs py-2 rounded-lg transition"
                     >
-                      บันทึกสถิติ
+                      บันทึกของรางวัล
                     </button>
                   </div>
                 </form>
