@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Award,
@@ -103,6 +103,11 @@ export default function CustomerDashboard({
   const [copiedShopIndex, setCopiedShopIndex] = useState<number | null>(null);
   const [copiedText, setCopiedText] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
+  const [scanError, setScanError] = useState("");
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const scannerStreamRef = useRef<MediaStream | null>(null);
+  const scanFrameRef = useRef<number | null>(null);
 
   // Dynamic Coupon States
   const [pendingCoupon, setPendingCoupon] = useState<GeneratedCoupon | null>(null);
@@ -123,6 +128,65 @@ export default function CustomerDashboard({
     if (state === "not-found") return "ไม่พบข้อมูลรหัสแจกแต้มนี้ กรุณาตรวจสอบรหัสอีกครั้ง";
     return "";
   };
+
+  const getCustomerHomeUrl = () => {
+    const liffId = process.env.NEXT_PUBLIC_LINE_LIFF_ID;
+    if (liffId) return `https://liff.line.me/${liffId}?tab=home`;
+
+    if (typeof window !== "undefined") {
+      return `${window.location.pathname}?tab=home`;
+    }
+
+    return "/customer/im-sticker?tab=home";
+  };
+
+  const goToCustomerHome = (delay = 0) => {
+    if (typeof window === "undefined") return;
+    window.setTimeout(() => {
+      window.location.href = getCustomerHomeUrl();
+    }, delay);
+  };
+
+  const extractCodeFromScannedText = (rawText: string) => {
+    const trimmed = rawText.trim();
+    if (!trimmed) return "";
+
+    try {
+      const parsedUrl = new URL(trimmed);
+      return (
+        parsedUrl.searchParams.get("code") ||
+        parsedUrl.searchParams.get("coupon") ||
+        parsedUrl.searchParams.get("couponCode") ||
+        trimmed
+      );
+    } catch {
+      const codeMatch = trimmed.match(/[?&](?:code|coupon|couponCode)=([^&]+)/i);
+      if (codeMatch?.[1]) return decodeURIComponent(codeMatch[1]);
+      return trimmed;
+    }
+  };
+
+  const stopCameraScanner = () => {
+    if (scanFrameRef.current) {
+      window.cancelAnimationFrame(scanFrameRef.current);
+      scanFrameRef.current = null;
+    }
+
+    if (scannerStreamRef.current) {
+      scannerStreamRef.current.getTracks().forEach((track) => track.stop());
+      scannerStreamRef.current = null;
+    }
+
+    setScanning(false);
+    setShowCameraScanner(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (scanFrameRef.current) window.cancelAnimationFrame(scanFrameRef.current);
+      scannerStreamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
 
   useEffect(() => {
     if (initialTab) {
@@ -319,11 +383,13 @@ export default function CustomerDashboard({
     (customer.currentPoints / tierInfo.target) * 100,
   );
 
-  // Submit manual code
-  const handlePromoSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const code = promoCode.trim().toUpperCase();
-    if (!code) return;
+  const processPromoCode = (rawCode: string) => {
+    const code = rawCode.trim().toUpperCase();
+    if (!code) {
+      setErrorMessage("กรอกรหัสก่อน");
+      setTimeout(() => setErrorMessage(""), 3000);
+      return;
+    }
 
     // Check dynamic coupons from Neon-backed local cache first
     const coupons = getGeneratedCoupons();
@@ -342,6 +408,7 @@ export default function CustomerDashboard({
       // Valid dynamic coupon -> Launch confirmation modal.
       setPendingCoupon(matchedCoupon);
       setShowCouponConfirm(true);
+      setActiveTab("code");
       return;
     }
 
@@ -422,6 +489,77 @@ export default function CustomerDashboard({
     setTimeout(() => setSuccessMessage(""), 4000);
   };
 
+  // Submit manual code
+  const handlePromoSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    processPromoCode(promoCode);
+  };
+
+  const handleDeclineDynamicCoupon = () => {
+    setShowCouponConfirm(false);
+    setPendingCoupon(null);
+    setPromoCode("");
+    setSuccessMessage("ไม่ได้รับแต้ม กำลังพากลับหน้าแรก");
+    goToCustomerHome(700);
+  };
+
+  const openCameraScanner = async () => {
+    setScanError("");
+    setShowCameraScanner(true);
+    setScanning(true);
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("เบราว์เซอร์นี้ยังไม่รองรับการเปิดกล้อง");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment" },
+        audio: false,
+      });
+      scannerStreamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      const BarcodeDetectorConstructor = (window as any).BarcodeDetector;
+      if (!BarcodeDetectorConstructor) {
+        setScanError("เครื่องนี้ยังไม่รองรับการอ่าน QR อัตโนมัติ กรุณากรอกรหัสจาก QR ด้วยตัวเอง");
+        setScanning(false);
+        return;
+      }
+
+      const detector = new BarcodeDetectorConstructor({ formats: ["qr_code"] });
+
+      const scanFrame = async () => {
+        if (!scannerStreamRef.current || !videoRef.current) return;
+
+        try {
+          const barcodes = await detector.detect(videoRef.current);
+          const rawValue = barcodes?.[0]?.rawValue;
+          if (rawValue) {
+            const detectedCode = extractCodeFromScannedText(rawValue).trim().toUpperCase();
+            stopCameraScanner();
+            setPromoCode(detectedCode);
+            processPromoCode(detectedCode);
+            return;
+          }
+        } catch {
+          // Keep scanning. Some browsers throw while video is still warming up.
+        }
+
+        scanFrameRef.current = window.requestAnimationFrame(scanFrame);
+      };
+
+      scanFrameRef.current = window.requestAnimationFrame(scanFrame);
+    } catch (error) {
+      setScanError(error instanceof Error ? error.message : "เปิดกล้องไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      setScanning(false);
+    }
+  };
+
   // Confirm claim points via Dynamic Coupon modal overlay
   const handleConfirmClaimDynamicCoupon = () => {
     if (!pendingCoupon || !customer) return;
@@ -491,13 +629,13 @@ export default function CustomerDashboard({
 
     setShowCouponConfirm(false);
     setSuccessMessage(
-      `รับแต้มเรียบร้อย ได้รับ +${pointsToAdd} แต้มจากร้าน ${matched.shopName}`,
+      `รับแต้ม ${pointsToAdd} แต้มแล้ว กำลังพากลับหน้าแรก`,
     );
     setPromoCode("");
     setPendingCoupon(null);
     onDataChange();
     loadData();
-    setTimeout(() => setSuccessMessage(""), 4000);
+    goToCustomerHome(1300);
   };
 
   // QR Simulator Scan
@@ -809,6 +947,22 @@ export default function CustomerDashboard({
               </div>
             </motion.div>
 
+            {isProductionView && (
+              <div className="bg-white border border-slate-200/70 rounded-3xl p-4 shadow-xs flex gap-3 items-start">
+                <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-700 shrink-0">
+                  <Store className="w-5 h-5" />
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <p className="text-xs font-black text-slate-950">
+                    {activeShop?.name || "iM Sticker"}
+                  </p>
+                  <p className="text-[11px] leading-relaxed text-slate-600 font-medium">
+                    {activeShop?.description || "สะสมแต้ม แลกของรางวัล และรับสิทธิพิเศษจากร้าน iM Sticker"}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Loyalty points details and Quick Stats */}
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-white border border-slate-200/60 rounded-2xl p-3.5 flex flex-col shadow-2xs">
@@ -835,37 +989,61 @@ export default function CustomerDashboard({
               </div>
             </div>
 
-            {/* Tier upgrade progress bar */}
-            <div className="bg-white border border-slate-200/60 rounded-2xl p-4 space-y-2.5 shadow-2xs">
-              <div className="flex justify-between items-center text-xs">
-                <div className="flex items-center gap-1.5">
-                  <Award className="w-4 h-4 text-amber-500" />
-                  <span className="font-extrabold text-slate-800">
-                    ระดับสมาชิก
+            {isProductionView ? (
+              <div className="bg-white border border-slate-200/70 rounded-2xl p-4 space-y-2.5 shadow-2xs">
+                <div className="flex justify-between items-center text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-amber-500" />
+                    <span className="font-extrabold text-slate-800">
+                      แต้มใกล้หมดอายุ
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    ภายใน 30 วัน
                   </span>
                 </div>
-                <span className="text-[10px] text-slate-500 font-medium">
-                  {customer.tier === "Platinum"
-                    ? "คุณอยู่ระดับ Platinum แล้ว"
-                    : `สะสมอีก ${tierInfo.target - customer.currentPoints} เพื่ออัปเกรด`}
-                </span>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <span className="text-2xl font-black font-mono text-slate-900">0</span>
+                    <span className="ml-1 text-xs font-bold text-slate-500">แต้ม</span>
+                  </div>
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-extrabold text-emerald-700 border border-emerald-100">
+                    ยังไม่มีแต้มใกล้หมดอายุ
+                  </span>
+                </div>
               </div>
+            ) : (
+              <div className="bg-white border border-slate-200/60 rounded-2xl p-4 space-y-2.5 shadow-2xs">
+                <div className="flex justify-between items-center text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <Award className="w-4 h-4 text-amber-500" />
+                    <span className="font-extrabold text-slate-800">
+                      ระดับสมาชิก
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    {customer.tier === "Platinum"
+                      ? "คุณอยู่ระดับ Platinum แล้ว"
+                      : `สะสมอีก ${tierInfo.target - customer.currentPoints} เพื่ออัปเกรด`}
+                  </span>
+                </div>
 
-              <div className="w-full bg-slate-100 rounded-full h-2">
-                <div
-                  className={`bg-linear-to-r ${tierInfo.color} h-2 rounded-full`}
-                  style={{
-                    width: `${customer.tier === "Platinum" ? 100 : pointsProgress}%`,
-                  }}
-                />
-              </div>
+                <div className="w-full bg-slate-100 rounded-full h-2">
+                  <div
+                    className={`bg-linear-to-r ${tierInfo.color} h-2 rounded-full`}
+                    style={{
+                      width: `${customer.tier === "Platinum" ? 100 : pointsProgress}%`,
+                    }}
+                  />
+                </div>
 
-              <div className="flex justify-between text-[9px] text-slate-400 font-mono font-bold">
-                <span>SILVER (0)</span>
-                <span>GOLD (300)</span>
-                <span>PLATINUM (1000)</span>
+                <div className="flex justify-between text-[9px] text-slate-400 font-mono font-bold">
+                  <span>SILVER (0)</span>
+                  <span>GOLD (300)</span>
+                  <span>PLATINUM (1000)</span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Quick Promo Store Swiper Header */}
             <div className="flex justify-between items-center pt-2">
@@ -1077,14 +1255,10 @@ export default function CustomerDashboard({
                 <div className="flex gap-2.5">
                   <button
                     type="button"
-                    onClick={() => {
-                      setShowCouponConfirm(false);
-                      setPendingCoupon(null);
-                      setPromoCode("");
-                    }}
+                    onClick={handleDeclineDynamicCoupon}
                     className="flex-1 rounded-xl bg-white border border-slate-200 px-3 py-2.5 text-xs font-extrabold text-slate-700 shadow-sm"
                   >
-                    ยกเลิก
+                    ไม่รับ
                   </button>
                   <button
                     type="button"
@@ -1096,7 +1270,7 @@ export default function CustomerDashboard({
                         : "bg-slate-200 text-slate-500 cursor-not-allowed"
                     }`}
                   >
-                    ยืนยันรับแต้ม
+                    ยืนยัน
                   </button>
                 </div>
               </div>
@@ -1126,15 +1300,25 @@ export default function CustomerDashboard({
                     ตรวจรหัส
                   </button>
                 </div>
+                {isProductionView && (
+                  <button
+                    type="button"
+                    onClick={openCameraScanner}
+                    className="mt-2.5 w-full rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-extrabold text-emerald-800 flex items-center justify-center gap-2 active:scale-[0.98] transition"
+                  >
+                    <Camera className="w-4 h-4" />
+                    เปิดกล้องเพื่อสแกนคิวอาร์โค้ด
+                  </button>
+                )}
               </div>
 
               {isProductionView ? (
                 <div className="bg-emerald-50 rounded-2xl p-3 space-y-2 text-[10.5px] border border-emerald-100 text-emerald-900">
-                  <p className="font-extrabold">วิธีรับแต้ม</p>
+                  <p className="font-extrabold">รับแต้มได้ 2 วิธี</p>
                   <ol className="list-decimal list-inside space-y-1 font-semibold leading-relaxed">
-                    <li>ร้านส่งลิงก์หรือ QR รับแต้มให้ลูกค้า</li>
-                    <li>เปิดลิงก์จาก LINE หรือกรอกรหัสในช่องนี้</li>
-                    <li>กดยืนยัน 1 ครั้ง แต้มจะเข้าบัตรสมาชิกทันที</li>
+                    <li>เปิดลิงก์รับแต้มที่ร้านส่งให้ใน LINE</li>
+                    <li>สแกน QR หรือกรอกรหัสจากหน้าร้าน</li>
+                    <li>กดยืนยันรับแต้ม แล้วระบบจะพากลับหน้าแรกให้เอง</li>
                   </ol>
                 </div>
               ) : (
@@ -1363,10 +1547,15 @@ export default function CustomerDashboard({
                   ? t.type === "earn"
                   : t.type === "redeem",
               ).length === 0 && (
-                <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-white shadow-2xs">
+                <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-white shadow-2xs space-y-1">
                   <History className="w-8 h-8 mx-auto stroke-1 text-slate-350" />
-                  <p className="text-xs mt-2 font-semibold">
-                    ยังไม่มีรายการในหน้านี้
+                  <p className="text-xs mt-2 font-bold text-slate-500">
+                    {historySubTab === "earn" ? "ยังไม่มีประวัติรับแต้ม" : "ยังไม่มีประวัติแลกรางวัล"}
+                  </p>
+                  <p className="text-[10px] font-medium leading-relaxed">
+                    {historySubTab === "earn"
+                      ? "เมื่อรับแต้มจากร้าน รายการจะแสดงในหน้านี้"
+                      : "เมื่อแลกรางวัลแล้ว คุณสามารถติดตามสถานะได้ที่นี่"}
                   </p>
                 </div>
               )}
@@ -1385,6 +1574,36 @@ export default function CustomerDashboard({
               <p className="text-[10px] text-slate-500 font-medium">
                 แก้ไขชื่อและเบอร์โทรสำหรับให้ร้านติดต่อหรือยืนยันของรางวัล
               </p>
+            </div>
+
+            <div className="bg-white border border-slate-200/70 rounded-3xl p-4 shadow-xs space-y-3">
+              <div className="flex items-center gap-3">
+                <img
+                  src={customer.avatar}
+                  className="w-12 h-12 rounded-full object-cover border border-slate-100"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-slate-950 truncate">
+                    {customer.lineName || customer.name}
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-semibold">
+                    สมาชิกของร้าน {activeShop?.name || "iM Sticker"}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[10.5px] font-bold">
+                <div className="rounded-2xl bg-slate-50 p-3 border border-slate-100">
+                  <p className="text-slate-400">วันที่สมัคร</p>
+                  <p className="text-slate-800 mt-1">
+                    {new Date(customer.createdAt).toLocaleDateString("th-TH")}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-amber-50 p-3 border border-amber-100">
+                  <p className="text-amber-700">แต้มที่ใช้ได้</p>
+                  <p className="text-amber-900 mt-1 font-black">{customer.currentPoints} แต้ม</p>
+                </div>
+              </div>
             </div>
 
             {/* Profile editing form */}
@@ -1722,6 +1941,74 @@ export default function CustomerDashboard({
         )}
       </AnimatePresence>
 
+      {/* Camera QR Scanner Modal */}
+      <AnimatePresence>
+        {showCameraScanner && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.94, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.94, y: 20 }}
+              className="bg-white rounded-[28px] p-4 w-full max-w-sm space-y-4 shadow-2xl"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-sm font-black text-slate-900">
+                    สแกน QR รับแต้ม
+                  </h4>
+                  <p className="text-[10.5px] text-slate-500 font-semibold mt-1">
+                    นำกล้องไปส่อง QR ที่ร้านสร้างให้ ระบบจะอ่านรหัสให้อัตโนมัติ
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={stopCameraScanner}
+                  className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700"
+                >
+                  ปิด
+                </button>
+              </div>
+
+              <div className="relative overflow-hidden rounded-3xl bg-slate-900 aspect-square border border-slate-200">
+                <video
+                  ref={videoRef}
+                  className="h-full w-full object-cover"
+                  playsInline
+                  muted
+                />
+                <div className="absolute inset-8 rounded-3xl border-2 border-emerald-400/80 shadow-[0_0_0_999px_rgba(15,23,42,0.35)]" />
+                {scanning && (
+                  <div className="absolute left-10 right-10 top-1/2 h-0.5 bg-emerald-400 shadow-lg animate-pulse" />
+                )}
+              </div>
+
+              {scanError ? (
+                <div className="rounded-2xl bg-amber-50 border border-amber-100 p-3 text-[10.5px] font-semibold text-amber-800 leading-relaxed">
+                  {scanError}
+                </div>
+              ) : (
+                <p className="text-center text-[10.5px] font-semibold text-slate-500">
+                  กำลังรออ่าน QR Code...
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={stopCameraScanner}
+                className="w-full rounded-2xl bg-slate-950 py-2.5 text-xs font-extrabold text-white"
+              >
+                ยกเลิกการสแกน
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* 🎟️ Dynamic Coupon Claim Confirmation Modal */}
       <AnimatePresence>
         {showCouponConfirm && pendingCoupon && (
@@ -1746,10 +2033,10 @@ export default function CustomerDashboard({
                   พบสิทธิ์รับแต้ม
                 </span>
                 <h4 className="text-base font-black text-slate-900">
-                  ยืนยันรับแต้มจากร้าน
+                  รับแต้มจากร้าน {pendingCoupon.shopName}
                 </h4>
                 <p className="text-xs text-slate-500 font-bold font-sans">
-                  ✨ {pendingCoupon.shopName}
+                  จำนวน {pendingCoupon.points} แต้ม
                 </p>
               </div>
 
@@ -1797,20 +2084,17 @@ export default function CustomerDashboard({
               <div className="flex gap-2.5 pt-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowCouponConfirm(false);
-                    setPendingCoupon(null);
-                  }}
-                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-705 text-xs py-2.5 font-bold rounded-xl transition cursor-pointer"
+                  onClick={handleDeclineDynamicCoupon}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs py-2.5 font-bold rounded-xl transition cursor-pointer"
                 >
-                  ยกเลิก
+                  ไม่รับ
                 </button>
                 <button
                   type="button"
                   onClick={handleConfirmClaimDynamicCoupon}
                   className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-xl shadow-lg shadow-emerald-600/10 transition active:scale-[0.98] cursor-pointer"
                 >
-                  รับแต้ม
+                  ยืนยัน
                 </button>
               </div>
             </motion.div>
