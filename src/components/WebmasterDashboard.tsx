@@ -23,9 +23,9 @@ export default function WebmasterDashboard({ onDataChange }: WebmasterDashboardP
   
   // Configurations states
   const [silverCap, setSilverCap] = useState(0);
-  const [goldCap, setGoldCap] = useState(300);
-  const [platinumCap, setPlatinumCap] = useState(1000);
-  const [baseSubscriptionFee, setBaseSubscriptionFee] = useState(1500);
+  const [goldCap, setGoldCap] = useState('300');
+  const [platinumCap, setPlatinumCap] = useState('1000');
+  const [baseSubscriptionFee, setBaseSubscriptionFee] = useState('1500');
 
   const [notification, setNotification] = useState('');
 
@@ -79,6 +79,29 @@ export default function WebmasterDashboard({ onDataChange }: WebmasterDashboardP
   // Save Platform core settings
   const handleSavePlatformSettings = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const requiredFields = [
+      { value: goldCap, label: 'คะแนนขั้นต่ำระดับ GOLD' },
+      { value: platinumCap, label: 'คะแนนขั้นต่ำระดับ PLATINUM' },
+      { value: baseSubscriptionFee, label: 'ค่าบริการระบบ' },
+    ];
+
+    const emptyField = requiredFields.find((field) => !String(field.value).trim());
+    if (emptyField) {
+      triggerNotify(`❌ กรุณาใส่${emptyField.label}`);
+      return;
+    }
+
+    const invalidField = requiredFields.find((field) => {
+      const parsed = Number(field.value);
+      return !Number.isFinite(parsed) || parsed < 0;
+    });
+
+    if (invalidField) {
+      triggerNotify(`❌ กรุณาใส่${invalidField.label}เป็นตัวเลข 0 หรือมากกว่า`);
+      return;
+    }
+
     triggerNotify('✓ บันทึกค่าพารามิเตอร์แกนระบบ CRM และคะแนนวิทเจ็ตเสร็จสมบูรณ์');
   };
 
@@ -334,7 +357,7 @@ export default function WebmasterDashboard({ onDataChange }: WebmasterDashboardP
                   <input 
                     type="number"
                     value={goldCap}
-                    onChange={(e) => setGoldCap(parseInt(e.target.value) || 0)}
+                    onChange={(e) => setGoldCap(e.target.value)}
                     className="w-full bg-neutral-950 border border-neutral-800 text-xs px-3 py-2 rounded-lg text-white font-mono"
                     required
                   />
@@ -349,7 +372,7 @@ export default function WebmasterDashboard({ onDataChange }: WebmasterDashboardP
                   <input 
                     type="number"
                     value={platinumCap}
-                    onChange={(e) => setPlatinumCap(parseInt(e.target.value) || 0)}
+                    onChange={(e) => setPlatinumCap(e.target.value)}
                     className="w-full bg-neutral-950 border border-neutral-800 text-xs px-3 py-2 rounded-lg text-white font-mono"
                     required
                   />
@@ -364,7 +387,7 @@ export default function WebmasterDashboard({ onDataChange }: WebmasterDashboardP
                   <input 
                     type="number"
                     value={baseSubscriptionFee}
-                    onChange={(e) => setBaseSubscriptionFee(parseInt(e.target.value) || 0)}
+                    onChange={(e) => setBaseSubscriptionFee(e.target.value)}
                     className="w-full bg-neutral-950 border border-neutral-800 text-xs px-3 py-2 rounded-lg text-white font-mono"
                     required
                   />

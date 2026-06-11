@@ -369,7 +369,7 @@ export default function App({
         {activeRole === "owner" && (
           <div className="max-w-5xl mx-auto w-full py-4 animate-fade-in">
             <OwnerDashboard
-              key={`owner-${selectedShopId}-${dataVersion}`}
+              key={`owner-${selectedShopId}`}
               onDataChange={handleDataChange}
               selectedShopId={selectedShopId}
               setSelectedShopId={setSelectedShopId}

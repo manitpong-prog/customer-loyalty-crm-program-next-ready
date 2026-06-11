@@ -270,15 +270,15 @@ export default function OwnerDashboard({
   const [showRewardModal, setShowRewardModal] = useState(false);
   const [editingReward, setEditingReward] = useState<Reward | null>(null);
   const [newRewName, setNewRewName] = useState('');
-  const [newRewPoints, setNewRewPoints] = useState(100);
-  const [newRewStock, setNewRewStock] = useState(20);
+  const [newRewPoints, setNewRewPoints] = useState('100');
+  const [newRewStock, setNewRewStock] = useState('20');
   const [newRewDesc, setNewRewDesc] = useState('');
   const [newRewImage, setNewRewImage] = useState('');
 
   // Manual point adjusting modal states
   const [statusMsg, setStatusMsg] = useState('');
   const [selectedCustForAdjust, setSelectedCustForAdjust] = useState<Customer | null>(null);
-  const [adjustPoints, setAdjustPoints] = useState(20);
+  const [adjustPoints, setAdjustPoints] = useState('20');
   const [adjustType, setAdjustType] = useState<'add' | 'deduct'>('add');
   const [adjustReason, setAdjustReason] = useState('ปรับแต้มโดยร้านค้า');
 
@@ -346,6 +346,26 @@ export default function OwnerDashboard({
   const showStatus = (text: string) => {
     setStatusMsg(text);
     setTimeout(() => setStatusMsg(''), 3000);
+  };
+
+  const parsePositiveIntegerInput = (rawValue: string, fieldName: string, allowZero = false) => {
+    const valueText = String(rawValue).trim();
+    if (!valueText) {
+      return { value: null as number | null, error: `❌ กรุณาใส่${fieldName}` };
+    }
+
+    const parsedValue = Number(valueText);
+    const minValue = allowZero ? 0 : 1;
+    if (!Number.isFinite(parsedValue) || parsedValue < minValue) {
+      return {
+        value: null as number | null,
+        error: allowZero
+          ? `❌ กรุณาใส่${fieldName}เป็นตัวเลข 0 หรือมากกว่า`
+          : `❌ กรุณาใส่${fieldName}เป็นตัวเลขที่มากกว่า 0`,
+      };
+    }
+
+    return { value: Math.floor(parsedValue), error: '' };
   };
 
   const handleSaveShopPointRate = (e: React.FormEvent) => {
@@ -671,18 +691,25 @@ export default function OwnerDashboard({
     if (!selectedCustForAdjust) return;
 
     const allCustomers = getCustomers();
-    const finalAmount = adjustType === 'add' ? adjustPoints : -adjustPoints;
+    const parsedAdjustPoints = parsePositiveIntegerInput(adjustPoints, 'จำนวนแต้ม');
+    if (parsedAdjustPoints.error || parsedAdjustPoints.value === null) {
+      showStatus(parsedAdjustPoints.error);
+      return;
+    }
+
+    const adjustPointsValue = parsedAdjustPoints.value;
+    const finalAmount = adjustType === 'add' ? adjustPointsValue : -adjustPointsValue;
     
     // Validate deduction
-    if (adjustType === 'deduct' && selectedCustForAdjust.currentPoints < adjustPoints) {
+    if (adjustType === 'deduct' && selectedCustForAdjust.currentPoints < adjustPointsValue) {
       showStatus('❌ แต้มไม่พอสำหรับการหักรายการนี้');
       return;
     }
 
     const updatedCusts = allCustomers.map(c => {
       if (c.id === selectedCustForAdjust.id) {
-        const finalPts = c.currentPoints + finalAmount;
-        const finalLifetime = adjustType === 'add' ? c.lifetimePoints + adjustPoints : c.lifetimePoints;
+        const finalPts = Math.max(0, c.currentPoints + finalAmount);
+        const finalLifetime = Math.max(0, c.lifetimePoints + finalAmount);
         const newTier = getTierForLifetime(finalLifetime);
 
         return { ...c, currentPoints: finalPts, lifetimePoints: finalLifetime, tier: newTier, shopIds: Array.from(new Set([...(c.shopIds || []), selectedShopId])) };
@@ -701,7 +728,7 @@ export default function OwnerDashboard({
       shopId: selectedShopId,
       shopName: shops.find(s => s.id === selectedShopId)?.name || 'Koffee Craft',
       type: adjustType === 'add' ? 'earn' : 'redeem',
-      points: adjustPoints,
+      points: adjustPointsValue,
       description: `ปรับแต้มโดยร้าน: ${adjustReason}`,
       status: 'completed',
       createdAt: new Date().toISOString()
@@ -709,7 +736,7 @@ export default function OwnerDashboard({
 
     saveTransactions([newTx, ...getTransactions()]);
     setSelectedCustForAdjust(null);
-    showStatus(`✓ ปรับแต้มลูกค้า ${selectedCustForAdjust.name} จำนวน ${finalAmount} แต้ม สำเร็จ!`);
+    showStatus(`✓ ปรับแต้มลูกค้า ${selectedCustForAdjust.name} จำนวน ${finalAmount > 0 ? '+' : ''}${finalAmount} แต้ม สำเร็จ!`);
     onDataChange();
     loadData();
   };
@@ -718,8 +745,8 @@ export default function OwnerDashboard({
   const openAddReward = () => {
     setEditingReward(null);
     setNewRewName('');
-    setNewRewPoints(100);
-    setNewRewStock(20);
+    setNewRewPoints('100');
+    setNewRewStock('20');
     setNewRewDesc('');
     setNewRewImage('');
     setShowRewardModal(true);
@@ -728,8 +755,8 @@ export default function OwnerDashboard({
   const openEditReward = (reward: Reward) => {
     setEditingReward(reward);
     setNewRewName(reward.name);
-    setNewRewPoints(reward.pointsCost);
-    setNewRewStock(reward.stock);
+    setNewRewPoints(String(reward.pointsCost));
+    setNewRewStock(String(reward.stock));
     setNewRewDesc(reward.description);
     setNewRewImage(reward.image);
     setShowRewardModal(true);
@@ -739,16 +766,38 @@ export default function OwnerDashboard({
     e.preventDefault();
     const allRewards = getRewards();
 
+    const trimmedRewardName = newRewName.trim();
+    if (!trimmedRewardName) {
+      showStatus('❌ กรุณาใส่ชื่อของรางวัลก่อนบันทึก');
+      return;
+    }
+
+    const parsedRewardPoints = parsePositiveIntegerInput(newRewPoints, 'แต้มที่ใช้แลก');
+    if (parsedRewardPoints.error || parsedRewardPoints.value === null) {
+      showStatus(parsedRewardPoints.error);
+      return;
+    }
+
+    const parsedRewardStock = parsePositiveIntegerInput(newRewStock, 'จำนวนสต็อก', true);
+    if (parsedRewardStock.error || parsedRewardStock.value === null) {
+      showStatus(parsedRewardStock.error);
+      return;
+    }
+
+    const rewardPointsValue = parsedRewardPoints.value;
+    const rewardStockValue = parsedRewardStock.value;
+    const rewardDescription = newRewDesc.trim() || 'ไม่มีเงื่อนไขเพิ่มเติม';
+
     if (editingReward) {
       // Edit
       const updated = allRewards.map(r => {
         if (r.id === editingReward.id) {
           return {
             ...r,
-            name: newRewName,
-            pointsCost: newRewPoints,
-            stock: newRewStock,
-            description: newRewDesc,
+            name: trimmedRewardName,
+            pointsCost: rewardPointsValue,
+            stock: rewardStockValue,
+            description: rewardDescription,
             image: newRewImage || defaultRewardImage
           };
         }
@@ -760,10 +809,10 @@ export default function OwnerDashboard({
       // Add
       const newRew: Reward = {
         id: `rew_${Date.now()}`,
-        name: newRewName,
-        pointsCost: newRewPoints,
-        stock: newRewStock,
-        description: newRewDesc,
+        name: trimmedRewardName,
+        pointsCost: rewardPointsValue,
+        stock: rewardStockValue,
+        description: rewardDescription,
         image: newRewImage || defaultRewardImage,
         isAvailable: true,
         shopId: selectedShopId
@@ -773,6 +822,7 @@ export default function OwnerDashboard({
     }
 
     setShowRewardModal(false);
+    setActiveTab('rewards');
     onDataChange();
     loadData();
   };
@@ -1447,7 +1497,7 @@ export default function OwnerDashboard({
                         <button 
                           onClick={() => {
                             setSelectedCustForAdjust(c);
-                            setAdjustPoints(20);
+                            setAdjustPoints('20');
                             setAdjustType('add');
                           }}
                           className="bg-yellow-500 font-bold hover:bg-yellow-600 text-neutral-950 px-2.5 py-1 rounded text-[10px] transition active:scale-95 cursor-pointer"
@@ -1517,10 +1567,11 @@ export default function OwnerDashboard({
                       <label className="text-[10.5px] text-neutral-400 block font-medium">จำนวนแต้ม</label>
                       <input 
                         type="number"
+                        inputMode="numeric"
                         min={1}
                         max={1000}
                         value={adjustPoints}
-                        onChange={(e) => setAdjustPoints(parseInt(e.target.value) || 0)}
+                        onChange={(e) => setAdjustPoints(e.target.value)}
                         className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg"
                         required
                       />
@@ -1724,8 +1775,10 @@ export default function OwnerDashboard({
                         <label className="text-[10.5px] text-neutral-400 block">แต้มที่จะดึงใช้ :</label>
                         <input 
                           type="number"
+                          inputMode="numeric"
+                          min={1}
                           value={newRewPoints}
-                          onChange={(e) => setNewRewPoints(parseInt(e.target.value) || 0)}
+                          onChange={(e) => setNewRewPoints(e.target.value)}
                           className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg"
                           required
                         />
@@ -1734,8 +1787,10 @@ export default function OwnerDashboard({
                         <label className="text-[10.5px] text-neutral-400 block">เปิดสต็อกเบื้องต้น :</label>
                         <input 
                           type="number"
+                          inputMode="numeric"
+                          min={0}
                           value={newRewStock}
-                          onChange={(e) => setNewRewStock(parseInt(e.target.value) || 0)}
+                          onChange={(e) => setNewRewStock(e.target.value)}
                           className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg"
                           required
                         />
