@@ -64,14 +64,14 @@ export default function OwnerDashboard({
   );
   
   // Custom QR / Link generator states
-  const [generatePurchaseAmount, setGeneratePurchaseAmount] = useState(500);
+  const [generatePurchaseAmount, setGeneratePurchaseAmount] = useState('500');
   const [generateDesc, setGenerateDesc] = useState('ยอดซื้อหน้าร้าน');
   const [generatedQRValue, setGeneratedQRValue] = useState('');
-  const [expiryMinutes, setExpiryMinutes] = useState(15);
+  const [expiryMinutes, setExpiryMinutes] = useState('15');
   const [activeCoupon, setActiveCoupon] = useState<any | null>(null);
   const [generatedCouponsList, setGeneratedCouponsList] = useState<any[]>([]);
   const [copiedLink, setCopiedLink] = useState(false);
-  const [shopPointRateInput, setShopPointRateInput] = useState(10);
+  const [shopPointRateInput, setShopPointRateInput] = useState('10');
 
   const lineLiffId = process.env.NEXT_PUBLIC_LINE_LIFF_ID?.trim();
   const buildCustomerClaimUrl = (code: string) => {
@@ -84,7 +84,32 @@ export default function OwnerDashboard({
   const generateNewCouponAndLink = () => {
     const activeShop = shops.length > 0 ? shops.find(s => s.id === selectedShopId) : getShops().find(s => s.id === selectedShopId);
     const currentPointsRate = Math.max(1, activeShop?.pointsRate || 10);
-    const purchaseAmount = Math.max(0, Number(generatePurchaseAmount) || 0);
+    const purchaseAmountText = String(generatePurchaseAmount).trim();
+    const expiryMinutesText = String(expiryMinutes).trim();
+
+    if (!purchaseAmountText) {
+      showStatus('❌ กรุณาใส่ยอดซื้อก่อนสร้างลิงก์รับแต้ม');
+      return;
+    }
+
+    const purchaseAmount = Number(purchaseAmountText);
+    if (!Number.isFinite(purchaseAmount) || purchaseAmount <= 0) {
+      showStatus('❌ กรุณาใส่ยอดซื้อเป็นตัวเลขที่มากกว่า 0');
+      return;
+    }
+
+    if (!expiryMinutesText) {
+      showStatus('❌ กรุณาใส่เวลาหมดอายุของลิงก์');
+      return;
+    }
+
+    const parsedExpiryMinutes = Number(expiryMinutesText);
+    if (!Number.isFinite(parsedExpiryMinutes) || parsedExpiryMinutes <= 0) {
+      showStatus('❌ กรุณาใส่เวลาหมดอายุเป็นตัวเลข 1 - 60 นาที');
+      return;
+    }
+
+    const boundedExpiryMinutes = Math.max(1, Math.min(60, Math.floor(parsedExpiryMinutes)));
     const couponPoints = Math.floor(purchaseAmount / currentPointsRate);
 
     if (couponPoints <= 0) {
@@ -99,7 +124,7 @@ export default function OwnerDashboard({
 
     const coupons = getGeneratedCoupons();
 
-    const expiresAt = new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + boundedExpiryMinutes * 60 * 1000).toISOString();
 
     const newCoupon = {
       code: uniqueCode,
@@ -135,11 +160,15 @@ export default function OwnerDashboard({
       return;
     }
 
-    const shareText = `รับแต้มจาก ${activeShopDetail?.name || 'ร้านค้า'} จำนวน ${points} แต้ม\nกดรับแต้มที่นี่: ${url}`;
+    const shopName = activeShopDetail?.name || 'ร้านค้า';
+    const shareTitle = `รับแต้มจาก ${shopName}`;
+    const shareTextWithUrl = `รับแต้มจาก ${shopName} จำนวน ${points} แต้ม
+กดรับแต้มที่นี่: ${url}`;
+    const shareTextWithoutUrl = `รับแต้มจาก ${shopName} จำนวน ${points} แต้ม`;
 
     try {
       if (window.liff?.shareTargetPicker) {
-        await window.liff.shareTargetPicker([{ type: 'text', text: shareText }]);
+        await window.liff.shareTargetPicker([{ type: 'text', text: shareTextWithUrl }]);
         showStatus('✓ เปิดหน้าส่งลิงก์ใน LINE แล้ว');
         return;
       }
@@ -149,7 +178,7 @@ export default function OwnerDashboard({
 
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'รับแต้มจากร้าน', text: shareText, url });
+        await navigator.share({ title: shareTitle, text: shareTextWithoutUrl, url });
         showStatus('✓ เปิดหน้าส่งลิงก์แล้ว');
         return;
       } catch (error) {
@@ -157,7 +186,7 @@ export default function OwnerDashboard({
       }
     }
 
-    const lineShareUrl = `https://line.me/R/share?text=${encodeURIComponent(shareText)}`;
+    const lineShareUrl = `https://line.me/R/share?text=${encodeURIComponent(shareTextWithUrl)}`;
     window.open(lineShareUrl, '_blank', 'noopener,noreferrer');
     showStatus(code ? `✓ เปิด LINE สำหรับแชร์รหัส ${code}` : '✓ เปิด LINE สำหรับแชร์ลิงก์แล้ว');
   };
@@ -194,7 +223,7 @@ export default function OwnerDashboard({
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
   const [newCustomerLineName, setNewCustomerLineName] = useState('');
   const [selectedSaleCustomerId, setSelectedSaleCustomerId] = useState('');
-  const [saleAmount, setSaleAmount] = useState(100);
+  const [saleAmount, setSaleAmount] = useState('100');
   const [saleReason, setSaleReason] = useState('บันทึกยอดซื้อหน้าร้าน');
 
   // Promotion Banner creation states
@@ -229,7 +258,7 @@ export default function OwnerDashboard({
 
   useEffect(() => {
     if (activeShopDetail?.pointsRate) {
-      setShopPointRateInput(activeShopDetail.pointsRate);
+      setShopPointRateInput(String(activeShopDetail.pointsRate));
     }
   }, [activeShopDetail?.id, activeShopDetail?.pointsRate]);
 
@@ -257,7 +286,19 @@ export default function OwnerDashboard({
   const handleSaveShopPointRate = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const nextRate = Math.max(1, Math.floor(Number(shopPointRateInput) || 1));
+    const rateText = String(shopPointRateInput).trim();
+    if (!rateText) {
+      showStatus('❌ กรุณาใส่จำนวนเงินก่อนบันทึกอัตราแต้ม');
+      return;
+    }
+
+    const parsedRate = Number(rateText);
+    if (!Number.isFinite(parsedRate) || parsedRate <= 0) {
+      showStatus('❌ กรุณาใส่อัตราแต้มเป็นตัวเลขที่มากกว่า 0');
+      return;
+    }
+
+    const nextRate = Math.floor(parsedRate);
     const allShops = getShops();
     const targetShop = allShops.find((shop) => shop.id === selectedShopId);
 
@@ -331,6 +372,18 @@ export default function OwnerDashboard({
       return;
     }
 
+    const saleAmountText = String(saleAmount).trim();
+    if (!saleAmountText) {
+      showStatus('❌ กรุณาใส่ยอดซื้อก่อนบันทึกแต้ม');
+      return;
+    }
+
+    const saleAmountValue = Number(saleAmountText);
+    if (!Number.isFinite(saleAmountValue) || saleAmountValue <= 0) {
+      showStatus('❌ กรุณาใส่ยอดซื้อเป็นตัวเลขที่มากกว่า 0');
+      return;
+    }
+
     if (calculatedSalePoints <= 0) {
       showStatus(`❌ ยอดซื้อยังไม่ถึงอัตราแจกแต้มของร้าน (${pointsRate} บาท = 1 แต้ม)`);
       return;
@@ -362,7 +415,7 @@ export default function OwnerDashboard({
       shopName: activeShopDetail?.name || selectedShopId,
       type: 'earn',
       points: calculatedSalePoints,
-      description: `${saleReason || 'บันทึกยอดซื้อหน้าร้าน'}: ยอดซื้อ ${Number(saleAmount).toLocaleString('th-TH')} บาท`,
+      description: `${saleReason || 'บันทึกยอดซื้อหน้าร้าน'}: ยอดซื้อ ${saleAmountValue.toLocaleString('th-TH')} บาท`,
       status: 'completed',
       createdAt: new Date().toISOString(),
     };
@@ -493,7 +546,7 @@ export default function OwnerDashboard({
       shopName: shops.find(s => s.id === selectedShopId)?.name || 'Koffee Craft',
       type: 'earn',
       points: calculatedGeneratePoints,
-      description: `รับแต้มจากลิงก์ของร้าน: ${generateDesc || `ยอดซื้อ ${generatePurchaseAmount.toLocaleString('th-TH')} บาท`}`,
+      description: `รับแต้มจากลิงก์ของร้าน: ${generateDesc || `ยอดซื้อ ${Number(generatePurchaseAmount || 0).toLocaleString('th-TH')} บาท`}`,
       status: 'completed',
       createdAt: new Date().toISOString()
     };
@@ -930,9 +983,10 @@ export default function OwnerDashboard({
                       <label className="text-xs font-bold text-slate-700 block">ลูกค้าซื้อครบกี่บาท = 1 แต้ม</label>
                       <input
                         type="number"
+                        inputMode="decimal"
                         min={1}
                         value={shopPointRateInput}
-                        onChange={(e) => setShopPointRateInput(parseInt(e.target.value) || 1)}
+                        onChange={(e) => setShopPointRateInput(e.target.value)}
                         className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
                       />
                       <p className="text-[10px] text-slate-500 font-medium">ตอนนี้ระบบคำนวณจากยอดซื้อ: ทุก {pointsRate} บาท = 1 แต้ม</p>
@@ -1167,9 +1221,10 @@ export default function OwnerDashboard({
                 <label className="text-[10px] font-black text-amber-700 uppercase tracking-wider">ยอดซื้อ / บาท</label>
                 <input
                   type="number"
+                  inputMode="decimal"
                   min={0}
                   value={saleAmount}
-                  onChange={(e) => setSaleAmount(parseInt(e.target.value) || 0)}
+                  onChange={(e) => setSaleAmount(e.target.value)}
                   className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-amber-300"
                 />
               </div>
@@ -1717,9 +1772,10 @@ export default function OwnerDashboard({
                   <label className="text-[10px] text-slate-600 block font-sans">ยอดซื้อของลูกค้า (บาท)</label>
                   <input
                     type="number"
+                    inputMode="decimal"
                     min={0}
                     value={generatePurchaseAmount}
-                    onChange={(e) => setGeneratePurchaseAmount(parseInt(e.target.value) || 0)}
+                    onChange={(e) => setGeneratePurchaseAmount(e.target.value)}
                     placeholder="เช่น 500"
                     className="w-full bg-neutral-900 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 outline-none font-sans"
                   />
@@ -1746,13 +1802,11 @@ export default function OwnerDashboard({
                   <div className="flex items-center gap-2">
                     <input 
                       type="number"
+                      inputMode="numeric"
                       min={1}
                       max={60}
                       value={expiryMinutes}
-                      onChange={(e) => {
-                        const val = Math.max(1, Math.min(60, parseInt(e.target.value) || 1));
-                        setExpiryMinutes(val);
-                      }}
+                      onChange={(e) => setExpiryMinutes(e.target.value)}
                       className="w-24 bg-neutral-900 border border-neutral-850 text-xs text-white px-3 py-2 rounded-lg outline-none text-center font-mono focus:border-yellow-500 transition duration-150"
                     />
                     <span className="text-xs text-neutral-300 font-sans">นาที (นับจากเวลาที่สถิติกำหนดไว้)</span>
