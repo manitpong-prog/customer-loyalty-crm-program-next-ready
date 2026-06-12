@@ -413,7 +413,7 @@ export default function CustomerDashboard({
         <div className="flex min-h-[55vh] items-center justify-center p-6 text-center">
           <div className="max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="text-sm font-black text-slate-900">
-              {isAutoLoadingMember ? "กำลังเตรียมบัตรสมาชิกของคุณ" : "ยังไม่พบข้อมูลสมาชิกของคุณ"}
+              {isAutoLoadingMember ? "กำลังเตรียมบัตรสมาชิก" : "ยังไม่พบข้อมูลสมาชิกของคุณ"}
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-600">
               {isAutoLoadingMember
@@ -1324,8 +1324,8 @@ export default function CustomerDashboard({
 
             {pendingCoupon && (
               <div className={`rounded-3xl border p-4.5 shadow-xs space-y-3.5 ${pendingCouponState === "ready"
-                  ? "bg-emerald-50 border-emerald-200"
-                  : "bg-rose-50 border-rose-200"
+                ? "bg-emerald-50 border-emerald-200"
+                : "bg-rose-50 border-rose-200"
                 }`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -1343,8 +1343,8 @@ export default function CustomerDashboard({
                     </p>
                   </div>
                   <div className={`rounded-2xl px-3 py-2 text-center font-mono font-black ${pendingCouponState === "ready"
-                      ? "bg-white text-emerald-700 border border-emerald-200"
-                      : "bg-white text-rose-700 border border-rose-200"
+                    ? "bg-white text-emerald-700 border border-emerald-200"
+                    : "bg-white text-rose-700 border border-rose-200"
                     }`}>
                     <span className="block text-lg leading-none">+{pendingCoupon.points}</span>
                     <span className="text-[9px]">แต้ม</span>
@@ -1379,8 +1379,8 @@ export default function CustomerDashboard({
                     onClick={handleConfirmClaimDynamicCoupon}
                     disabled={pendingCouponState !== "ready"}
                     className={`flex-1 rounded-xl px-3 py-2.5 text-xs font-black shadow-sm transition active:scale-[0.98] ${pendingCouponState === "ready"
-                        ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                        : "bg-slate-200 text-slate-500 cursor-not-allowed"
+                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                      : "bg-slate-200 text-slate-500 cursor-not-allowed"
                       }`}
                   >
                     ยืนยัน
