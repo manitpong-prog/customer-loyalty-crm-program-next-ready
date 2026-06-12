@@ -82,6 +82,7 @@ export default function OwnerDashboard({
   const [shopShareMessageInput, setShopShareMessageInput] = useState('');
   const [shopRichMenuContactUrlInput, setShopRichMenuContactUrlInput] = useState('');
   const [shopIsActiveInput, setShopIsActiveInput] = useState(true);
+  const [pilotResetConfirmText, setPilotResetConfirmText] = useState('');
 
   const lineLiffId = process.env.NEXT_PUBLIC_LINE_LIFF_ID?.trim();
   const buildCustomerClaimUrl = (code: string) => {
@@ -576,6 +577,61 @@ export default function OwnerDashboard({
     } catch {
       showStatus(`❌ คัดลอก${label}ไม่สำเร็จ กรุณาคัดลอกเองอีกครั้ง`);
     }
+  };
+
+  const handlePilotDataReset = () => {
+    const confirmation = pilotResetConfirmText.trim();
+    if (confirmation !== 'RESET') {
+      showStatus('❌ กรุณาพิมพ์ RESET ให้ถูกต้องก่อนล้างข้อมูลทดสอบ');
+      return;
+    }
+
+    const allCustomers = getCustomers();
+    const allTransactions = getTransactions();
+    const allCoupons = getGeneratedCoupons();
+
+    const shopCustomerIds = new Set(
+      filterCustomersByShop(allCustomers, selectedShopId, allTransactions, true).map((customer) => customer.id),
+    );
+    allTransactions
+      .filter((transaction) => transaction.shopId === selectedShopId)
+      .forEach((transaction) => shopCustomerIds.add(transaction.userId));
+
+    const customersToDelete = allCustomers.filter((customer) => shopCustomerIds.has(customer.id));
+    const transactionsToDelete = allTransactions.filter((transaction) => transaction.shopId === selectedShopId);
+    const couponsToDelete = allCoupons.filter((coupon: any) => coupon.shopId === selectedShopId);
+
+    const confirmed = window.confirm(`ยืนยันล้างข้อมูลทดสอบของร้านนี้ใช่ไหม?
+
+ระบบจะล้าง:
+- สมาชิก/ลูกค้า ${customersToDelete.length.toLocaleString('th-TH')} ราย
+- ประวัติแต้มและรายการแลกรางวัล ${transactionsToDelete.length.toLocaleString('th-TH')} รายการ
+- ลิงก์/รหัสรับแต้ม ${couponsToDelete.length.toLocaleString('th-TH')} รายการ
+
+ระบบจะคงไว้:
+- ตั้งค่าร้าน โลโก้ ข้อความ และอัตราแต้ม
+- รายการของรางวัลและรูปของรางวัล
+- โปรโมชัน/แบนเนอร์
+
+การล้างนี้เหมาะสำหรับเตรียมเปิด Pilot จริง`);
+    if (!confirmed) return;
+
+    const nextCustomers = allCustomers.filter((customer) => !shopCustomerIds.has(customer.id));
+    const nextTransactions = allTransactions.filter((transaction) => transaction.shopId !== selectedShopId);
+    const nextCoupons = allCoupons.filter((coupon: any) => coupon.shopId !== selectedShopId);
+
+    saveCustomers(nextCustomers);
+    saveTransactions(nextTransactions);
+    saveGeneratedCoupons(nextCoupons);
+
+    setPilotResetConfirmText('');
+    setSelectedCustForAdjust(null);
+    setSelectedSaleCustomerId('');
+    setGeneratedQRValue('');
+    setActiveCoupon(null);
+    showStatus('✓ ล้างข้อมูลทดสอบของร้านนี้เรียบร้อยแล้ว พร้อมเริ่ม Pilot จริง');
+    onDataChange();
+    loadData();
   };
 
   const handleCreateCustomer = (e: React.FormEvent) => {
@@ -1113,6 +1169,12 @@ export default function OwnerDashboard({
     ...(shopRichMenuContactUrlInput.trim() ? [{ label: 'ติดต่อร้าน', value: shopRichMenuContactUrlInput.trim(), note: 'ใช้กับปุ่มติดต่อร้าน' }] : []),
   ];
 
+  const pilotResetCustomerCount = customers.length;
+  const pilotResetTransactionCount = transactions.length;
+  const pilotResetCouponCount = generatedCouponsList.length;
+  const pilotResetPendingRedeemCount = pendingRedeems.length;
+  const pilotResetCanRun = pilotResetConfirmText.trim() === 'RESET';
+
   return (
     <div className="relative bg-white border border-slate-200 rounded-3xl p-5 md:p-6.5 pb-24 md:pb-6.5 shadow-sm space-y-6.5 text-slate-900">
       
@@ -1575,6 +1637,81 @@ export default function OwnerDashboard({
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+
+            <div className="rounded-3xl border border-rose-200 bg-rose-50 p-5 shadow-sm space-y-4">
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black text-rose-700 uppercase tracking-[0.22em]">Pilot cleanup</p>
+                  <h4 className="text-base font-black text-rose-950 mt-1">ล้างข้อมูลทดสอบก่อนเปิดใช้จริง</h4>
+                  <p className="text-xs text-rose-800/80 font-medium mt-1">ใช้เมื่อทดสอบครบแล้วและต้องการเริ่มเก็บข้อมูลลูกค้าจริงแบบสะอาด</p>
+                </div>
+                <div className="rounded-2xl bg-white/80 border border-rose-200 px-4 py-3 text-right">
+                  <p className="text-[10px] font-black text-rose-500">สถานะ</p>
+                  <p className="text-sm font-black text-rose-800">ต้องยืนยันก่อนล้าง</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+                <div className="rounded-2xl border border-rose-200 bg-white p-3">
+                  <p className="text-[10px] font-black text-slate-500">สมาชิกที่จะล้าง</p>
+                  <p className="text-2xl font-black text-rose-700 font-mono">{pilotResetCustomerCount}</p>
+                </div>
+                <div className="rounded-2xl border border-rose-200 bg-white p-3">
+                  <p className="text-[10px] font-black text-slate-500">ประวัติแต้ม</p>
+                  <p className="text-2xl font-black text-rose-700 font-mono">{pilotResetTransactionCount}</p>
+                </div>
+                <div className="rounded-2xl border border-rose-200 bg-white p-3">
+                  <p className="text-[10px] font-black text-slate-500">ลิงก์รับแต้ม</p>
+                  <p className="text-2xl font-black text-rose-700 font-mono">{pilotResetCouponCount}</p>
+                </div>
+                <div className="rounded-2xl border border-rose-200 bg-white p-3">
+                  <p className="text-[10px] font-black text-slate-500">รออนุมัติ</p>
+                  <p className="text-2xl font-black text-rose-700 font-mono">{pilotResetPendingRedeemCount}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-medium">
+                <div className="rounded-2xl border border-rose-200 bg-white p-4">
+                  <p className="font-black text-rose-900">ระบบจะล้าง</p>
+                  <ul className="mt-2 space-y-1.5 list-disc pl-4 text-rose-800">
+                    <li>สมาชิก/ลูกค้าที่อยู่ในร้านนี้</li>
+                    <li>ประวัติแต้ม รายการแลกรางวัล และรายการรออนุมัติ</li>
+                    <li>ลิงก์หรือรหัสรับแต้มที่เคยสร้างไว้</li>
+                  </ul>
+                </div>
+                <div className="rounded-2xl border border-emerald-200 bg-white p-4">
+                  <p className="font-black text-emerald-900">ระบบจะคงไว้</p>
+                  <ul className="mt-2 space-y-1.5 list-disc pl-4 text-emerald-800">
+                    <li>ชื่อร้าน โลโก้ ข้อความร้าน และอัตราแต้ม</li>
+                    <li>ของรางวัล รูปของรางวัล และสต็อกปัจจุบัน</li>
+                    <li>โปรโมชัน แบนเนอร์ และลิงก์ Rich Menu</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-rose-200 bg-white p-4 space-y-3">
+                <div>
+                  <label className="text-[10px] font-black text-rose-700">พิมพ์ RESET เพื่อยืนยัน</label>
+                  <input
+                    type="text"
+                    value={pilotResetConfirmText}
+                    onChange={(e) => setPilotResetConfirmText(e.target.value)}
+                    placeholder="RESET"
+                    className="mt-1.5 w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-black text-rose-950 outline-none focus:ring-2 focus:ring-rose-300"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handlePilotDataReset}
+                  disabled={!pilotResetCanRun}
+                  className={`w-full rounded-2xl px-5 py-3.5 text-sm font-black text-white transition active:scale-95 ${pilotResetCanRun ? 'bg-rose-600 hover:bg-rose-700 shadow-sm' : 'bg-slate-300 cursor-not-allowed'}`}
+                >
+                  ล้างข้อมูลทดสอบของร้านนี้
+                </button>
+                <p className="text-[10px] leading-5 text-rose-700 font-medium">แนะนำให้ใช้หลังจากทดสอบ flow ครบแล้วเท่านั้น ก่อนเปิดให้ลูกค้าจริงใช้งาน</p>
               </div>
             </div>
 
