@@ -72,6 +72,16 @@ export default function OwnerDashboard({
   const [generatedCouponsList, setGeneratedCouponsList] = useState<any[]>([]);
   const [copiedLink, setCopiedLink] = useState(false);
   const [shopPointRateInput, setShopPointRateInput] = useState('10');
+  const [shopNameInput, setShopNameInput] = useState('');
+  const [shopDescriptionInput, setShopDescriptionInput] = useState('');
+  const [shopCategoryInput, setShopCategoryInput] = useState('');
+  const [shopPhoneInput, setShopPhoneInput] = useState('');
+  const [shopLogoInput, setShopLogoInput] = useState('');
+  const [shopWelcomeInput, setShopWelcomeInput] = useState('');
+  const [shopContactInput, setShopContactInput] = useState('');
+  const [shopShareMessageInput, setShopShareMessageInput] = useState('');
+  const [shopRichMenuContactUrlInput, setShopRichMenuContactUrlInput] = useState('');
+  const [shopIsActiveInput, setShopIsActiveInput] = useState(true);
 
   const lineLiffId = process.env.NEXT_PUBLIC_LINE_LIFF_ID?.trim();
   const buildCustomerClaimUrl = (code: string) => {
@@ -227,9 +237,19 @@ export default function OwnerDashboard({
 
     const shopName = activeShopDetail?.name || 'ร้านค้า';
     const shareTitle = `รับแต้มจาก ${shopName}`;
-    const shareTextWithUrl = `รับแต้มจาก ${shopName} จำนวน ${points} แต้ม
-กดรับแต้มที่นี่: ${url}`;
-    const shareTextWithoutUrl = `รับแต้มจาก ${shopName} จำนวน ${points} แต้ม`;
+    const template = activeShopDetail?.shareMessageTemplate?.trim();
+    let shareTextWithUrl = template
+      ? template
+          .replaceAll('{shop}', shopName)
+          .replaceAll('{points}', String(points))
+          .replaceAll('{url}', url)
+      : `รับแต้มจาก ${shopName} จำนวน ${points} แต้ม\nกดรับแต้มที่นี่: ${url}`;
+
+    if (!shareTextWithUrl.includes(url)) {
+      shareTextWithUrl = `${shareTextWithUrl}\n${url}`;
+    }
+
+    const shareTextWithoutUrl = shareTextWithUrl.replace(url, '').trim() || `รับแต้มจาก ${shopName} จำนวน ${points} แต้ม`;
 
     try {
       if (window.liff?.shareTargetPicker) {
@@ -322,10 +342,19 @@ export default function OwnerDashboard({
   }, [selectedShopId, activeTab]);
 
   useEffect(() => {
-    if (activeShopDetail?.pointsRate) {
-      setShopPointRateInput(String(activeShopDetail.pointsRate));
-    }
-  }, [activeShopDetail?.id, activeShopDetail?.pointsRate]);
+    if (!activeShopDetail) return;
+    setShopPointRateInput(String(activeShopDetail.pointsRate || 10));
+    setShopNameInput(activeShopDetail.name || '');
+    setShopDescriptionInput(activeShopDetail.description || '');
+    setShopCategoryInput(activeShopDetail.category || '');
+    setShopPhoneInput(activeShopDetail.phone || '');
+    setShopLogoInput(activeShopDetail.logo || '');
+    setShopWelcomeInput(activeShopDetail.welcomeMessage || `ยินดีต้อนรับสู่ ${activeShopDetail.name || 'ร้านค้า'} สะสมแต้มและแลกของรางวัลได้จากหน้านี้`);
+    setShopContactInput(activeShopDetail.contactText || activeShopDetail.phone || '');
+    setShopShareMessageInput(activeShopDetail.shareMessageTemplate || `รับแต้มจาก {shop} จำนวน {points} แต้ม\nกดรับแต้มที่นี่: {url}`);
+    setShopRichMenuContactUrlInput(activeShopDetail.richMenuContactUrl || '');
+    setShopIsActiveInput(activeShopDetail.isActive !== false);
+  }, [activeShopDetail?.id, activeShopDetail?.name, activeShopDetail?.description, activeShopDetail?.category, activeShopDetail?.phone, activeShopDetail?.logo, activeShopDetail?.pointsRate, activeShopDetail?.isActive, activeShopDetail?.welcomeMessage, activeShopDetail?.contactText, activeShopDetail?.shareMessageTemplate, activeShopDetail?.richMenuContactUrl]);
 
   useEffect(() => {
     if (customers.length > 0 && !customers.some((customer) => customer.id === selectedSaleCustomerId)) {
@@ -368,22 +397,29 @@ export default function OwnerDashboard({
     return { value: Math.floor(parsedValue), error: '' };
   };
 
-  const handleSaveShopPointRate = (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const getValidatedPointRate = () => {
     const rateText = String(shopPointRateInput).trim();
     if (!rateText) {
-      showStatus('❌ กรุณาใส่จำนวนเงินก่อนบันทึกอัตราแต้ม');
-      return;
+      return { value: null as number | null, error: '❌ กรุณาใส่จำนวนเงินก่อนบันทึกอัตราแต้ม' };
     }
 
     const parsedRate = Number(rateText);
     if (!Number.isFinite(parsedRate) || parsedRate <= 0) {
-      showStatus('❌ กรุณาใส่อัตราแต้มเป็นตัวเลขที่มากกว่า 0');
+      return { value: null as number | null, error: '❌ กรุณาใส่อัตราแต้มเป็นตัวเลขที่มากกว่า 0' };
+    }
+
+    return { value: Math.floor(parsedRate), error: '' };
+  };
+
+  const handleSaveShopPointRate = (e: React.FormEvent | React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+
+    const { value: nextRate, error } = getValidatedPointRate();
+    if (error || nextRate === null) {
+      showStatus(error);
       return;
     }
 
-    const nextRate = Math.floor(parsedRate);
     const allShops = getShops();
     const targetShop = allShops.find((shop) => shop.id === selectedShopId);
 
@@ -400,6 +436,77 @@ export default function OwnerDashboard({
     showStatus(`✓ บันทึกอัตราแจกแต้มแล้ว: ${nextRate} บาท = 1 แต้ม`);
     onDataChange();
     loadData();
+  };
+
+  const handleSaveShopSettings = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const allShops = getShops();
+    const targetShop = allShops.find((shop) => shop.id === selectedShopId);
+
+    if (!targetShop) {
+      showStatus('❌ ไม่พบข้อมูลร้าน กรุณาลองโหลดหน้าใหม่อีกครั้ง');
+      return;
+    }
+
+    const nextName = shopNameInput.trim();
+    if (!nextName) {
+      showStatus('❌ กรุณาใส่ชื่อร้านก่อนบันทึก');
+      return;
+    }
+
+    const { value: nextRate, error } = getValidatedPointRate();
+    if (error || nextRate === null) {
+      showStatus(error);
+      return;
+    }
+
+    const nextDescription = shopDescriptionInput.trim() || 'สะสมแต้ม แลกของรางวัล และรับสิทธิพิเศษจากร้านค้า';
+    const nextCategory = shopCategoryInput.trim() || 'ร้านค้า';
+    const nextPhone = shopPhoneInput.trim();
+    const nextLogo = shopLogoInput.trim();
+    const nextWelcome = shopWelcomeInput.trim() || `ยินดีต้อนรับสู่ ${nextName} สะสมแต้มและแลกของรางวัลได้จากหน้านี้`;
+    const nextContact = shopContactInput.trim();
+    const nextShareMessage = shopShareMessageInput.trim() || 'รับแต้มจาก {shop} จำนวน {points} แต้ม\nกดรับแต้มที่นี่: {url}';
+    const nextRichMenuContactUrl = shopRichMenuContactUrlInput.trim();
+
+    const updatedShops = allShops.map((shop) => (
+      shop.id === selectedShopId
+        ? {
+            ...shop,
+            name: nextName,
+            description: nextDescription,
+            category: nextCategory,
+            phone: nextPhone,
+            logo: nextLogo,
+            pointsRate: nextRate,
+            isActive: shopIsActiveInput,
+            welcomeMessage: nextWelcome,
+            contactText: nextContact,
+            shareMessageTemplate: nextShareMessage,
+            richMenuContactUrl: nextRichMenuContactUrl,
+          }
+        : shop
+    ));
+
+    saveShops(updatedShops);
+    showStatus('✓ บันทึกตั้งค่าร้านค้าเรียบร้อยแล้ว');
+    onDataChange();
+    loadData();
+  };
+
+  const handleCopyText = async (text: string, label = 'ข้อความ') => {
+    if (!text) {
+      showStatus(`❌ ไม่มี${label}ให้คัดลอก`);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+      showStatus(`✓ คัดลอก${label}แล้ว`);
+    } catch {
+      showStatus(`❌ คัดลอก${label}ไม่สำเร็จ กรุณาคัดลอกเองอีกครั้ง`);
+    }
   };
 
   const handleCreateCustomer = (e: React.FormEvent) => {
@@ -913,6 +1020,30 @@ export default function OwnerDashboard({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const customerSlug = shopIdToSlug(selectedShopId);
+  const customerWebBaseUrl = typeof window !== 'undefined' ? `${window.location.origin}/customer/${customerSlug}` : `/customer/${customerSlug}`;
+  const buildCustomerTabWebUrl = (tab?: 'home' | 'rewards' | 'code' | 'history' | 'profile') => {
+    if (!tab || tab === 'home') return customerWebBaseUrl;
+    return `${customerWebBaseUrl}?tab=${tab}`;
+  };
+  const buildCustomerTabLiffUrl = (tab?: 'home' | 'rewards' | 'code' | 'history' | 'profile') => {
+    if (!lineLiffId) return buildCustomerTabWebUrl(tab);
+    if (!tab || tab === 'home') return `https://liff.line.me/${lineLiffId}`;
+    return `https://liff.line.me/${lineLiffId}?tab=${tab}`;
+  };
+  const sampleShareLink = buildCustomerClaimUrl('CPN-SAMPLE-50');
+  const sampleShareMessage = (shopShareMessageInput || 'รับแต้มจาก {shop} จำนวน {points} แต้ม\nกดรับแต้มที่นี่: {url}')
+    .replaceAll('{shop}', shopNameInput || activeShopDetail?.name || 'ร้านค้า')
+    .replaceAll('{points}', '50')
+    .replaceAll('{url}', sampleShareLink);
+  const richMenuLinks = [
+    { label: 'แต้มของฉัน', value: buildCustomerTabLiffUrl('home'), note: 'ใช้กับปุ่มหน้าแรกหรือแต้มของฉัน' },
+    { label: 'ของรางวัล', value: buildCustomerTabLiffUrl('rewards'), note: 'ใช้กับปุ่มของรางวัล' },
+    { label: 'รับแต้ม / ใส่รหัส', value: buildCustomerTabLiffUrl('code'), note: 'ใช้กับปุ่มรับแต้ม' },
+    { label: 'ประวัติ', value: buildCustomerTabLiffUrl('history'), note: 'ใช้กับปุ่มประวัติ' },
+    ...(shopRichMenuContactUrlInput.trim() ? [{ label: 'ติดต่อร้าน', value: shopRichMenuContactUrlInput.trim(), note: 'ใช้กับปุ่มติดต่อร้าน' }] : []),
+  ];
+
   return (
     <div className="relative bg-white border border-slate-200 rounded-3xl p-5 md:p-6.5 pb-24 md:pb-6.5 shadow-sm space-y-6.5 text-slate-900">
       
@@ -1126,52 +1257,225 @@ export default function OwnerDashboard({
         )}
 
         {activeTab === 'settings' && (
-          <div className="space-y-4 animate-fade-in">
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h4 className="text-base font-black text-slate-950">ตั้งค่าร้านเบื้องต้น</h4>
-              <p className="text-xs text-slate-500 font-medium mt-1">ตั้งค่าอัตราแจกแต้มของร้าน เพื่อให้ระบบคำนวณแต้มจากยอดซื้ออัตโนมัติ</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
-                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                  <p className="text-[10px] font-black text-slate-500">ชื่อร้าน</p>
-                  <p className="text-sm font-black text-slate-950 mt-1">{activeShopDetail?.name || selectedShopId}</p>
+          <div className="space-y-5 animate-fade-in">
+            <form onSubmit={handleSaveShopSettings} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-5">
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black text-amber-700 uppercase tracking-[0.22em]">Merchant settings</p>
+                  <h4 className="text-xl font-black text-slate-950 mt-1">ตั้งค่าร้านค้า</h4>
+                  <p className="text-xs text-slate-500 font-medium mt-1">แก้ข้อมูลพื้นฐาน อัตราแต้ม ข้อความ และลิงก์ที่ต้องใช้กับลูกค้า</p>
                 </div>
-                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                  <p className="text-[10px] font-black text-slate-500">Slug สำหรับลิงก์</p>
-                  <p className="text-sm font-black text-slate-950 mt-1">{shopIdToSlug(selectedShopId)}</p>
+                <div className={`rounded-2xl px-4 py-3 border ${shopIsActiveInput ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
+                  <p className="text-[10px] font-black">สถานะร้าน</p>
+                  <p className="text-sm font-black mt-0.5">{shopIsActiveInput ? 'เปิดใช้งาน' : 'ปิดชั่วคราว'}</p>
                 </div>
-                <form onSubmit={handleSaveShopPointRate} className="rounded-2xl bg-amber-50 border border-amber-200 p-4 md:col-span-2 space-y-3">
-                  <div className="flex flex-col md:flex-row md:items-end gap-3">
-                    <div className="flex-1 space-y-1">
-                      <p className="text-[10px] font-black text-amber-700">อัตราแจกแต้ม</p>
-                      <label className="text-xs font-bold text-slate-700 block">ลูกค้าซื้อครบกี่บาท = 1 แต้ม</label>
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        min={1}
-                        value={shopPointRateInput}
-                        onChange={(e) => setShopPointRateInput(e.target.value)}
-                        className="w-full bg-white border border-amber-200 rounded-xl px-3 py-2 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
-                      />
-                      <p className="text-[10px] text-slate-500 font-medium">ตอนนี้ระบบคำนวณจากยอดซื้อ: ทุก {pointsRate} บาท = 1 แต้ม</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-600">ชื่อร้าน</label>
+                  <input
+                    type="text"
+                    value={shopNameInput}
+                    onChange={(e) => setShopNameInput(e.target.value)}
+                    placeholder="เช่น iM Sticker"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-600">หมวดหมู่ร้าน</label>
+                  <input
+                    type="text"
+                    value={shopCategoryInput}
+                    onChange={(e) => setShopCategoryInput(e.target.value)}
+                    placeholder="เช่น Sticker / ของขวัญ / ร้านกาแฟ"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
+                  />
+                </div>
+
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-[10px] font-black text-slate-600">คำอธิบายร้านสั้น ๆ</label>
+                  <textarea
+                    value={shopDescriptionInput}
+                    onChange={(e) => setShopDescriptionInput(e.target.value)}
+                    rows={3}
+                    placeholder="คำอธิบายนี้จะแสดงในหน้าลูกค้า"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-950 outline-none focus:ring-2 focus:ring-amber-300 resize-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-600">เบอร์ / ช่องทางติดต่อร้าน</label>
+                  <input
+                    type="text"
+                    value={shopPhoneInput}
+                    onChange={(e) => setShopPhoneInput(e.target.value)}
+                    placeholder="เช่น 08x-xxx-xxxx หรือ LINE OA"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-600">สถานะเปิดรับลูกค้า</label>
+                  <button
+                    type="button"
+                    onClick={() => setShopIsActiveInput((value) => !value)}
+                    className={`w-full rounded-2xl border px-4 py-3 text-left transition active:scale-95 ${shopIsActiveInput ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}
+                  >
+                    <span className="block text-sm font-black">{shopIsActiveInput ? 'เปิดใช้งานร้าน' : 'ปิดร้านชั่วคราว'}</span>
+                    <span className="block text-[10px] font-bold mt-0.5 opacity-80">{shopIsActiveInput ? 'ลูกค้าสามารถใช้งานหน้าร้านและแลกรางวัลได้ตามปกติ' : 'ใช้สำหรับแจ้งสถานะในระบบก่อนเปิดจริง'}</span>
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-[10px] font-black text-slate-600">โลโก้ร้าน / รูปร้าน</label>
+                  <div className="grid grid-cols-1 md:grid-cols-[88px_1fr] gap-3 items-center">
+                    <div className="w-20 h-20 rounded-3xl border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center">
+                      {shopLogoInput ? (
+                        <img src={shopLogoInput} alt="shop preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        <Image className="w-7 h-7 text-slate-300" />
+                      )}
                     </div>
-                    <button type="submit" className="bg-slate-950 hover:bg-slate-800 text-white font-black text-xs rounded-xl px-4 py-2.5 transition active:scale-95">
-                      บันทึกอัตราแต้ม
-                    </button>
+                    <input
+                      type="text"
+                      value={shopLogoInput}
+                      onChange={(e) => setShopLogoInput(e.target.value)}
+                      placeholder="ใส่ URL รูปโลโก้ หรือปล่อยว่างไว้ก่อน"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
+                    />
                   </div>
-                </form>
-                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4 md:col-span-2">
-                  <p className="text-[10px] font-black text-slate-500">ลิงก์หน้าลูกค้า</p>
-                  <p className="text-xs font-bold text-emerald-700 mt-1 break-all">{typeof window !== 'undefined' ? `${window.location.origin}/customer/${shopIdToSlug(selectedShopId)}` : `/customer/${shopIdToSlug(selectedShopId)}`}</p>
+                  <p className="text-[10px] text-slate-500 font-medium">รอบนี้ยังเป็น URL รูปโลโก้ก่อน ส่วนรูปของรางวัลรองรับอัปโหลดจากเครื่องแล้ว</p>
                 </div>
+              </div>
+
+              <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 space-y-4">
+                <div className="flex flex-col md:flex-row md:items-end gap-3">
+                  <div className="flex-1 space-y-1.5">
+                    <p className="text-[10px] font-black text-amber-700">อัตราแจกแต้ม</p>
+                    <label className="text-xs font-bold text-slate-700 block">ลูกค้าซื้อครบกี่บาท = 1 แต้ม</label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min={1}
+                      value={shopPointRateInput}
+                      onChange={(e) => setShopPointRateInput(e.target.value)}
+                      placeholder="เช่น 100"
+                      className="w-full bg-white border border-amber-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
+                    />
+                    <p className="text-[10px] text-slate-600 font-medium">ตอนนี้ระบบคำนวณจากยอดซื้อ: ทุก {pointsRate} บาท = 1 แต้ม</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSaveShopPointRate}
+                    className="bg-white hover:bg-amber-100 text-amber-800 border border-amber-200 font-black text-xs rounded-2xl px-4 py-3 transition active:scale-95"
+                  >
+                    บันทึกเฉพาะอัตราแต้ม
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-[10px] font-black text-slate-600">ข้อความต้อนรับลูกค้า</label>
+                  <textarea
+                    value={shopWelcomeInput}
+                    onChange={(e) => setShopWelcomeInput(e.target.value)}
+                    rows={3}
+                    placeholder="เช่น ยินดีต้อนรับสู่ร้าน iM Sticker สะสมแต้มและแลกของรางวัลได้จากหน้านี้"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-950 outline-none focus:ring-2 focus:ring-amber-300 resize-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-600">ข้อความติดต่อร้าน</label>
+                  <textarea
+                    value={shopContactInput}
+                    onChange={(e) => setShopContactInput(e.target.value)}
+                    rows={3}
+                    placeholder="เช่น ติดต่อร้านทาง LINE OA หรือเบอร์โทร"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-950 outline-none focus:ring-2 focus:ring-amber-300 resize-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-slate-600">ลิงก์ติดต่อร้านสำหรับ Rich Menu</label>
+                  <input
+                    type="text"
+                    value={shopRichMenuContactUrlInput}
+                    onChange={(e) => setShopRichMenuContactUrlInput(e.target.value)}
+                    placeholder="เช่น https://line.me/R/ti/p/@xxxx"
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
+                  />
+                  <p className="text-[10px] text-slate-500 font-medium">ถ้าใส่ไว้ ระบบจะแสดงลิงก์นี้ในชุด Rich Menu ด้านล่าง</p>
+                </div>
+
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-[10px] font-black text-slate-600">ข้อความแชร์รับแต้ม</label>
+                  <textarea
+                    value={shopShareMessageInput}
+                    onChange={(e) => setShopShareMessageInput(e.target.value)}
+                    rows={4}
+                    placeholder={'รับแต้มจาก {shop} จำนวน {points} แต้ม\nกดรับแต้มที่นี่: {url}'}
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-950 outline-none focus:ring-2 focus:ring-amber-300 resize-none"
+                  />
+                  <p className="text-[10px] text-slate-500 font-medium">ใช้ตัวแปรได้: {'{shop}'} = ชื่อร้าน, {'{points}'} = จำนวนแต้ม, {'{url}'} = ลิงก์รับแต้ม</p>
+                  <div className="rounded-2xl bg-slate-950 text-white p-3 text-xs font-medium whitespace-pre-wrap">{sampleShareMessage}</div>
+                </div>
+              </div>
+
+              <div className="flex flex-col md:flex-row gap-3 pt-1">
+                <button
+                  type="submit"
+                  className="flex-1 bg-slate-950 hover:bg-slate-800 text-white font-black text-sm rounded-2xl px-5 py-3.5 transition active:scale-95"
+                >
+                  บันทึกตั้งค่าร้านค้า
+                </button>
+                <button
+                  type="button"
+                  onClick={() => loadData()}
+                  className="md:w-44 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-sm rounded-2xl px-5 py-3.5 transition active:scale-95"
+                >
+                  โหลดค่าล่าสุด
+                </button>
+              </div>
+            </form>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+              <div>
+                <h4 className="text-base font-black text-slate-950">ลิงก์ลูกค้าและ Rich Menu</h4>
+                <p className="text-xs text-slate-500 font-medium mt-1">คัดลอกลิงก์เหล่านี้ไปใช้ใน LINE OA Rich Menu ได้ทันที</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                {richMenuLinks.map((link) => (
+                  <div key={link.label} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-black text-slate-950">{link.label}</p>
+                        <p className="text-[10px] text-slate-500 font-medium mt-0.5">{link.note}</p>
+                        <p className="text-[11px] font-bold text-emerald-700 mt-2 break-all">{link.value}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(link.value, `ลิงก์ ${link.label}`)}
+                        className="shrink-0 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-black text-xs rounded-xl px-3 py-2 transition active:scale-95 flex items-center justify-center gap-1.5"
+                      >
+                        <Copy className="w-3.5 h-3.5" /> คัดลอก
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
             <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
-              <h4 className="text-sm font-black text-amber-900">ข้อเสนอแนะสำหรับรอบถัดไป</h4>
+              <h4 className="text-sm font-black text-amber-900">หมายเหตุสำหรับ pilot</h4>
               <ul className="mt-3 space-y-2 text-xs text-amber-900 font-medium list-disc pl-5">
-                <li>เพิ่มหน้าแก้ไขข้อมูลร้าน เช่น คำอธิบายร้าน รูปหน้าปก และช่องทางติดต่อ</li>
-                <li>เพิ่มเมนูพนักงานร้าน ถ้าต้องการให้คนอื่นช่วยตรวจรางวัลหรือแจกแต้ม</li>
-                <li>เพิ่มรายงานรายวัน เช่น แต้มที่แจกวันนี้ รางวัลที่แลกวันนี้ และลูกค้าใหม่วันนี้</li>
+                <li>ข้อมูลที่บันทึกตรงนี้จะถูกใช้กับหน้าลูกค้าและข้อความแชร์รับแต้ม</li>
+                <li>ลิงก์ LIFF ใช้รูปแบบ query เช่น ?tab=rewards / ?tab=code เพื่อไม่ให้เกิด 404</li>
+                <li>ถ้าจะเปิดหลายร้านจริงในอนาคต ควรย้ายรูปโลโก้และรูปของรางวัลไปเก็บใน Storage จริง</li>
               </ul>
             </div>
           </div>

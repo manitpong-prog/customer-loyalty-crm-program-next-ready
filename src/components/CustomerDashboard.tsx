@@ -351,6 +351,9 @@ export default function CustomerDashboard({
 
   // Find Active Shop details
   const activeShop = shops.find((s) => s.id === selectedShopId) || shops[0];
+  const activeShopPointRate = Math.max(1, activeShop?.pointsRate || 10);
+  const activeShopWelcomeMessage = activeShop?.welcomeMessage || activeShop?.description || "สะสมแต้ม แลกของรางวัล และรับสิทธิพิเศษจากร้านค้า";
+  const activeShopContactText = activeShop?.contactText || activeShop?.phone || "ติดต่อร้านค้าเพื่อสอบถามรายละเอียดเพิ่มเติม";
 
   const pendingCouponState = validateCouponForCurrentShop(pendingCoupon);
   const pendingCouponExpiryLabel = pendingCoupon
@@ -957,9 +960,15 @@ export default function CustomerDashboard({
                     {activeShop?.name || "iM Sticker"}
                   </p>
                   <p className="text-[11px] leading-relaxed text-slate-600 font-medium">
-                    {activeShop?.description || "สะสมแต้ม แลกของรางวัล และรับสิทธิพิเศษจากร้าน iM Sticker"}
+                    {activeShopWelcomeMessage}
                   </p>
                 </div>
+              </div>
+            )}
+
+            {activeShop?.isActive === false && (
+              <div className="bg-rose-50 border border-rose-200 rounded-3xl p-4 text-xs text-rose-800 font-bold">
+                ร้านนี้ปิดใช้งานชั่วคราว บางฟังก์ชันอาจยังไม่เปิดให้ใช้งาน กรุณาติดต่อร้านก่อนรับแต้มหรือแลกรางวัล
               </div>
             )}
 
@@ -1129,7 +1138,7 @@ export default function CustomerDashboard({
                   {activeShop?.name}
                 </p>
                 <p className="text-[10px] text-slate-500 font-semibold">
-                  {activeShop?.category} • สะสม 10 บ. = 1 แต้ม
+                  {activeShop?.category} • สะสม {activeShopPointRate} บ. = 1 แต้ม
                 </p>
               </div>
             </div>
@@ -1604,6 +1613,11 @@ export default function CustomerDashboard({
                   <p className="text-amber-900 mt-1 font-black">{customer.currentPoints} แต้ม</p>
                 </div>
               </div>
+            </div>
+
+            <div className="bg-white border border-slate-200/70 rounded-3xl p-4 shadow-xs">
+              <p className="text-[10px] font-black text-slate-500">ติดต่อร้าน</p>
+              <p className="text-xs font-bold text-slate-800 mt-1 leading-relaxed">{activeShopContactText}</p>
             </div>
 
             {/* Profile editing form */}

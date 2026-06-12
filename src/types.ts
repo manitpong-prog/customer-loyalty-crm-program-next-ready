@@ -8,6 +8,11 @@ export interface Shop {
   isActive: boolean;
   registrationStatus: 'pending' | 'approved' | 'rejected';
   phone: string;
+  /** Optional merchant-facing settings used by the production pilot UI. */
+  welcomeMessage?: string;
+  contactText?: string;
+  shareMessageTemplate?: string;
+  richMenuContactUrl?: string;
   createdAt: string;
 }
 
