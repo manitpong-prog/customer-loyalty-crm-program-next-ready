@@ -34,6 +34,7 @@ import {
   getRewards,
   getBanners,
   getTransactions,
+  initializeDatabase,
   saveTransactions,
   getShops,
   getGeneratedCoupons,
@@ -63,6 +64,7 @@ interface CustomerDashboardProps {
   clearInitialCouponCode?: () => void;
   initialTab?: CustomerTab;
   displayMode?: "demo" | "production";
+  dataVersion?: number;
   lineIdentity?: LineIdentity | null;
   onLineIdentityChange?: (identity: LineIdentity | null) => void;
 }
@@ -76,6 +78,7 @@ export default function CustomerDashboard({
   clearInitialCouponCode,
   initialTab = "home",
   displayMode = "demo",
+  dataVersion = 0,
   lineIdentity,
   onLineIdentityChange,
 }: CustomerDashboardProps) {
@@ -108,6 +111,10 @@ export default function CustomerDashboard({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scannerStreamRef = useRef<MediaStream | null>(null);
   const scanFrameRef = useRef<number | null>(null);
+  const autoMemberRefreshTimerRef = useRef<number | null>(null);
+  const autoMemberRefreshRunningRef = useRef(false);
+  const [isAutoLoadingMember, setIsAutoLoadingMember] = useState(false);
+  const [autoMemberRefreshAttempt, setAutoMemberRefreshAttempt] = useState(0);
 
   // Dynamic Coupon States
   const [pendingCoupon, setPendingCoupon] = useState<GeneratedCoupon | null>(null);
@@ -184,6 +191,7 @@ export default function CustomerDashboard({
   useEffect(() => {
     return () => {
       if (scanFrameRef.current) window.cancelAnimationFrame(scanFrameRef.current);
+      if (autoMemberRefreshTimerRef.current) window.clearTimeout(autoMemberRefreshTimerRef.current);
       scannerStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
@@ -279,8 +287,75 @@ export default function CustomerDashboard({
   };
 
   useEffect(() => {
-    loadData();
-  }, [currentCustomerId, selectedShopId, activeTab, lineIdentity?.lineUserId, lineIdentity?.customerId]);
+    if (customer || !isProductionView || !lineIdentity?.customerId) {
+      if (customer) {
+        setIsAutoLoadingMember(false);
+        setAutoMemberRefreshAttempt(0);
+      }
+      return;
+    }
+
+    if (autoMemberRefreshRunningRef.current) return;
+
+    let cancelled = false;
+    const expectedCustomerId = lineIdentity.customerId;
+
+    const wait = (ms: number) =>
+      new Promise<void>((resolve) => {
+        if (typeof window === "undefined") {
+          resolve();
+          return;
+        }
+
+        autoMemberRefreshTimerRef.current = window.setTimeout(() => {
+          autoMemberRefreshTimerRef.current = null;
+          resolve();
+        }, ms);
+      });
+
+    const refreshUntilMemberExists = async () => {
+      autoMemberRefreshRunningRef.current = true;
+      setIsAutoLoadingMember(true);
+
+      try {
+        for (let attempt = 1; attempt <= 8; attempt += 1) {
+          if (cancelled) return;
+
+          setAutoMemberRefreshAttempt(attempt);
+          await initializeDatabase();
+
+          if (cancelled) return;
+
+          const memberExists = getCustomers().some((member) => member.id === expectedCustomerId);
+          if (memberExists) {
+            loadData();
+            onDataChange();
+            setIsAutoLoadingMember(false);
+            setAutoMemberRefreshAttempt(0);
+            return;
+          }
+
+          await wait(attempt <= 3 ? 650 : 1100);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsAutoLoadingMember(false);
+        }
+        autoMemberRefreshRunningRef.current = false;
+      }
+    };
+
+    refreshUntilMemberExists();
+
+    return () => {
+      cancelled = true;
+      if (autoMemberRefreshTimerRef.current) {
+        window.clearTimeout(autoMemberRefreshTimerRef.current);
+        autoMemberRefreshTimerRef.current = null;
+      }
+      autoMemberRefreshRunningRef.current = false;
+    };
+  }, [customer, isProductionView, lineIdentity?.customerId, onDataChange, selectedShopId]);
 
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -322,14 +397,30 @@ export default function CustomerDashboard({
 
         <div className="flex min-h-[55vh] items-center justify-center p-6 text-center">
           <div className="max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="text-sm font-black text-slate-900">ยังไม่พบข้อมูลสมาชิกของคุณ</div>
+            <div className="text-sm font-black text-slate-900">
+              {isAutoLoadingMember ? "กำลังเตรียมบัตรสมาชิกของคุณ" : "ยังไม่พบข้อมูลสมาชิกของคุณ"}
+            </div>
             <p className="mt-2 text-xs leading-5 text-slate-600">
-              ถ้าเพิ่งเข้าสู่ระบบด้วย LINE ให้กดโหลดใหม่อีกครั้ง ระบบอาจกำลังสร้างบัตรสมาชิกให้คุณ
+              {isAutoLoadingMember
+                ? `ระบบกำลังโหลดข้อมูลสมาชิกอัตโนมัติ${autoMemberRefreshAttempt ? ` รอบที่ ${autoMemberRefreshAttempt}` : ""} เมื่อพร้อมแล้วจะพาไปหน้ายืนยันรับแต้มให้อัตโนมัติ`
+                : "ถ้าเพิ่งเข้าสู่ระบบด้วย LINE ระบบจะลองโหลดข้อมูลสมาชิกให้อัตโนมัติ หรือกดโหลดใหม่ได้อีกครั้ง"}
             </p>
+            {isAutoLoadingMember && (
+              <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-extrabold text-emerald-700">
+                <RefreshCw className="h-4 w-4 animate-spin" />
+                กำลังโหลดข้อมูลใหม่...
+              </div>
+            )}
             <div className="mt-4 grid gap-2">
               <button
                 type="button"
-                onClick={() => window.location.reload()}
+                onClick={async () => {
+                  setIsAutoLoadingMember(true);
+                  await initializeDatabase();
+                  loadData();
+                  onDataChange();
+                  setIsAutoLoadingMember(false);
+                }}
                 className="rounded-2xl bg-slate-950 px-4 py-2 text-xs font-extrabold text-white"
               >
                 โหลดข้อมูลใหม่
