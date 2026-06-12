@@ -203,48 +203,63 @@ export default function CustomerDashboard({
   }, [initialTab]);
 
   useEffect(() => {
-    if (initialCouponCode) {
-      const codeClean = initialCouponCode.trim().toUpperCase();
-      setPromoCode(codeClean);
-      setActiveTab("code");
+    if (!initialCouponCode) return;
 
-      const coupons = getGeneratedCoupons();
-      const matched = coupons.find(
-        (c: any) => c.code.toUpperCase() === codeClean,
-      );
+    const codeClean = initialCouponCode.trim().toUpperCase();
+    setPromoCode(codeClean);
+    setActiveTab("code");
 
-      if (matched) {
-        const couponState = validateCouponForCurrentShop(matched);
-        if (couponState === "ready") {
-          setPendingCoupon(matched);
-          setShowCouponConfirm(true);
-        } else {
-          setErrorMessage(explainCouponValidation(couponState));
-          setTimeout(() => setErrorMessage(""), 4500);
-        }
+    // When a brand-new LINE user opens a claim link, the member record may be
+    // created by LINE auth a moment after this page first renders. Keep the
+    // claim code alive and wait until the customer is loaded before opening the
+    // confirmation modal. Otherwise the page can land on the code tab without
+    // showing the confirm dialog.
+    if (isProductionView && !customer) {
+      return;
+    }
+
+    const coupons = getGeneratedCoupons();
+    const matched = coupons.find(
+      (c: any) => c.code.toUpperCase() === codeClean,
+    );
+
+    if (matched) {
+      const couponState = validateCouponForCurrentShop(matched);
+      setPendingCoupon(matched);
+
+      if (couponState === "ready") {
+        setShowCouponConfirm(true);
+        setErrorMessage("");
       } else {
-        const genericCodes = [
-          "WELCOME50",
-          "CRM2026",
-          "KOFFEELOVER100",
-          "CHICSTYLE80",
-        ];
-        if (!isProductionView && genericCodes.includes(codeClean)) {
-          setSuccessMessage(
-            `พบรหัสสะสมแต้มแคมเปญ: ${codeClean} โปรดกดปุ่มยืนยันเพื่อรับคะแนนสะสม`,
-          );
-          setTimeout(() => setSuccessMessage(""), 4500);
-        } else {
-          setErrorMessage("ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว");
-          setTimeout(() => setErrorMessage(""), 4500);
-        }
+        setShowCouponConfirm(false);
+        setErrorMessage(explainCouponValidation(couponState));
+        setTimeout(() => setErrorMessage(""), 4500);
       }
+    } else {
+      setPendingCoupon(null);
+      setShowCouponConfirm(false);
 
-      if (clearInitialCouponCode) {
-        clearInitialCouponCode();
+      const genericCodes = [
+        "WELCOME50",
+        "CRM2026",
+        "KOFFEELOVER100",
+        "CHICSTYLE80",
+      ];
+      if (!isProductionView && genericCodes.includes(codeClean)) {
+        setSuccessMessage(
+          `พบรหัสสะสมแต้มแคมเปญ: ${codeClean} โปรดกดปุ่มยืนยันเพื่อรับคะแนนสะสม`,
+        );
+        setTimeout(() => setSuccessMessage(""), 4500);
+      } else {
+        setErrorMessage("ไม่พบรหัสนี้ หรือรหัสหมดอายุแล้ว");
+        setTimeout(() => setErrorMessage(""), 4500);
       }
     }
-  }, [initialCouponCode, clearInitialCouponCode, selectedShopId, isProductionView]);
+
+    if (clearInitialCouponCode) {
+      clearInitialCouponCode();
+    }
+  }, [initialCouponCode, clearInitialCouponCode, selectedShopId, isProductionView, customer]);
 
   // Load latest data on mount and tab switch
   const loadData = () => {
@@ -493,16 +508,18 @@ export default function CustomerDashboard({
 
     if (matchedCoupon) {
       const couponState = validateCouponForCurrentShop(matchedCoupon);
+      setPendingCoupon(matchedCoupon);
+      setActiveTab("code");
+
       if (couponState !== "ready") {
+        setShowCouponConfirm(false);
         setErrorMessage(explainCouponValidation(couponState));
         setTimeout(() => setErrorMessage(""), 3500);
         return;
       }
 
       // Valid dynamic coupon -> Launch confirmation modal.
-      setPendingCoupon(matchedCoupon);
       setShowCouponConfirm(true);
-      setActiveTab("code");
       return;
     }
 
