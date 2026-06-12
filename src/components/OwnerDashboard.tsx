@@ -94,6 +94,69 @@ export default function OwnerDashboard({
   const defaultRewardImage = 'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=400&auto=format&fit=crop&q=80';
   const rewardImageMaxBytes = 2 * 1024 * 1024;
   const rewardImageAllowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  const shopLogoImageMaxBytes = 2 * 1024 * 1024;
+  const shopLogoImageAllowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
+  const handleShopLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    if (!shopLogoImageAllowedTypes.includes(file.type)) {
+      showStatus('❌ รองรับเฉพาะไฟล์ JPG, PNG หรือ WEBP เท่านั้น');
+      input.value = '';
+      return;
+    }
+
+    if (file.size > shopLogoImageMaxBytes) {
+      showStatus('❌ ไฟล์โลโก้ใหญ่เกินไป กรุณาใช้ไฟล์ไม่เกิน 2 MB');
+      input.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (!result) {
+        showStatus('❌ อ่านไฟล์โลโก้ไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง');
+        input.value = '';
+        return;
+      }
+
+      const previewImage = new window.Image();
+      previewImage.onload = () => {
+        const width = previewImage.naturalWidth;
+        const height = previewImage.naturalHeight;
+        setShopLogoInput(result);
+
+        if (width < 300 || height < 300) {
+          showStatus(`⚠️ อัปโหลดโลโก้แล้ว แต่รูปค่อนข้างเล็ก (${width}×${height}px) แนะนำ 512×512px`);
+          return;
+        }
+
+        const ratio = width / height;
+        if (ratio < 0.85 || ratio > 1.15) {
+          showStatus(`⚠️ อัปโหลดโลโก้แล้ว (${width}×${height}px) แนะนำให้ใช้รูปสี่เหลี่ยมจัตุรัส 512×512px`);
+          return;
+        }
+
+        showStatus(`✓ อัปโหลดโลโก้ร้านแล้ว (${width}×${height}px)`);
+      };
+      previewImage.onerror = () => {
+        setShopLogoInput(result);
+        showStatus('✓ อัปโหลดโลโก้ร้านแล้ว');
+      };
+      previewImage.src = result;
+    };
+
+    reader.onerror = () => {
+      showStatus('❌ อ่านไฟล์โลโก้ไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง');
+      input.value = '';
+    };
+
+    reader.readAsDataURL(file);
+  };
 
   const handleRewardImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
@@ -377,6 +440,12 @@ export default function OwnerDashboard({
     setTimeout(() => setStatusMsg(''), 3000);
   };
 
+  const getStatusClassName = () => {
+    if (statusMsg.startsWith('❌')) return 'border-rose-200 bg-rose-50 text-rose-800 shadow-rose-100';
+    if (statusMsg.startsWith('⚠️')) return 'border-amber-200 bg-amber-50 text-amber-800 shadow-amber-100';
+    return 'border-emerald-200 bg-emerald-50 text-emerald-800 shadow-emerald-100';
+  };
+
   const parsePositiveIntegerInput = (rawValue: string, fieldName: string, allowZero = false) => {
     const valueText = String(rawValue).trim();
     if (!valueText) {
@@ -490,7 +559,7 @@ export default function OwnerDashboard({
     ));
 
     saveShops(updatedShops);
-    showStatus('✓ บันทึกตั้งค่าร้านค้าเรียบร้อยแล้ว');
+    showStatus('✓ บันทึกตั้งค่าร้านค้าสำเร็จแล้ว');
     onDataChange();
     loadData();
   };
@@ -1107,11 +1176,21 @@ export default function OwnerDashboard({
 
       </div>
 
-      {statusMsg && (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800 shadow-sm">
-          {statusMsg}
-        </div>
-      )}
+      <AnimatePresence>
+        {statusMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: -12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.18, ease: 'easeOut' }}
+            className={`fixed left-1/2 top-4 z-[90] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border px-4 py-3 text-xs font-black shadow-xl ${getStatusClassName()}`}
+            role="status"
+            aria-live="polite"
+          >
+            {statusMsg}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Compact expandable top menu. It stays in the normal page flow and pushes content down instead of covering the screen. */}
       <AnimatePresence initial={false}>
@@ -1328,25 +1407,54 @@ export default function OwnerDashboard({
                   </button>
                 </div>
 
-                <div className="space-y-1.5 md:col-span-2">
-                  <label className="text-[10px] font-black text-slate-600">โลโก้ร้าน / รูปร้าน</label>
-                  <div className="grid grid-cols-1 md:grid-cols-[88px_1fr] gap-3 items-center">
-                    <div className="w-20 h-20 rounded-3xl border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center">
+                <div className="space-y-2 md:col-span-2">
+                  <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-1.5">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-600">โลโก้ร้าน / รูปร้าน</label>
+                      <p className="text-[10px] text-slate-500 font-bold mt-1">แนะนำ 512×512 px, ขั้นต่ำ 300×300 px, ไฟล์ JPG / PNG / WEBP ไม่เกิน 2 MB</p>
+                    </div>
+                    <span className="text-[10px] font-black text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1 w-fit">สัดส่วน 1:1 จะสวยที่สุด</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-[96px_1fr] gap-3 items-center rounded-3xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="w-24 h-24 rounded-3xl border border-slate-200 bg-white overflow-hidden flex items-center justify-center shadow-sm">
                       {shopLogoInput ? (
                         <img src={shopLogoInput} alt="shop preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       ) : (
-                        <Image className="w-7 h-7 text-slate-300" />
+                        <Image className="w-8 h-8 text-slate-300" />
                       )}
                     </div>
-                    <input
-                      type="text"
-                      value={shopLogoInput}
-                      onChange={(e) => setShopLogoInput(e.target.value)}
-                      placeholder="ใส่ URL รูปโลโก้ หรือปล่อยว่างไว้ก่อน"
-                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
-                    />
+                    <div className="space-y-2">
+                      <input
+                        id="shop-logo-upload"
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={handleShopLogoUpload}
+                        className="hidden"
+                      />
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <label
+                          htmlFor="shop-logo-upload"
+                          className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-xs font-black text-white transition hover:bg-slate-800 active:scale-95"
+                        >
+                          <Image className="w-4 h-4" />
+                          เลือกไฟล์โลโก้ร้าน
+                        </label>
+                        {shopLogoInput && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShopLogoInput('');
+                              showStatus('✓ ล้างรูปโลโก้ร้านแล้ว อย่าลืมกดบันทึกตั้งค่าร้านค้า');
+                            }}
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-700 transition hover:bg-slate-100 active:scale-95"
+                          >
+                            ล้างรูปโลโก้
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-500 font-medium">หลังเลือกรูป ระบบจะแสดงตัวอย่างทันที และจะบันทึกจริงเมื่อกด “บันทึกตั้งค่าร้านค้า”</p>
+                    </div>
                   </div>
-                  <p className="text-[10px] text-slate-500 font-medium">รอบนี้ยังเป็น URL รูปโลโก้ก่อน ส่วนรูปของรางวัลรองรับอัปโหลดจากเครื่องแล้ว</p>
                 </div>
               </div>
 
