@@ -417,7 +417,7 @@ export default function CustomerDashboard({
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-600">
               {isAutoLoadingMember
-                ? `ระบบกำลังโหลดข้อมูลสมาชิกอัตโนมัติ${autoMemberRefreshAttempt ? ` รอบที่ ${autoMemberRefreshAttempt}` : ""} เมื่อพร้อมแล้วจะพาไปหน้ายืนยันรับแต้มให้อัตโนมัติ`
+                ? `กำลังโหลดข้อมูลสมาชิกอัตโนมัติ${autoMemberRefreshAttempt ? ` รอบที่ ${autoMemberRefreshAttempt}` : ""} เมื่อพร้อมแล้วจะพาไปหน้าสมาชิกอัตโนมัติ`
                 : "ถ้าเพิ่งเข้าสู่ระบบด้วย LINE ระบบจะลองโหลดข้อมูลสมาชิกให้อัตโนมัติ หรือกดโหลดใหม่ได้อีกครั้ง"}
             </p>
             {isAutoLoadingMember && (
@@ -464,9 +464,9 @@ export default function CustomerDashboard({
   const pendingCouponState = validateCouponForCurrentShop(pendingCoupon);
   const pendingCouponExpiryLabel = pendingCoupon
     ? new Date(pendingCoupon.expiresAt).toLocaleString("th-TH", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      })
+      dateStyle: "medium",
+      timeStyle: "short",
+    })
     : "";
 
   // Point Progress calculate
@@ -1323,16 +1323,14 @@ export default function CustomerDashboard({
             </div>
 
             {pendingCoupon && (
-              <div className={`rounded-3xl border p-4.5 shadow-xs space-y-3.5 ${
-                pendingCouponState === "ready"
+              <div className={`rounded-3xl border p-4.5 shadow-xs space-y-3.5 ${pendingCouponState === "ready"
                   ? "bg-emerald-50 border-emerald-200"
                   : "bg-rose-50 border-rose-200"
-              }`}>
+                }`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className={`text-[10px] font-mono font-black uppercase tracking-[0.18em] ${
-                      pendingCouponState === "ready" ? "text-emerald-700" : "text-rose-700"
-                    }`}>
+                    <p className={`text-[10px] font-mono font-black uppercase tracking-[0.18em] ${pendingCouponState === "ready" ? "text-emerald-700" : "text-rose-700"
+                      }`}>
                       {pendingCouponState === "ready" ? "พบรหัสรับแต้มแล้ว" : "รหัสนี้ใช้ไม่ได้"}
                     </p>
                     <h4 className="mt-1 text-base font-black text-slate-950">
@@ -1344,11 +1342,10 @@ export default function CustomerDashboard({
                         : explainCouponValidation(pendingCouponState)}
                     </p>
                   </div>
-                  <div className={`rounded-2xl px-3 py-2 text-center font-mono font-black ${
-                    pendingCouponState === "ready"
+                  <div className={`rounded-2xl px-3 py-2 text-center font-mono font-black ${pendingCouponState === "ready"
                       ? "bg-white text-emerald-700 border border-emerald-200"
                       : "bg-white text-rose-700 border border-rose-200"
-                  }`}>
+                    }`}>
                     <span className="block text-lg leading-none">+{pendingCoupon.points}</span>
                     <span className="text-[9px]">แต้ม</span>
                   </div>
@@ -1381,11 +1378,10 @@ export default function CustomerDashboard({
                     type="button"
                     onClick={handleConfirmClaimDynamicCoupon}
                     disabled={pendingCouponState !== "ready"}
-                    className={`flex-1 rounded-xl px-3 py-2.5 text-xs font-black shadow-sm transition active:scale-[0.98] ${
-                      pendingCouponState === "ready"
+                    className={`flex-1 rounded-xl px-3 py-2.5 text-xs font-black shadow-sm transition active:scale-[0.98] ${pendingCouponState === "ready"
                         ? "bg-emerald-600 text-white hover:bg-emerald-700"
                         : "bg-slate-200 text-slate-500 cursor-not-allowed"
-                    }`}
+                      }`}
                   >
                     ยืนยัน
                   </button>
@@ -1664,18 +1660,18 @@ export default function CustomerDashboard({
                   ? t.type === "earn"
                   : t.type === "redeem",
               ).length === 0 && (
-                <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-white shadow-2xs space-y-1">
-                  <History className="w-8 h-8 mx-auto stroke-1 text-slate-350" />
-                  <p className="text-xs mt-2 font-bold text-slate-500">
-                    {historySubTab === "earn" ? "ยังไม่มีประวัติรับแต้ม" : "ยังไม่มีประวัติแลกรางวัล"}
-                  </p>
-                  <p className="text-[10px] font-medium leading-relaxed">
-                    {historySubTab === "earn"
-                      ? "เมื่อรับแต้มจากร้าน รายการจะแสดงในหน้านี้"
-                      : "เมื่อแลกรางวัลแล้ว คุณสามารถติดตามสถานะได้ที่นี่"}
-                  </p>
-                </div>
-              )}
+                  <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-white shadow-2xs space-y-1">
+                    <History className="w-8 h-8 mx-auto stroke-1 text-slate-350" />
+                    <p className="text-xs mt-2 font-bold text-slate-500">
+                      {historySubTab === "earn" ? "ยังไม่มีประวัติรับแต้ม" : "ยังไม่มีประวัติแลกรางวัล"}
+                    </p>
+                    <p className="text-[10px] font-medium leading-relaxed">
+                      {historySubTab === "earn"
+                        ? "เมื่อรับแต้มจากร้าน รายการจะแสดงในหน้านี้"
+                        : "เมื่อแลกรางวัลแล้ว คุณสามารถติดตามสถานะได้ที่นี่"}
+                    </p>
+                  </div>
+                )}
             </div>
           </div>
         )}
