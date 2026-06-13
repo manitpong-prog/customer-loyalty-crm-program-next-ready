@@ -45,6 +45,7 @@ export default function OwnerDashboard({
   const [activeTab, setActiveTab] = useState<MerchantTab>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const [approvalsSubTab, setApprovalsSubTab] = useState<'queue' | 'history'>('queue');
+  const [highlightedRedeemId, setHighlightedRedeemId] = useState('');
   
   // Database States
   const [shops, setShops] = useState<Shop[]>([]);
@@ -98,6 +99,28 @@ export default function OwnerDashboard({
   const rewardImageAllowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
   const shopLogoImageMaxBytes = 2 * 1024 * 1024;
   const shopLogoImageAllowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const params = new URLSearchParams(window.location.search);
+    const merchantTab = params.get('merchantTab');
+    const redeemId = params.get('redeem') || '';
+
+    if (merchantTab === 'approvals') {
+      setActiveTab('approvals');
+      setApprovalsSubTab('queue');
+      setMenuOpen(false);
+    }
+
+    if (redeemId) {
+      setHighlightedRedeemId(redeemId);
+      window.setTimeout(() => {
+        const element = document.getElementById(`redeem-${redeemId}`);
+        element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 650);
+    }
+  }, []);
 
   const handleShopLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
@@ -2039,12 +2062,21 @@ export default function OwnerDashboard({
                       const stockLabel = reward ? `${reward.stock} ชิ้น` : 'ไม่พบข้อมูลสต็อก';
                       const stockDanger = reward ? reward.stock <= 0 : false;
                       return (
-                        <div key={t.id} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+                        <div
+                          id={`redeem-${t.id}`}
+                          key={t.id}
+                          className={`rounded-3xl border bg-white p-4 shadow-sm space-y-4 transition ${highlightedRedeemId === t.id ? 'border-emerald-400 ring-4 ring-emerald-100' : 'border-slate-200'}`}
+                        >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider">รายการรออนุมัติ</p>
                               <h4 className="text-base font-black text-slate-950 mt-1 truncate">{rewardName}</h4>
                               <p className="text-[11px] text-slate-500 font-mono mt-1">{new Date(t.createdAt).toLocaleString('th-TH')}</p>
+                              {highlightedRedeemId === t.id && (
+                                <p className="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700 border border-emerald-200">
+                                  เปิดจากลิงก์ที่ลูกค้าส่งมา
+                                </p>
+                              )}
                             </div>
                             <span className="shrink-0 rounded-full bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1 text-[10px] font-black">
                               รอดำเนินการ

@@ -8,6 +8,7 @@ import {
   History,
   User,
   Copy,
+  Share2,
   Check,
   Clock,
   RefreshCw,
@@ -49,6 +50,7 @@ import {
   filterTransactionsByShop,
 } from "../lib/shopScope";
 import LineLoginPanel from "./LineLoginPanel";
+import { shopIdToSlug } from "../lib/shopSlug";
 import type { LineIdentity } from "../lib/lineAuth";
 
 type CustomerTab = "home" | "rewards" | "code" | "history" | "profile";
@@ -101,6 +103,8 @@ export default function CustomerDashboard({
   const [selectedReward, setSelectedReward] = useState<Reward | null>(null);
   const [isRedeeming, setIsRedeeming] = useState(false);
   const [isRedeemSuccess, setIsRedeemSuccess] = useState(false);
+  const [latestRedeemTransaction, setLatestRedeemTransaction] = useState<Transaction | null>(null);
+  const [copiedRedeemLinkId, setCopiedRedeemLinkId] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [copiedShopIndex, setCopiedShopIndex] = useState<number | null>(null);
@@ -152,6 +156,82 @@ export default function CustomerDashboard({
     window.setTimeout(() => {
       window.location.href = getCustomerHomeUrl();
     }, delay);
+  };
+
+  const getMerchantRedeemUrl = (transaction?: Transaction | null) => {
+    if (!transaction) return "";
+    const slug = shopIdToSlug(transaction.shopId || selectedShopId);
+    const origin = typeof window !== "undefined" ? window.location.origin : "https://im-crm-two.vercel.app";
+    return `${origin}/merchant/${slug}?merchantTab=approvals&redeem=${encodeURIComponent(transaction.id)}`;
+  };
+
+  const getRedeemRewardName = (transaction?: Transaction | null) => {
+    if (!transaction) return selectedReward?.name || "ของรางวัล";
+    return transaction.description.replace("ขอแลกรางวัล: ", "").replace(" (ร้านปฏิเสธ - คืนแต้มแล้ว)", "") || selectedReward?.name || "ของรางวัล";
+  };
+
+  const buildRedeemShareText = (transaction?: Transaction | null) => {
+    if (!transaction) return "";
+    const url = getMerchantRedeemUrl(transaction);
+    const statusText = transaction.status === "pending" ? "รอร้านอนุมัติ" : transaction.status === "completed" ? "อนุมัติแล้ว" : "ถูกปฏิเสธ/คืนแต้มแล้ว";
+    return [
+      `คำขอแลกรางวัลจาก ${transaction.userName}`,
+      `ร้าน: ${transaction.shopName}`,
+      `รายการ: ${getRedeemRewardName(transaction)}`,
+      `ใช้แต้ม: ${transaction.points} แต้ม`,
+      `สถานะ: ${statusText}`,
+      `ลิงก์สำหรับร้านค้า: ${url}`,
+    ].join("\n");
+  };
+
+  const handleCopyRedeemLink = async (transaction?: Transaction | null) => {
+    if (!transaction) return;
+    const url = getMerchantRedeemUrl(transaction);
+
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedRedeemLinkId(transaction.id);
+      setSuccessMessage("คัดลอกลิงก์สำหรับร้านค้าแล้ว");
+      setTimeout(() => setCopiedRedeemLinkId(null), 2200);
+      setTimeout(() => setSuccessMessage(""), 2600);
+    } catch {
+      setErrorMessage("คัดลอกลิงก์ไม่สำเร็จ กรุณากดค้างที่ลิงก์เพื่อคัดลอกเอง");
+      setTimeout(() => setErrorMessage(""), 3000);
+    }
+  };
+
+  const handleShareRedeemLink = async (transaction?: Transaction | null) => {
+    if (!transaction) return;
+    const url = getMerchantRedeemUrl(transaction);
+    const shareText = buildRedeemShareText(transaction);
+    const shareTitle = `คำขอแลกรางวัลจาก ${transaction.userName}`;
+    const shareTextWithoutUrl = shareText.replace(url, "").trim() || shareTitle;
+
+    try {
+      if (window.liff?.shareTargetPicker) {
+        await window.liff.shareTargetPicker([{ type: "text", text: shareText }]);
+        setSuccessMessage("เปิดหน้าส่งลิงก์ใน LINE แล้ว");
+        setTimeout(() => setSuccessMessage(""), 2600);
+        return;
+      }
+    } catch (error) {
+      console.warn("[redeem-share] LIFF shareTargetPicker failed, fallback to share URL.", error);
+    }
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: shareTitle, text: shareTextWithoutUrl, url });
+        setSuccessMessage("เปิดหน้าส่งลิงก์แล้ว");
+        setTimeout(() => setSuccessMessage(""), 2600);
+        return;
+      } catch (error) {
+        console.warn("[redeem-share] Web Share API cancelled or failed.", error);
+      }
+    }
+
+    window.open(`https://line.me/R/share?text=${encodeURIComponent(shareText)}`, "_blank", "noopener,noreferrer");
+    setSuccessMessage("เปิด LINE สำหรับแชร์ลิงก์แล้ว");
+    setTimeout(() => setSuccessMessage(""), 2600);
   };
 
   const extractCodeFromScannedText = (rawText: string) => {
@@ -809,6 +889,7 @@ export default function CustomerDashboard({
   const selectRewardForRedeem = (reward: Reward) => {
     setSelectedReward(reward);
     setIsRedeemSuccess(false);
+    setLatestRedeemTransaction(null);
   };
 
   // Confirm Redeem
@@ -873,6 +954,7 @@ export default function CustomerDashboard({
       saveTransactions([newTx, ...currentTxs]);
 
       setSelectedReward(latestReward);
+      setLatestRedeemTransaction(newTx);
       setIsRedeeming(false);
       setIsRedeemSuccess(true);
       onDataChange();
@@ -1082,7 +1164,7 @@ export default function CustomerDashboard({
 
             {/* Loyalty points details and Quick Stats */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white border border-slate-200/60 rounded-2xl p-3.5 flex flex-col shadow-sm">
+              <div className="bg-white border border-slate-200/60 rounded-2xl p-3.5 flex flex-col shadow-2xs">
                 <span className="text-[10px] text-slate-455 font-bold">
                   แต้มใช้แลกรางวัล
                 </span>
@@ -1093,7 +1175,7 @@ export default function CustomerDashboard({
                   </span>
                 </span>
               </div>
-              <div className="bg-white border border-slate-200/60 rounded-2xl p-3.5 flex flex-col shadow-sm">
+              <div className="bg-white border border-slate-200/60 rounded-2xl p-3.5 flex flex-col shadow-2xs">
                 <span className="text-[10px] text-slate-455 font-bold">
                   แต้มสะสมทั้งหมด
                 </span>
@@ -1107,7 +1189,7 @@ export default function CustomerDashboard({
             </div>
 
             {isProductionView ? (
-              <div className="bg-white border border-slate-200/70 rounded-2xl p-4 space-y-2.5 shadow-sm">
+              <div className="bg-white border border-slate-200/70 rounded-2xl p-4 space-y-2.5 shadow-2xs">
                 <div className="flex justify-between items-center text-xs">
                   <div className="flex items-center gap-1.5">
                     <Clock className="w-4 h-4 text-amber-500" />
@@ -1130,7 +1212,7 @@ export default function CustomerDashboard({
                 </div>
               </div>
             ) : (
-              <div className="bg-white border border-slate-200/60 rounded-2xl p-4 space-y-2.5 shadow-sm">
+              <div className="bg-white border border-slate-200/60 rounded-2xl p-4 space-y-2.5 shadow-2xs">
                 <div className="flex justify-between items-center text-xs">
                   <div className="flex items-center gap-1.5">
                     <Award className="w-4 h-4 text-amber-500" />
@@ -1226,7 +1308,7 @@ export default function CustomerDashboard({
           <div className="space-y-4">
             <div className="space-y-1">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                <Gift className="w-4 h-4 text-amber-500" />
+                <Gift className="w-4 h-4 text-amber-550" />
                 ของรางวัลจากร้าน {activeShop?.name}
               </h3>
               <p className="text-[10px] text-slate-500 font-medium font-sans">
@@ -1235,7 +1317,7 @@ export default function CustomerDashboard({
             </div>
 
             {/* Active Shop details banner inside rewards */}
-            <div className="bg-white border border-slate-200/60 rounded-2xl p-3 flex items-center gap-3 shadow-sm">
+            <div className="bg-white border border-slate-200/60 rounded-2xl p-3 flex items-center gap-3 shadow-2xs">
               <img
                 src={activeShop?.logo}
                 className="w-10 h-10 rounded-full object-cover border border-slate-100"
@@ -1259,7 +1341,7 @@ export default function CustomerDashboard({
                   <div
                     key={rew.id}
                     onClick={() => selectRewardForRedeem(rew)}
-                    className="bg-white border border-slate-200/60 hover:border-slate-350 rounded-2xl overflow-hidden flex flex-col h-[210px] cursor-pointer transition active:scale-97 shadow-sm"
+                    className="bg-white border border-slate-200/60 hover:border-slate-350 rounded-2xl overflow-hidden flex flex-col h-[210px] cursor-pointer transition active:scale-97 shadow-2xs"
                   >
                     <div className="h-24 relative overflow-hidden">
                       <img
@@ -1299,7 +1381,7 @@ export default function CustomerDashboard({
             </div>
 
             {rewards.length === 0 && (
-              <div className="p-8 text-center text-slate-400 border border-dashed border-slate-250 rounded-2xl bg-white space-y-2.5 shadow-sm">
+              <div className="p-8 text-center text-slate-400 border border-dashed border-slate-250 rounded-2xl bg-white space-y-2.5 shadow-2xs">
                 <Gift className="w-8 h-8 mx-auto stroke-1 text-slate-350" />
                 <p className="text-xs font-semibold">
                   ตอนนี้ยังไม่มีของรางวัลให้แลก
@@ -1492,7 +1574,7 @@ export default function CustomerDashboard({
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <div className="w-12 h-12 bg-white border border-slate-200 rounded-xl flex items-center justify-center mx-auto text-amber-500 shadow-sm">
+                      <div className="w-12 h-12 bg-white border border-slate-200 rounded-xl flex items-center justify-center mx-auto text-amber-550 shadow-2xs">
                         <QrCode className="w-7 h-7" />
                       </div>
                       <p className="text-xs font-semibold text-slate-500">
@@ -1553,7 +1635,7 @@ export default function CustomerDashboard({
           <div className="space-y-4">
             <div className="space-y-1">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                <History className="w-4 h-4 text-amber-500" />
+                <History className="w-4 h-4 text-amber-550" />
                 ประวัติของคุณ
               </h3>
               <p className="text-[10px] text-slate-500 font-medium font-sans">
@@ -1566,14 +1648,14 @@ export default function CustomerDashboard({
               <button
                 type="button"
                 onClick={() => setHistorySubTab("earn")}
-                className={`flex-1 text-center py-2.5 font-bold transition duration-155 cursor-pointer ${historySubTab === "earn" ? "text-amber-600 border-b-2 border-amber-600" : "text-slate-400 hover:text-slate-750"}`}
+                className={`flex-1 text-center py-2.5 font-bold transition duration-155 cursor-pointer ${historySubTab === "earn" ? "text-amber-600 border-b-2 border-amber-600" : "text-slate-450 hover:text-slate-750"}`}
               >
                 การสะสมแต้ม
               </button>
               <button
                 type="button"
                 onClick={() => setHistorySubTab("redeem")}
-                className={`flex-1 text-center py-2.5 font-bold transition duration-155 cursor-pointer ${historySubTab === "redeem" ? "text-amber-600 border-b-2 border-amber-600" : "text-slate-400 hover:text-slate-750"}`}
+                className={`flex-1 text-center py-2.5 font-bold transition duration-155 cursor-pointer ${historySubTab === "redeem" ? "text-amber-600 border-b-2 border-amber-600" : "text-slate-450 hover:text-slate-750"}`}
               >
                 ประวัติแลกของรางวัล
               </button>
@@ -1590,7 +1672,7 @@ export default function CustomerDashboard({
                 .map((t) => (
                   <div
                     key={t.id}
-                    className="bg-white border border-slate-200/60 rounded-2xl p-3.5 space-y-2 shadow-sm"
+                    className="bg-white border border-slate-200/60 rounded-2xl p-3.5 space-y-2 shadow-2xs"
                   >
                     <div className="flex justify-between items-start text-xs">
                       <div>
@@ -1610,7 +1692,7 @@ export default function CustomerDashboard({
 
                       {/* Point numeric visual */}
                       <span
-                        className={`font-mono font-black text-sm ${t.type === "earn" ? "text-emerald-600" : "text-rose-600"}`}
+                        className={`font-mono font-black text-sm ${t.type === "earn" ? "text-emerald-600" : "text-rose-650"}`}
                       >
                         {t.type === "earn" ? `+${t.points}` : `-${t.points}`}
                       </span>
@@ -1622,33 +1704,63 @@ export default function CustomerDashboard({
 
                     {/* REDEEM specific status layout with verification details */}
                     {t.type === "redeem" && (
-                      <div className="flex justify-between items-center pt-2 mt-2 border-t border-slate-100 text-[9px] font-mono font-bold">
-                        <span className="text-slate-400">สถานะรายการ:</span>
-                        <div className="flex items-center gap-1">
-                          {t.status === "pending" && (
-                            <>
-                              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
-                              <span className="text-amber-600 font-bold uppercase">
-                                รออนุมัติหน้าร้าน
-                              </span>
-                            </>
-                          )}
-                          {t.status === "completed" && (
-                            <>
-                              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                              <span className="text-emerald-600 font-bold uppercase">
-                                อนุมัติแล้ว
-                              </span>
-                            </>
-                          )}
-                          {t.status === "rejected" && (
-                            <>
-                              <span className="w-1.5 h-1.5 bg-rose-500 rounded-full" />
-                              <span className="text-rose-500 font-bold uppercase text-decoration-line: line-through">
-                                ยกเลิก
-                              </span>
-                            </>
-                          )}
+                      <div className="pt-2 mt-2 border-t border-slate-100 space-y-2.5">
+                        <div className="flex justify-between items-center text-[9px] font-mono font-bold">
+                          <span className="text-slate-400">สถานะรายการ:</span>
+                          <div className="flex items-center gap-1">
+                            {t.status === "pending" && (
+                              <>
+                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
+                                <span className="text-amber-600 font-bold uppercase">
+                                  รออนุมัติหน้าร้าน
+                                </span>
+                              </>
+                            )}
+                            {t.status === "completed" && (
+                              <>
+                                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                                <span className="text-emerald-600 font-bold uppercase">
+                                  อนุมัติแล้ว
+                                </span>
+                              </>
+                            )}
+                            {t.status === "rejected" && (
+                              <>
+                                <span className="w-1.5 h-1.5 bg-rose-500 rounded-full" />
+                                <span className="text-rose-500 font-bold uppercase text-decoration-line: line-through">
+                                  ยกเลิก
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl bg-slate-50 border border-slate-100 p-3 space-y-2">
+                          <div>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">
+                              ลิงก์สำหรับส่งให้ร้านค้า
+                            </p>
+                            <p className="mt-1 break-all text-[9.5px] font-mono font-bold text-slate-600 leading-relaxed">
+                              {getMerchantRedeemUrl(t)}
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleShareRedeemLink(t)}
+                              className="rounded-xl bg-[#06C755] px-3 py-2 text-[10px] font-black text-white active:scale-95 transition flex items-center justify-center gap-1.5"
+                            >
+                              <Share2 className="w-3.5 h-3.5" /> แชร์ LINE
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyRedeemLink(t)}
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-700 active:scale-95 transition flex items-center justify-center gap-1.5"
+                            >
+                              {copiedRedeemLinkId === t.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                              {copiedRedeemLinkId === t.id ? "คัดลอกแล้ว" : "คัดลอก"}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1660,7 +1772,7 @@ export default function CustomerDashboard({
                   ? t.type === "earn"
                   : t.type === "redeem",
               ).length === 0 && (
-                  <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-white shadow-sm space-y-1">
+                  <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-white shadow-2xs space-y-1">
                     <History className="w-8 h-8 mx-auto stroke-1 text-slate-350" />
                     <p className="text-xs mt-2 font-bold text-slate-500">
                       {historySubTab === "earn" ? "ยังไม่มีประวัติรับแต้ม" : "ยังไม่มีประวัติแลกรางวัล"}
@@ -1681,7 +1793,7 @@ export default function CustomerDashboard({
           <div className="space-y-4">
             <div className="space-y-1">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                <User className="w-4 h-4 text-amber-500" />
+                <User className="w-4 h-4 text-amber-550" />
                 โปรไฟล์สมาชิก
               </h3>
               <p className="text-[10px] text-slate-500 font-medium">
@@ -1742,7 +1854,7 @@ export default function CustomerDashboard({
                   <p className="text-[9px] text-slate-400 font-mono font-semibold">
                     ข้อมูลจาก LINE
                   </p>
-                  <span className="inline-block mt-1 bg-amber-500/10 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full border border-amber-500/20 shadow-sm">
+                  <span className="inline-block mt-1 bg-amber-500/10 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full border border-amber-500/20 shadow-2xs">
                     👑 ระดับ {customer.tier}
                   </span>
                 </div>
@@ -1796,7 +1908,7 @@ export default function CustomerDashboard({
             </form>
 
             {/* Level Privileges Info Card */}
-            <div className="bg-amber-50/50 border border-amber-200/65 p-4 rounded-2xl space-y-2.5 text-[10.5px] shadow-sm">
+            <div className="bg-amber-50/50 border border-amber-200/65 p-4 rounded-2xl space-y-2.5 text-[10.5px] shadow-2xs">
               <span className="text-[11px] font-extrabold text-amber-900">
                 สิทธิพิเศษประจำระดับ {customer.tier} :
               </span>
@@ -1828,7 +1940,7 @@ export default function CustomerDashboard({
         <button
           type="button"
           onClick={() => setActiveTab("home")}
-          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "home" ? "text-amber-600 font-extrabold scale-105" : "text-slate-400 hover:text-slate-700"}`}
+          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "home" ? "text-amber-600 font-extrabold scale-105" : "text-slate-450 hover:text-slate-700"}`}
         >
           <Compass className="w-5 h-5 font-bold" />
           <span className="text-[9px] font-bold font-sans">หน้าแรก</span>
@@ -1837,7 +1949,7 @@ export default function CustomerDashboard({
         <button
           type="button"
           onClick={() => setActiveTab("rewards")}
-          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "rewards" ? "text-amber-600 font-extrabold scale-105" : "text-slate-400 hover:text-slate-700"}`}
+          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "rewards" ? "text-amber-600 font-extrabold scale-105" : "text-slate-450 hover:text-slate-700"}`}
         >
           <Gift className="w-5 h-5 font-bold" />
           <span className="text-[9px] font-bold font-sans">รางวัล</span>
@@ -1846,7 +1958,7 @@ export default function CustomerDashboard({
         <button
           type="button"
           onClick={() => setActiveTab("code")}
-          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "code" ? "text-amber-600 font-extrabold scale-105" : "text-slate-400 hover:text-slate-700"}`}
+          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "code" ? "text-amber-600 font-extrabold scale-105" : "text-slate-450 hover:text-slate-700"}`}
         >
           <QrCode className="w-5 h-5 scale-110 text-emerald-600" />
           <span className="text-[9px] font-bold font-sans text-emerald-600">
@@ -1857,7 +1969,7 @@ export default function CustomerDashboard({
         <button
           type="button"
           onClick={() => setActiveTab("history")}
-          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "history" ? "text-amber-600 font-extrabold scale-105" : "text-slate-400 hover:text-slate-700"}`}
+          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "history" ? "text-amber-600 font-extrabold scale-105" : "text-slate-450 hover:text-slate-700"}`}
         >
           <History className="w-5 h-5 font-bold" />
           <span className="text-[9px] font-bold font-sans">ประวัติ</span>
@@ -1866,7 +1978,7 @@ export default function CustomerDashboard({
         <button
           type="button"
           onClick={() => setActiveTab("profile")}
-          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "profile" ? "text-amber-600 font-extrabold scale-105" : "text-slate-400 hover:text-slate-700"}`}
+          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "profile" ? "text-amber-600 font-extrabold scale-105" : "text-slate-450 hover:text-slate-700"}`}
         >
           <User className="w-5 h-5 font-bold" />
           <span className="text-[9px] font-bold font-sans">โปรไฟล์</span>
@@ -1897,7 +2009,7 @@ export default function CustomerDashboard({
               </button>
 
               <div className="space-y-1">
-                <h4 className="text-sm font-extrabold text-amber-700 tracking-wider">
+                <h4 className="text-sm font-extrabold text-amber-650 tracking-wider">
                   คิวอาร์สมาชิกของคุณ
                 </h4>
                 <p className="text-[10.5px] text-slate-500 font-semibold font-sans">
@@ -1941,14 +2053,14 @@ export default function CustomerDashboard({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-900/45 backdrop-blur-xs z-[70] flex justify-center items-end"
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex justify-center items-end"
           >
             <motion.div
               initial={{ y: "100%" }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 220 }}
-              className="bg-white border-t border-slate-200 rounded-t-[32px] p-5 w-full space-y-4 max-h-[92dvh] overflow-y-auto shadow-2xl overscroll-contain pb-[max(16px,env(safe-area-inset-bottom))]"
+              className="bg-white border-t border-slate-200 rounded-t-[32px] p-5 w-full space-y-4 max-h-[85%] overflow-y-auto shadow-2xl"
             >
               <div className="flex justify-between items-center pb-2.5 border-b border-slate-100">
                 <span className="text-xs font-black text-slate-400 uppercase tracking-widest">
@@ -1986,7 +2098,7 @@ export default function CustomerDashboard({
                 </div>
 
                 {/* Point deduction calculation check representation */}
-                <div className="bg-slate-50 rounded-2xl p-3.5 text-[10.5px] space-y-2 border border-slate-200/80 shadow-inner">
+                <div className="bg-slate-50 rounded-2xl p-3.5 text-[10.5px] space-y-2 border border-slate-150/80 shadow-inner">
                   <div className="flex justify-between text-slate-500">
                     <span>แต้มสะสมมีอยู่:</span>
                     <span className="font-mono font-bold text-slate-700">
@@ -1999,7 +2111,7 @@ export default function CustomerDashboard({
                       -{selectedReward.pointsCost} แต้ม
                     </span>
                   </div>
-                  <div className="flex justify-between border-t border-slate-200 pt-1.5 text-slate-700 font-bold">
+                  <div className="flex justify-between border-t border-slate-200 pt-1.5 text-slate-650 font-bold">
                     <span>แต้มคงเหลือ:</span>
                     <span
                       className={`font-mono ${customer.currentPoints - selectedReward.pointsCost >= 0 ? "text-emerald-600" : "text-rose-600"}`}
@@ -2011,20 +2123,20 @@ export default function CustomerDashboard({
 
                 {/* Action button conditional state */}
                 {!isRedeemSuccess ? (
-                  <div className="sticky bottom-0 -mx-5 mt-2 bg-white/98 px-5 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] border-t border-slate-100 shadow-[0_-12px_24px_rgba(15,23,42,0.06)]">
+                  <div className="pt-2">
                     {customer.currentPoints >= selectedReward.pointsCost ? (
                       <button
                         type="button"
                         onClick={handleConfirmRedeem}
                         disabled={isRedeeming}
-                        className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 disabled:text-slate-500 text-white font-extrabold text-sm py-3.5 rounded-2xl transition duration-150 active:scale-95 text-center block cursor-pointer shadow-lg shadow-amber-500/20"
+                        className="w-full bg-amber-550 hover:bg-amber-600 text-white font-extrabold text-xs py-3 rounded-xl transition duration-150 active:scale-95 text-center block cursor-pointer shadow-md"
                       >
                         {isRedeeming
                           ? "กำลังส่งคำขอ..."
-                          : "แลกรางวัลนี้"}
+                          : "ยืนยันแลกรางวัล"}
                       </button>
                     ) : (
-                      <div className="text-center p-3 bg-rose-50 border border-rose-100 rounded-xl text-[10px] text-rose-600 font-bold">
+                      <div className="text-center p-3 bg-rose-50 border border-rose-100 rounded-xl text-[10px] text-rose-650 font-bold">
                         แต้มของคุณยังไม่พอสำหรับรางวัลนี้
                       </div>
                     )}
@@ -2037,9 +2149,38 @@ export default function CustomerDashboard({
                         ส่งคำขอแลกรางวัลแล้ว
                       </h5>
                       <p className="text-[10px] font-semibold text-slate-500 leading-relaxed px-5 font-sans">
-                        เมื่อไปรับของรางวัลที่ร้าน ให้แจ้งชื่อหรือเบอร์โทร เพื่อให้ร้านกดยืนยันรายการ
+                        ส่งลิงก์นี้ให้ร้านค้า เพื่อให้ร้านเปิดรายการรออนุมัติและกดยืนยันเมื่อส่งมอบของรางวัลแล้ว
                       </p>
                     </div>
+
+                    {latestRedeemTransaction && (
+                      <div className="rounded-2xl bg-white border border-emerald-100 p-3 text-left space-y-2 shadow-xs">
+                        <p className="text-[9px] font-black text-emerald-700 uppercase tracking-wider">
+                          ลิงก์สำหรับส่งให้ร้านค้า
+                        </p>
+                        <p className="break-all text-[9.5px] font-mono font-bold text-slate-600 leading-relaxed">
+                          {getMerchantRedeemUrl(latestRedeemTransaction)}
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleShareRedeemLink(latestRedeemTransaction)}
+                            className="rounded-xl bg-[#06C755] px-3 py-2 text-[10px] font-black text-white active:scale-95 transition flex items-center justify-center gap-1.5"
+                          >
+                            <Share2 className="w-3.5 h-3.5" /> แชร์ไปที่ LINE
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyRedeemLink(latestRedeemTransaction)}
+                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] font-black text-slate-700 active:scale-95 transition flex items-center justify-center gap-1.5"
+                          >
+                            {copiedRedeemLinkId === latestRedeemTransaction.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            {copiedRedeemLinkId === latestRedeemTransaction.id ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <button
                       type="button"
                       onClick={() => {
@@ -2173,7 +2314,7 @@ export default function CustomerDashboard({
               </div>
 
               {/* Security info list */}
-              <div className="text-left bg-slate-50 p-3.5 rounded-2xl border border-slate-200 text-[10px] space-y-1 text-slate-500 font-mono font-bold">
+              <div className="text-left bg-slate-50 p-3.5 rounded-2xl border border-slate-150 text-[10px] space-y-1 text-slate-500 font-mono font-bold">
                 <div className="flex justify-between">
                   <span>รหัสคูปอง:</span>
                   <span className="text-slate-800 font-black">
