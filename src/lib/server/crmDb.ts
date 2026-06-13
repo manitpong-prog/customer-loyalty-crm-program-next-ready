@@ -1,5 +1,5 @@
 import { neon } from '@neondatabase/serverless';
-import type { Customer, PromoBanner, Reward, Shop, Transaction } from '../../types';
+import type { AuditLog, Customer, PromoBanner, Reward, Shop, Transaction } from '../../types';
 import {
   INITIAL_BANNERS,
   INITIAL_CUSTOMERS,
@@ -15,7 +15,7 @@ import {
   PILOT_TRANSACTIONS,
 } from '../../data/productionSeed';
 
-export type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons';
+export type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons' | 'auditLogs';
 
 export type GeneratedCoupon = {
   code: string;
@@ -52,6 +52,7 @@ export type CrmSnapshot = {
   banners: PromoBanner[];
   transactions: Transaction[];
   coupons: GeneratedCoupon[];
+  auditLogs: AuditLog[];
 };
 
 const connectionString = process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED || '';
@@ -75,6 +76,7 @@ export const initialSnapshot: CrmSnapshot = {
   banners: INITIAL_BANNERS,
   transactions: INITIAL_TRANSACTIONS,
   coupons: [],
+  auditLogs: [],
 };
 
 export async function ensureCrmSchema() {
@@ -169,6 +171,26 @@ export async function ensureCrmSchema() {
   )`;
 
 
+  await sql`create table if not exists audit_logs (
+    id text primary key,
+    shop_id text not null references shops(id) on delete cascade,
+    shop_name text not null default '',
+    actor_type text not null default 'system' check (actor_type in ('owner', 'customer', 'system')),
+    actor_name text not null default '',
+    actor_id text,
+    action text not null default '',
+    action_label text not null default '',
+    description text not null default '',
+    target_type text,
+    target_id text,
+    customer_id text,
+    customer_name text,
+    points integer,
+    status text not null default 'info' check (status in ('info', 'success', 'warning', 'danger')),
+    metadata jsonb not null default '{}'::jsonb,
+    created_at timestamptz not null default now()
+  )`;
+
   await sql`create table if not exists line_users (
     line_user_id text primary key,
     display_name text not null default '',
@@ -192,6 +214,8 @@ export async function ensureCrmSchema() {
   await sql`create index if not exists idx_transactions_user_id on transactions(user_id)`;
   await sql`create index if not exists idx_transactions_shop_id on transactions(shop_id)`;
   await sql`create index if not exists idx_point_coupons_shop_id on point_coupons(shop_id)`;
+  await sql`create index if not exists idx_audit_logs_shop_id on audit_logs(shop_id)`;
+  await sql`create index if not exists idx_audit_logs_created_at on audit_logs(created_at desc)`;
   await sql`create index if not exists idx_customers_line_id on customers(line_id)`;
   await sql`create index if not exists idx_merchant_line_users_line_user_id on merchant_line_users(line_user_id)`;
 }
@@ -239,13 +263,14 @@ export async function seedInitialDataIfEmpty() {
 export async function getCrmSnapshot(): Promise<CrmSnapshot> {
   const sql = requireSql();
 
-  const [shops, customers, rewards, banners, transactions, coupons] = await Promise.all([
+  const [shops, customers, rewards, banners, transactions, coupons, auditLogs] = await Promise.all([
     sql`select id, name, description, logo, category, points_rate as "pointsRate", is_active as "isActive", registration_status as "registrationStatus", phone, created_at as "createdAt" from shops order by created_at asc`,
     sql`select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds" from customers order by created_at asc`,
     sql`select id, name, image, description, points_cost as "pointsCost", stock, is_available as "isAvailable", shop_id as "shopId" from rewards order by created_at asc`,
     sql`select id, title, image, description, is_ad as "isAd", shop_id as "shopId", url, expiration_date as "expirationDate" from promo_banners order by created_at asc`,
     sql`select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", created_at as "createdAt" from transactions order by created_at desc`,
     sql`select code, points, shop_id as "shopId", shop_name as "shopName", description, created_at as "createdAt", expires_at as "expiresAt", is_used as "isUsed", used_by_customer_id as "usedByCustomerId", used_at as "usedAt" from point_coupons order by created_at desc`,
+    sql`select id, shop_id as "shopId", shop_name as "shopName", actor_type as "actorType", actor_name as "actorName", actor_id as "actorId", action, action_label as "actionLabel", description, target_type as "targetType", target_id as "targetId", customer_id as "customerId", customer_name as "customerName", points, status, metadata, created_at as "createdAt" from audit_logs order by created_at desc`,
   ]);
 
   return {
@@ -255,6 +280,7 @@ export async function getCrmSnapshot(): Promise<CrmSnapshot> {
     banners: banners as unknown as PromoBanner[],
     transactions: transactions as unknown as Transaction[],
     coupons: coupons as unknown as GeneratedCoupon[],
+    auditLogs: auditLogs as unknown as AuditLog[],
   };
 }
 
@@ -267,6 +293,7 @@ export async function syncEntity(entity: CrmEntity, rows: unknown[]) {
   if (entity === 'banners') return syncBanners(rows as PromoBanner[]);
   if (entity === 'transactions') return syncTransactions(rows as Transaction[]);
   if (entity === 'coupons') return syncCoupons(rows as GeneratedCoupon[]);
+  if (entity === 'auditLogs') return syncAuditLogs(rows as AuditLog[]);
 
   throw new Error(`Unsupported CRM entity: ${entity}`);
 }
@@ -451,6 +478,38 @@ async function syncCoupons(rows: GeneratedCoupon[]) {
 }
 
 
+async function syncAuditLogs(rows: AuditLog[]) {
+  const sql = requireSql();
+  const payload = JSON.stringify(rows);
+
+  await sql`delete from audit_logs where id not in (select id from jsonb_to_recordset(${payload}::jsonb) as x(id text))`;
+  if (!rows.length) return;
+
+  await sql`
+    insert into audit_logs (id, shop_id, shop_name, actor_type, actor_name, actor_id, action, action_label, description, target_type, target_id, customer_id, customer_name, points, status, metadata, created_at)
+    select id, "shopId", coalesce("shopName", ''), coalesce("actorType", 'system'), coalesce("actorName", ''), nullif("actorId", ''), coalesce(action, ''), coalesce("actionLabel", ''), coalesce(description, ''), nullif("targetType", ''), nullif("targetId", ''), nullif("customerId", ''), nullif("customerName", ''), points, coalesce(status, 'info'), coalesce(metadata, '{}'::jsonb), coalesce("createdAt"::timestamptz, now())
+    from jsonb_to_recordset(${payload}::jsonb) as x(id text, "shopId" text, "shopName" text, "actorType" text, "actorName" text, "actorId" text, action text, "actionLabel" text, description text, "targetType" text, "targetId" text, "customerId" text, "customerName" text, points integer, status text, metadata jsonb, "createdAt" text)
+    on conflict (id) do update set
+      shop_id = excluded.shop_id,
+      shop_name = excluded.shop_name,
+      actor_type = excluded.actor_type,
+      actor_name = excluded.actor_name,
+      actor_id = excluded.actor_id,
+      action = excluded.action,
+      action_label = excluded.action_label,
+      description = excluded.description,
+      target_type = excluded.target_type,
+      target_id = excluded.target_id,
+      customer_id = excluded.customer_id,
+      customer_name = excluded.customer_name,
+      points = excluded.points,
+      status = excluded.status,
+      metadata = excluded.metadata,
+      created_at = excluded.created_at
+  `;
+}
+
+
 export async function upsertLineUser(lineUser: LineUserRecord) {
   const sql = requireSql();
 
@@ -574,7 +633,7 @@ export async function ensureCustomerMembershipForLineUser(params: {
 export async function clearCrmData() {
   const sql = requireSql();
   await ensureCrmSchema();
-  await sql`truncate table merchant_line_users, line_users, point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade`;
+  await sql`truncate table audit_logs, merchant_line_users, line_users, point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade`;
 }
 
 export async function reseedDemoData() {

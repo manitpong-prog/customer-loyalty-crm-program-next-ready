@@ -38,6 +38,7 @@ import {
   getShops,
   getGeneratedCoupons,
   saveGeneratedCoupons,
+  addAuditLog,
   type GeneratedCoupon,
 } from "../data/mockData";
 import {
@@ -351,6 +352,35 @@ export default function CustomerDashboard({
 
   // Find Active Shop details
   const activeShop = shops.find((s) => s.id === selectedShopId) || shops[0];
+  const recordCustomerAuditLog = (params: {
+    action: string;
+    actionLabel: string;
+    description: string;
+    targetType?: string;
+    targetId?: string;
+    points?: number;
+    status?: 'info' | 'success' | 'warning' | 'danger';
+    metadata?: Record<string, unknown>;
+  }) => {
+    if (!customer) return;
+    addAuditLog({
+      shopId: selectedShopId,
+      shopName: activeShop?.name || selectedShopId,
+      actorType: 'customer',
+      actorName: customer.name || customer.lineName || 'ลูกค้า',
+      actorId: customer.id,
+      action: params.action,
+      actionLabel: params.actionLabel,
+      description: params.description,
+      targetType: params.targetType,
+      targetId: params.targetId,
+      customerId: customer.id,
+      customerName: customer.name,
+      points: params.points,
+      status: params.status || 'success',
+      metadata: params.metadata || {},
+    });
+  };
   const activeShopPointRate = Math.max(1, activeShop?.pointsRate || 10);
   const activeShopWelcomeMessage = activeShop?.welcomeMessage || activeShop?.description || "สะสมแต้ม แลกของรางวัล และรับสิทธิพิเศษจากร้านค้า";
   const activeShopContactText = activeShop?.contactText || activeShop?.phone || "ติดต่อร้านค้าเพื่อสอบถามรายละเอียดเพิ่มเติม";
@@ -482,6 +512,15 @@ export default function CustomerDashboard({
 
     const currentTxs = getTransactions();
     saveTransactions([newTx, ...currentTxs]);
+    recordCustomerAuditLog({
+      action: 'customer_promo_code_claimed',
+      actionLabel: 'ลูกค้ารับแต้มจากโค้ด',
+      description: `${customer.name} รับแต้ม +${pointsEarned.toLocaleString('th-TH')} จากโค้ด ${code}`,
+      targetType: 'transaction',
+      targetId: newTx.id,
+      points: pointsEarned,
+      metadata: { code },
+    });
 
     setSuccessMessage(
       `ยินดีด้วย! คุณได้รับ +${pointsEarned} แต้มเรียบร้อยแล้ว`,
@@ -629,6 +668,15 @@ export default function CustomerDashboard({
       createdAt: new Date().toISOString(),
     };
     saveTransactions([newTx, ...getTransactions()]);
+    recordCustomerAuditLog({
+      action: 'customer_point_link_claimed',
+      actionLabel: 'ลูกค้ากดรับแต้มจากลิงก์',
+      description: `${customer.name} รับแต้ม +${pointsToAdd.toLocaleString('th-TH')} จากลิงก์รหัส ${matched.code}`,
+      targetType: 'coupon',
+      targetId: matched.code,
+      points: pointsToAdd,
+      metadata: { transactionId: newTx.id, couponCode: matched.code },
+    });
 
     setShowCouponConfirm(false);
     setSuccessMessage(
@@ -686,6 +734,15 @@ export default function CustomerDashboard({
 
       const currentTxs = getTransactions();
       saveTransactions([newTx, ...currentTxs]);
+      recordCustomerAuditLog({
+        action: 'customer_qr_points_claimed',
+        actionLabel: 'ลูกค้าสแกนรับแต้ม',
+        description: `${customer.name} สแกนรับแต้ม +${points.toLocaleString('th-TH')} จาก ${shopName}`,
+        targetType: 'transaction',
+        targetId: newTx.id,
+        points,
+        metadata: { shopId, shopName, desc },
+      });
 
       setScanning(false);
       setSuccessMessage(
@@ -763,6 +820,15 @@ export default function CustomerDashboard({
 
       const currentTxs = getTransactions();
       saveTransactions([newTx, ...currentTxs]);
+      recordCustomerAuditLog({
+        action: 'customer_reward_redeemed',
+        actionLabel: 'ลูกค้าแลกรางวัล',
+        description: `${customer.name} ขอแลกรางวัล “${latestReward.name}” ใช้ ${latestReward.pointsCost.toLocaleString('th-TH')} แต้ม`,
+        targetType: 'transaction',
+        targetId: newTx.id,
+        points: -Math.abs(latestReward.pointsCost),
+        metadata: { rewardId: latestReward.id, rewardName: latestReward.name },
+      });
 
       setSelectedReward(latestReward);
       setIsRedeeming(false);
@@ -791,6 +857,14 @@ export default function CustomerDashboard({
     });
 
     saveCustomers(updated);
+    recordCustomerAuditLog({
+      action: 'customer_profile_updated',
+      actionLabel: 'ลูกค้าแก้ไขโปรไฟล์',
+      description: `${customer.name} อัปเดตข้อมูลโปรไฟล์`,
+      targetType: 'customer',
+      targetId: customer.id,
+      metadata: { name: profileName, phone: profilePhone, lineName: profileLineName },
+    });
     setSuccessMessage("บันทึกข้อมูลโปรไฟล์แล้ว");
     onDataChange();
     loadData();

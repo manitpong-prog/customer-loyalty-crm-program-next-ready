@@ -1,4 +1,4 @@
-import { Shop, Customer, Reward, PromoBanner, Transaction } from '../types';
+import { Shop, Customer, Reward, PromoBanner, Transaction, AuditLog } from '../types';
 
 export const INITIAL_SHOPS: Shop[] = [
   {
@@ -361,10 +361,11 @@ const KEYS = {
   BANNERS: 'crm_platform_banners',
   TRANSACTIONS: 'crm_platform_transactions',
   COUPONS: 'crm_platform_generated_coupons',
+  AUDIT_LOGS: 'crm_platform_audit_logs',
 } as const;
 
 type SyncableKey = (typeof KEYS)[keyof typeof KEYS];
-type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons';
+type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons' | 'auditLogs';
 
 export type DatabaseBootstrapResult = {
   source: 'neon' | 'local-fallback' | 'error-fallback';
@@ -391,6 +392,7 @@ const KEY_TO_ENTITY: Partial<Record<SyncableKey, CrmEntity>> = {
   [KEYS.BANNERS]: 'banners',
   [KEYS.TRANSACTIONS]: 'transactions',
   [KEYS.COUPONS]: 'coupons',
+  [KEYS.AUDIT_LOGS]: 'auditLogs',
 };
 
 function canUseStorage() {
@@ -465,6 +467,9 @@ function seedLocalStorageIfEmpty() {
   if (!window.localStorage.getItem(KEYS.COUPONS)) {
     saveStoredData(KEYS.COUPONS, [], { sync: false });
   }
+  if (!window.localStorage.getItem(KEYS.AUDIT_LOGS)) {
+    saveStoredData(KEYS.AUDIT_LOGS, [], { sync: false });
+  }
 }
 
 function replaceLocalCacheFromSnapshot(snapshot: {
@@ -474,6 +479,7 @@ function replaceLocalCacheFromSnapshot(snapshot: {
   banners?: PromoBanner[];
   transactions?: Transaction[];
   coupons?: GeneratedCoupon[];
+  auditLogs?: AuditLog[];
 }) {
   saveStoredData(KEYS.SHOPS, snapshot.shops || INITIAL_SHOPS, { sync: false });
   saveStoredData(KEYS.CUSTOMERS, snapshot.customers || INITIAL_CUSTOMERS, { sync: false });
@@ -481,6 +487,7 @@ function replaceLocalCacheFromSnapshot(snapshot: {
   saveStoredData(KEYS.BANNERS, snapshot.banners || INITIAL_BANNERS, { sync: false });
   saveStoredData(KEYS.TRANSACTIONS, snapshot.transactions || INITIAL_TRANSACTIONS, { sync: false });
   saveStoredData(KEYS.COUPONS, snapshot.coupons || [], { sync: false });
+  saveStoredData(KEYS.AUDIT_LOGS, snapshot.auditLogs || [], { sync: false });
 }
 
 export async function initializeDatabase(): Promise<DatabaseBootstrapResult> {
@@ -554,4 +561,26 @@ export function getGeneratedCoupons(): GeneratedCoupon[] {
 
 export function saveGeneratedCoupons(coupons: GeneratedCoupon[]) {
   saveStoredData(KEYS.COUPONS, coupons);
+}
+
+
+export function getAuditLogs(): AuditLog[] {
+  return getStoredData(KEYS.AUDIT_LOGS, [] as AuditLog[]);
+}
+
+export function saveAuditLogs(logs: AuditLog[]) {
+  saveStoredData(KEYS.AUDIT_LOGS, logs);
+}
+
+export function addAuditLog(log: Omit<AuditLog, 'id' | 'createdAt'> & Partial<Pick<AuditLog, 'id' | 'createdAt'>>) {
+  const now = new Date().toISOString();
+  const nextLog: AuditLog = {
+    ...log,
+    id: log.id || `audit_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    createdAt: log.createdAt || now,
+  };
+
+  const logs = getAuditLogs();
+  saveAuditLogs([nextLog, ...logs].slice(0, 1000));
+  return nextLog;
 }

@@ -74,3 +74,27 @@ export interface StoreSession {
   activeShopId: string;
   ownerName: string;
 }
+
+
+export type AuditActorType = 'owner' | 'customer' | 'system';
+export type AuditStatusType = 'info' | 'success' | 'warning' | 'danger';
+
+export interface AuditLog {
+  id: string;
+  shopId: string;
+  shopName: string;
+  actorType: AuditActorType;
+  actorName: string;
+  actorId?: string;
+  action: string;
+  actionLabel: string;
+  description: string;
+  targetType?: string;
+  targetId?: string;
+  customerId?: string;
+  customerName?: string;
+  points?: number;
+  status: AuditStatusType;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+}

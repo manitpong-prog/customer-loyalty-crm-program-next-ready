@@ -5,11 +5,12 @@ import {
   ShoppingBag, Award, PlusCircle, MinusCircle, Search, 
   Image, HelpCircle, Calendar, RefreshCw, AlertCircle, FileText, Copy, UserPlus, ReceiptText, Share2
 } from 'lucide-react';
-import { Shop, Customer, Reward, Transaction, PromoBanner } from '../types';
+import { Shop, Customer, Reward, Transaction, PromoBanner, AuditLog } from '../types';
 import { 
   getShops, saveShops, getCustomers, saveCustomers, 
   getRewards, saveRewards, getTransactions, saveTransactions,
-  getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons
+  getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons,
+  getAuditLogs, addAuditLog
 } from '../data/mockData';
 import { shopIdToSlug } from '../lib/shopSlug';
 import {
@@ -21,7 +22,7 @@ import {
   scopeApprovedShops,
 } from '../lib/shopScope';
 
-type MerchantTab = 'dashboard' | 'approvals' | 'customers' | 'rewards' | 'promotions' | 'generator' | 'reports' | 'settings';
+type MerchantTab = 'dashboard' | 'approvals' | 'customers' | 'rewards' | 'promotions' | 'generator' | 'reports' | 'audit' | 'settings';
 
 interface OwnerDashboardProps {
   key?: string;
@@ -51,6 +52,7 @@ export default function OwnerDashboard({
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [banners, setBanners] = useState<PromoBanner[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
 
   // Search Filter / Inputs
   const [searchTerm, setSearchTerm] = useState('');
@@ -283,6 +285,16 @@ export default function OwnerDashboard({
     // Construct LIFF URL first so customer opens inside LINE when available.
     const generatedUrl = buildCustomerClaimUrl(uniqueCode);
 
+    recordAuditLog({
+      action: 'point_link_created',
+      actionLabel: 'สร้างลิงก์รับแต้ม',
+      description: `สร้างลิงก์รับแต้ม ${couponPoints.toLocaleString('th-TH')} แต้ม จากยอดซื้อ ${purchaseAmount.toLocaleString('th-TH')} บาท`,
+      targetType: 'coupon',
+      targetId: uniqueCode,
+      points: couponPoints,
+      metadata: { purchaseAmount, pointsRate: currentPointsRate, expiresAt, url: generatedUrl },
+    });
+
     setGeneratedQRValue(generatedUrl);
     setActiveCoupon(newCoupon);
 
@@ -344,6 +356,14 @@ export default function OwnerDashboard({
       const coupons = getGeneratedCoupons();
       const filtered = coupons.filter((c: any) => c.code.toUpperCase() !== code.toUpperCase());
       saveGeneratedCoupons(filtered);
+      recordAuditLog({
+        action: 'point_link_deleted',
+        actionLabel: 'ลบลิงก์รับแต้ม',
+        description: `ลบรหัสรับแต้ม ${code} ออกจากระบบ`,
+        targetType: 'coupon',
+        targetId: code,
+        status: 'warning',
+      });
       showStatus('✓ ลบข้อมูลรหัสแจกแต้มพิเศษสำเร็จอย่างถาวร');
       loadData();
     }
@@ -390,6 +410,7 @@ export default function OwnerDashboard({
     setRewards(filterRewardsByShop(getRewards(), selectedShopId));
     setBanners(filterBannersByShop(getBanners(), selectedShopId, false));
     setTransactions(filterTransactionsByShop(allTransactions, selectedShopId));
+    setAuditLogs(getAuditLogs().filter((log) => log.shopId === selectedShopId));
 
     try {
       const shopCoupons = filterCouponsByShop(getGeneratedCoupons(), selectedShopId);
@@ -446,6 +467,43 @@ export default function OwnerDashboard({
     return 'border-emerald-200 bg-emerald-50 text-emerald-800 shadow-emerald-100';
   };
 
+  const recordAuditLog = (params: {
+    action: string;
+    actionLabel: string;
+    description: string;
+    actorType?: AuditLog['actorType'];
+    actorName?: string;
+    actorId?: string;
+    targetType?: string;
+    targetId?: string;
+    customerId?: string;
+    customerName?: string;
+    points?: number;
+    status?: AuditLog['status'];
+    metadata?: Record<string, unknown>;
+  }) => {
+    const shopName = activeShopDetail?.name || shops.find((shop) => shop.id === selectedShopId)?.name || selectedShopId;
+    const log = addAuditLog({
+      shopId: selectedShopId,
+      shopName,
+      actorType: params.actorType || 'owner',
+      actorName: params.actorName || 'เจ้าของร้าน',
+      actorId: params.actorId || 'merchant-owner',
+      action: params.action,
+      actionLabel: params.actionLabel,
+      description: params.description,
+      targetType: params.targetType,
+      targetId: params.targetId,
+      customerId: params.customerId,
+      customerName: params.customerName,
+      points: params.points,
+      status: params.status || 'success',
+      metadata: params.metadata || {},
+    });
+    setAuditLogs((prev) => [log, ...prev].slice(0, 1000));
+    return log;
+  };
+
 
   const formatReportDate = (value?: string | null) => {
     if (!value) return '';
@@ -491,7 +549,17 @@ export default function OwnerDashboard({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    if (!silent) showStatus(`✓ ดาวน์โหลดรายงาน${reportLabel}แล้ว (${rows.length.toLocaleString('th-TH')} รายการ)`);
+    if (!silent) {
+      recordAuditLog({
+        action: 'report_exported',
+        actionLabel: 'Export CSV',
+        description: `ดาวน์โหลดรายงาน${reportLabel} จำนวน ${rows.length.toLocaleString('th-TH')} รายการ`,
+        targetType: 'report',
+        targetId: fileKey,
+        metadata: { reportLabel, rowCount: rows.length },
+      });
+      showStatus(`✓ ดาวน์โหลดรายงาน${reportLabel}แล้ว (${rows.length.toLocaleString('th-TH')} รายการ)`);
+    }
   };
 
   const buildCustomerReportRows = () => customers.map((customer, index) => ({
@@ -583,7 +651,24 @@ export default function OwnerDashboard({
     'ลิงก์รูปภาพ': banner.image,
   }));
 
-  const exportReport = (type: 'customers' | 'transactions' | 'redeems' | 'coupons' | 'rewards' | 'promotions', silent = false) => {
+  const buildAuditReportRows = () => [...auditLogs]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .map((log, index) => ({
+      'ลำดับ': index + 1,
+      'วันที่/เวลา': formatReportDate(log.createdAt),
+      'ประเภทกิจกรรม': log.actionLabel,
+      'รหัสกิจกรรม': log.action,
+      'รายละเอียด': log.description,
+      'ผู้ทำรายการ': log.actorName,
+      'ประเภทผู้ทำรายการ': log.actorType === 'owner' ? 'เจ้าของร้าน' : log.actorType === 'customer' ? 'ลูกค้า' : 'ระบบ',
+      'ลูกค้าที่เกี่ยวข้อง': log.customerName || '',
+      'แต้มที่เปลี่ยนแปลง': typeof log.points === 'number' ? log.points : '',
+      'สถานะ': log.status,
+      'เป้าหมาย': log.targetType || '',
+      'รหัสเป้าหมาย': log.targetId || '',
+    }));
+
+  const exportReport = (type: 'customers' | 'transactions' | 'redeems' | 'coupons' | 'rewards' | 'promotions' | 'auditLogs', silent = false) => {
     if (type === 'customers') {
       downloadCsvReport('customers', 'รายชื่อลูกค้า', buildCustomerReportRows(), ['ลำดับ', 'รหัสลูกค้า', 'ชื่อสมาชิก', 'ชื่อ LINE', 'LINE user id', 'เบอร์โทร', 'แต้มคงเหลือ', 'แต้มสะสมทั้งหมด', 'ระดับสมาชิก', 'วันที่สมัคร'], silent);
       return;
@@ -604,15 +689,27 @@ export default function OwnerDashboard({
       downloadCsvReport('rewards-stock', 'ของรางวัลและสต็อก', buildRewardReportRows(), ['ลำดับ', 'รหัสของรางวัล', 'ชื่อของรางวัล', 'รายละเอียด', 'แต้มที่ใช้', 'สต็อกคงเหลือ', 'สถานะการแสดงผล', 'ลิงก์รูปภาพ'], silent);
       return;
     }
+    if (type === 'auditLogs') {
+      downloadCsvReport('audit-logs', 'กิจกรรมระบบ', buildAuditReportRows(), ['ลำดับ', 'วันที่/เวลา', 'ประเภทกิจกรรม', 'รหัสกิจกรรม', 'รายละเอียด', 'ผู้ทำรายการ', 'ประเภทผู้ทำรายการ', 'ลูกค้าที่เกี่ยวข้อง', 'แต้มที่เปลี่ยนแปลง', 'สถานะ', 'เป้าหมาย', 'รหัสเป้าหมาย'], silent);
+      return;
+    }
     downloadCsvReport('promotions', 'โปรโมชัน', buildPromoReportRows(), ['ลำดับ', 'รหัสโปรโมชัน', 'หัวข้อ', 'รายละเอียด', 'ประเภท', 'หมดอายุ', 'ลิงก์', 'ลิงก์รูปภาพ'], silent);
   };
 
   const exportAllReports = () => {
-    const reportTypes: Array<'customers' | 'transactions' | 'redeems' | 'coupons' | 'rewards' | 'promotions'> = ['customers', 'transactions', 'redeems', 'coupons', 'rewards', 'promotions'];
+    const reportTypes: Array<'customers' | 'transactions' | 'redeems' | 'coupons' | 'rewards' | 'promotions' | 'auditLogs'> = ['customers', 'transactions', 'redeems', 'coupons', 'rewards', 'promotions', 'auditLogs'];
     reportTypes.forEach((type, index) => {
       window.setTimeout(() => exportReport(type, true), index * 260);
     });
-    showStatus('✓ เริ่มดาวน์โหลดรายงาน CSV ทั้งหมด 6 ไฟล์แล้ว');
+    recordAuditLog({
+      action: 'report_exported_all',
+      actionLabel: 'Export CSV ทั้งหมด',
+      description: 'ดาวน์โหลดรายงาน CSV ทั้งหมดของร้าน 7 ไฟล์',
+      targetType: 'report',
+      targetId: 'all-reports',
+      metadata: { reportTypes },
+    });
+    showStatus('✓ เริ่มดาวน์โหลดรายงาน CSV ทั้งหมด 7 ไฟล์แล้ว');
   };
 
   const parsePositiveIntegerInput = (rawValue: string, fieldName: string, allowZero = false) => {
@@ -671,6 +768,14 @@ export default function OwnerDashboard({
     ));
 
     saveShops(updatedShops);
+    recordAuditLog({
+      action: 'shop_point_rate_updated',
+      actionLabel: 'แก้อัตราแต้ม',
+      description: `บันทึกอัตราแจกแต้มใหม่: ${nextRate} บาท = 1 แต้ม`,
+      targetType: 'shop',
+      targetId: selectedShopId,
+      metadata: { previousRate: targetShop.pointsRate, nextRate },
+    });
     showStatus(`✓ บันทึกอัตราแจกแต้มแล้ว: ${nextRate} บาท = 1 แต้ม`);
     onDataChange();
     loadData();
@@ -728,6 +833,14 @@ export default function OwnerDashboard({
     ));
 
     saveShops(updatedShops);
+    recordAuditLog({
+      action: 'shop_settings_updated',
+      actionLabel: 'แก้ไขตั้งค่าร้าน',
+      description: `บันทึกข้อมูลร้าน “${nextName}” และการตั้งค่าหน้าลูกค้า`,
+      targetType: 'shop',
+      targetId: selectedShopId,
+      metadata: { previousName: targetShop.name, nextName, nextRate, isActive: shopIsActiveInput },
+    });
     showStatus('✓ บันทึกตั้งค่าร้านค้าสำเร็จแล้ว');
     onDataChange();
     loadData();
@@ -781,6 +894,15 @@ export default function OwnerDashboard({
     };
 
     saveCustomers([...allCustomers, newCustomer]);
+    recordAuditLog({
+      action: 'customer_created',
+      actionLabel: 'เพิ่มสมาชิก',
+      description: `เพิ่มสมาชิกใหม่ ${newCustomer.name}`,
+      targetType: 'customer',
+      targetId: newCustomer.id,
+      customerId: newCustomer.id,
+      customerName: newCustomer.name,
+    });
     setSelectedSaleCustomerId(newCustomer.id);
     setNewCustomerName('');
     setNewCustomerPhone('');
@@ -851,6 +973,17 @@ export default function OwnerDashboard({
     };
 
     saveTransactions([newTx, ...getTransactions()]);
+    recordAuditLog({
+      action: 'purchase_points_recorded',
+      actionLabel: 'บันทึกยอดซื้อ / ให้แต้ม',
+      description: `บันทึกยอดซื้อ ${saleAmountValue.toLocaleString('th-TH')} บาท และให้ +${calculatedSalePoints.toLocaleString('th-TH')} แต้มแก่ ${customer.name}`,
+      targetType: 'transaction',
+      targetId: newTx.id,
+      customerId: customer.id,
+      customerName: customer.name,
+      points: calculatedSalePoints,
+      metadata: { saleAmount: saleAmountValue, pointsRate },
+    });
     showStatus(`✓ บันทึกยอดซื้อสำเร็จ: +${calculatedSalePoints} แต้มให้ ${customer.name}`);
     onDataChange();
     loadData();
@@ -869,6 +1002,14 @@ export default function OwnerDashboard({
     });
 
     saveRewards(updatedRewards);
+    recordAuditLog({
+      action: reward.isAvailable ? 'reward_hidden' : 'reward_shown',
+      actionLabel: reward.isAvailable ? 'ซ่อนของรางวัล' : 'เปิดแสดงของรางวัล',
+      description: `${reward.isAvailable ? 'ปิดการแสดง' : 'เปิดให้ลูกค้าเห็น'}ของรางวัล “${reward.name}”`,
+      targetType: 'reward',
+      targetId: reward.id,
+      status: reward.isAvailable ? 'warning' : 'success',
+    });
     showStatus(reward.isAvailable ? '✓ ปิดการแสดงของรางวัลนี้แล้ว' : '✓ เปิดให้ลูกค้าเห็นของรางวัลนี้แล้ว');
     onDataChange();
     loadData();
@@ -930,6 +1071,18 @@ export default function OwnerDashboard({
     });
     saveTransactions(updatedTxs);
 
+    recordAuditLog({
+      action: 'reward_redeem_approved',
+      actionLabel: 'อนุมัติรางวัล',
+      description: `อนุมัติของรางวัล “${rewardName}” ให้ ${tx.userName}`,
+      targetType: 'transaction',
+      targetId: tx.id,
+      customerId: tx.userId,
+      customerName: tx.userName,
+      points: -Math.abs(tx.points),
+      metadata: { rewardId: tx.rewardId, rewardName },
+    });
+
     showStatus(`✓ อนุมัติให้ของรางวัล “${rewardName}” กับ ${tx.userName} แล้ว`);
     onDataChange();
     loadData();
@@ -982,6 +1135,18 @@ export default function OwnerDashboard({
     });
     saveTransactions(updatedTxs);
 
+    recordAuditLog({
+      action: 'reward_redeem_rejected',
+      actionLabel: 'ปฏิเสธรางวัล / คืนแต้ม',
+      description: `ปฏิเสธรายการแลก “${rewardName}” และคืน ${tx.points.toLocaleString('th-TH')} แต้มให้ ${tx.userName}`,
+      targetType: 'transaction',
+      targetId: tx.id,
+      customerId: tx.userId,
+      customerName: tx.userName,
+      points: tx.points,
+      status: 'warning',
+    });
+
     showStatus(`✕ ปฏิเสธรายการแล้ว และคืน ${tx.points.toLocaleString('th-TH')} แต้มให้ ${tx.userName} แล้ว`);
     onDataChange();
     loadData();
@@ -1025,6 +1190,17 @@ export default function OwnerDashboard({
     };
 
     saveTransactions([newTx, ...getTransactions()]);
+    recordAuditLog({
+      action: 'test_points_claimed',
+      actionLabel: 'ทดสอบรับแต้ม',
+      description: `ทดสอบรับแต้ม +${calculatedGeneratePoints.toLocaleString('th-TH')} ให้ลูกค้า ${victim.name}`,
+      targetType: 'transaction',
+      targetId: newTx.id,
+      customerId: victim.id,
+      customerName: victim.name,
+      points: calculatedGeneratePoints,
+      metadata: { source: 'merchant-simulation' },
+    });
     showStatus(`✓ ทดสอบรับแต้มสำเร็จ มอบ +${calculatedGeneratePoints} ให้ลูกค้า ${victim.name} เรียบร้อยแล้ว`);
     onDataChange();
     loadData();
@@ -1080,6 +1256,17 @@ export default function OwnerDashboard({
     };
 
     saveTransactions([newTx, ...getTransactions()]);
+    recordAuditLog({
+      action: adjustType === 'add' ? 'manual_points_added' : 'manual_points_deducted',
+      actionLabel: adjustType === 'add' ? 'ปรับเพิ่มแต้ม' : 'ปรับลดแต้ม',
+      description: `${adjustType === 'add' ? 'เพิ่ม' : 'ลด'}แต้ม ${adjustPointsValue.toLocaleString('th-TH')} แต้ม ให้ ${selectedCustForAdjust.name}: ${adjustReason}`,
+      targetType: 'transaction',
+      targetId: newTx.id,
+      customerId: selectedCustForAdjust.id,
+      customerName: selectedCustForAdjust.name,
+      points: finalAmount,
+      status: adjustType === 'add' ? 'success' : 'warning',
+    });
     setSelectedCustForAdjust(null);
     showStatus(`✓ ปรับแต้มลูกค้า ${selectedCustForAdjust.name} จำนวน ${finalAmount > 0 ? '+' : ''}${finalAmount} แต้ม สำเร็จ!`);
     onDataChange();
@@ -1149,6 +1336,14 @@ export default function OwnerDashboard({
         return r;
       });
       saveRewards(updated);
+      recordAuditLog({
+        action: 'reward_updated',
+        actionLabel: 'แก้ไขของรางวัล',
+        description: `แก้ไขของรางวัล “${trimmedRewardName}”`,
+        targetType: 'reward',
+        targetId: editingReward.id,
+        metadata: { pointsCost: rewardPointsValue, stock: rewardStockValue },
+      });
       showStatus('✓ อัปเดตรายการสินค้าของรางวัลสำเร็จ');
     } else {
       // Add
@@ -1163,6 +1358,14 @@ export default function OwnerDashboard({
         shopId: selectedShopId
       };
       saveRewards([...allRewards, newRew]);
+      recordAuditLog({
+        action: 'reward_created',
+        actionLabel: 'เพิ่มของรางวัล',
+        description: `เพิ่มของรางวัลใหม่ “${newRew.name}”`,
+        targetType: 'reward',
+        targetId: newRew.id,
+        metadata: { pointsCost: rewardPointsValue, stock: rewardStockValue },
+      });
       showStatus('✓ บันทึกเปิดตัวสินค้าของรางวัลใหม่สำเร็จ');
     }
 
@@ -1174,8 +1377,17 @@ export default function OwnerDashboard({
 
   const handleDeleteReward = (rewId: string) => {
     if (confirm('คุณต้องการยกเลิกและลบบาร์นี้ถาวรจากฐานสตรีมมิ่งเลยใช่หรือไม่?')) {
+      const rewardToDelete = getRewards().find(r => r.id === rewId);
       const filtered = getRewards().filter(r => r.id !== rewId);
       saveRewards(filtered);
+      recordAuditLog({
+        action: 'reward_deleted',
+        actionLabel: 'ลบของรางวัล',
+        description: `ลบของรางวัล “${rewardToDelete?.name || rewId}”`,
+        targetType: 'reward',
+        targetId: rewId,
+        status: 'danger',
+      });
       showStatus('✓ ลบสินค้าของรางวัลเรียบร้อยแล้ว');
       onDataChange();
       loadData();
@@ -1184,8 +1396,17 @@ export default function OwnerDashboard({
 
   const handleDeleteBanner = (bannerId: string) => {
     if (confirm('คุณแน่ใจต้องการลบแคมเปญโปรโมชั่นนี้ออกจากการแสดงผลอย่างถาวรใช่หรือไม่?')) {
+      const bannerToDelete = getBanners().find(b => b.id === bannerId);
       const filtered = getBanners().filter(b => b.id !== bannerId);
       saveBanners(filtered);
+      recordAuditLog({
+        action: 'promotion_deleted',
+        actionLabel: 'ลบโปรโมชัน',
+        description: `ลบโปรโมชัน “${bannerToDelete?.title || bannerId}”`,
+        targetType: 'promotion',
+        targetId: bannerId,
+        status: 'danger',
+      });
       showStatus('✓ ลบแคมเปญโปรโมชั่นสำเร็จ');
       onDataChange();
       loadData();
@@ -1194,8 +1415,20 @@ export default function OwnerDashboard({
 
   const handleDeleteTransactionPermanently = (txId: string) => {
     if (confirm('คุณต้องการลบรายงานประวัติประวัติธุรกรรมนี้ถาวรจากฐานสตรีมมิ่งเลยใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้')) {
+      const txToDelete = getTransactions().find(t => t.id === txId);
       const filtered = getTransactions().filter(t => t.id !== txId);
       saveTransactions(filtered);
+      recordAuditLog({
+        action: 'transaction_deleted',
+        actionLabel: 'ลบประวัติธุรกรรม',
+        description: `ลบประวัติธุรกรรม ${txId}${txToDelete ? ` (${txToDelete.description})` : ''}`,
+        targetType: 'transaction',
+        targetId: txId,
+        customerId: txToDelete?.userId,
+        customerName: txToDelete?.userName,
+        points: txToDelete?.type === 'earn' ? txToDelete.points : txToDelete ? -Math.abs(txToDelete.points) : undefined,
+        status: 'danger',
+      });
       showStatus('✓ ลบข้อมูลประวัติธุรกรรมถาวรเรียบร้อยแล้ว');
       onDataChange();
       loadData();
@@ -1215,6 +1448,14 @@ export default function OwnerDashboard({
       isAd: false
     };
     saveBanners([...allBanners, newBan]);
+    recordAuditLog({
+      action: 'promotion_created',
+      actionLabel: 'สร้างโปรโมชัน',
+      description: `สร้างโปรโมชัน “${newBan.title}”`,
+      targetType: 'promotion',
+      targetId: newBan.id,
+      metadata: { expirationDate: newBan.expirationDate },
+    });
     showStatus('✓ สร้างโปรโมชันเรียบร้อยแล้ว');
     setShowBannerModal(false);
     
@@ -1240,6 +1481,18 @@ export default function OwnerDashboard({
   const availableRewards = rewards.filter(reward => reward.isAvailable);
   const usableCoupons = generatedCouponsList.filter((coupon: any) => !coupon.isUsed && new Date(coupon.expiresAt) > new Date());
   const latestActivities = [...transactions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
+  const sortedAuditLogs = [...auditLogs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const todayAuditCount = sortedAuditLogs.filter((log) => new Date(log.createdAt).toDateString() === new Date().toDateString()).length;
+  const customerAuditCount = sortedAuditLogs.filter((log) => log.actorType === 'customer').length;
+  const ownerAuditCount = sortedAuditLogs.filter((log) => log.actorType === 'owner').length;
+  const auditPointDelta = sortedAuditLogs.reduce((sum, log) => sum + (typeof log.points === 'number' ? log.points : 0), 0);
+  const formatAuditActorType = (actorType: AuditLog['actorType']) => actorType === 'owner' ? 'เจ้าของร้าน' : actorType === 'customer' ? 'ลูกค้า' : 'ระบบ';
+  const getAuditStatusClassName = (status: AuditLog['status']) => {
+    if (status === 'danger') return 'bg-rose-50 text-rose-700 border-rose-200';
+    if (status === 'warning') return 'bg-amber-50 text-amber-800 border-amber-200';
+    if (status === 'success') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    return 'bg-slate-50 text-slate-700 border-slate-200';
+  };
 
   const merchantPages: Array<{ id: MerchantTab; label: string; shortLabel: string; icon: string; count?: number; description: string }> = [
     { id: 'dashboard', label: 'แดชบอร์ด', shortLabel: 'หน้าแรก', icon: '🏠', description: 'ภาพรวมของร้านวันนี้' },
@@ -1247,6 +1500,7 @@ export default function OwnerDashboard({
     { id: 'rewards', label: 'ของรางวัล', shortLabel: 'รางวัล', icon: '🎁', count: rewards.length, description: 'เพิ่ม แก้ไข และเปิดปิดของรางวัล' },
     { id: 'approvals', label: 'อนุมัติรางวัล', shortLabel: 'อนุมัติ', icon: '✅', count: pendingRedeems.length, description: 'ตรวจรายการที่ลูกค้าขอแลกรางวัล' },
     { id: 'reports', label: 'รายงาน', shortLabel: 'รายงาน', icon: '📊', description: 'ดาวน์โหลด CSV สำหรับ Excel / Google Sheets' },
+    { id: 'audit', label: 'กิจกรรมระบบ', shortLabel: 'กิจกรรม', icon: '🧾', count: auditLogs.length, description: 'ดูว่าใครทำอะไร เมื่อไหร่ และเกี่ยวกับรายการไหน' },
     { id: 'settings', label: 'ตั้งค่า', shortLabel: 'ตั้งค่า', icon: '⚙️', description: 'ข้อมูลร้านและลิงก์สำคัญ' },
     { id: 'customers', label: 'สมาชิก', shortLabel: 'สมาชิก', icon: '👥', count: customers.length, description: 'รายชื่อลูกค้าและการปรับแต้ม' },
     { id: 'promotions', label: 'โปรโมชัน', shortLabel: 'โปรโมชัน', icon: '📢', count: banners.length, description: 'แบนเนอร์และโปรโมชันที่แสดงในหน้าลูกค้า' },
@@ -1326,6 +1580,13 @@ export default function OwnerDashboard({
       description: 'แบนเนอร์และโปรโมชันที่แสดงในหน้าลูกค้าของร้าน',
       count: banners.length,
       accent: 'from-slate-50 to-white border-slate-200 text-slate-800',
+    },
+    {
+      id: 'auditLogs' as const,
+      title: 'กิจกรรมระบบ',
+      description: 'ประวัติการทำงานหลังบ้าน ลูกค้ารับแต้ม แลกรางวัล และ Export CSV',
+      count: auditLogs.length,
+      accent: 'from-indigo-50 to-white border-indigo-200 text-indigo-800',
     },
   ];
 
@@ -1882,6 +2143,122 @@ export default function OwnerDashboard({
                 <li>ถ้าเปิดใน Google Sheets ให้เลือก File → Import แล้วอัปโหลดไฟล์ CSV</li>
                 <li>ข้อมูลในรายงานเป็นข้อมูลของร้านที่กำลังเปิดอยู่เท่านั้น ไม่รวมร้านอื่น</li>
                 <li>แนะนำดาวน์โหลดก่อนกดล้างข้อมูลหรือก่อนเริ่มแคมเปญใหญ่ทุกครั้ง</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'audit' && (
+          <div className="space-y-5 animate-fade-in">
+            <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 p-5 text-white shadow-sm overflow-hidden relative">
+              <div className="absolute -right-10 -top-10 w-36 h-36 rounded-full bg-indigo-400/20 blur-2xl" />
+              <div className="absolute -left-10 bottom-0 w-32 h-32 rounded-full bg-amber-300/10 blur-2xl" />
+              <div className="relative flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black text-amber-300 uppercase tracking-[0.22em]">Audit log</p>
+                  <h3 className="mt-1 text-2xl font-black">กิจกรรมระบบ</h3>
+                  <p className="mt-2 text-sm text-slate-200 max-w-2xl leading-relaxed">
+                    ตรวจย้อนหลังว่าใครทำอะไร เมื่อไหร่ เกี่ยวกับลูกค้าหรือรายการไหน ช่วยตามปัญหาแต้มและการอนุมัติช่วง Pilot ได้ง่ายขึ้น
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => exportReport('auditLogs')}
+                  className="shrink-0 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-5 py-3 text-sm shadow-lg shadow-amber-950/20 transition active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <FileText className="w-4 h-4" /> Export CSV
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+              <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-[11px] font-black text-slate-600">กิจกรรมทั้งหมด</p>
+                <p className="mt-1 text-3xl font-black text-slate-950 font-mono">{sortedAuditLogs.length}</p>
+                <p className="text-[10px] text-slate-500 font-bold">ของร้านนี้เท่านั้น</p>
+              </div>
+              <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+                <p className="text-[11px] font-black text-amber-800">วันนี้</p>
+                <p className="mt-1 text-3xl font-black text-amber-700 font-mono">{todayAuditCount}</p>
+                <p className="text-[10px] text-amber-700/75 font-bold">รายการที่เกิดวันนี้</p>
+              </div>
+              <div className="rounded-3xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm">
+                <p className="text-[11px] font-black text-indigo-800">ลูกค้าทำรายการ</p>
+                <p className="mt-1 text-3xl font-black text-indigo-700 font-mono">{customerAuditCount}</p>
+                <p className="text-[10px] text-indigo-700/75 font-bold">รับแต้ม / แลกรางวัล / โปรไฟล์</p>
+              </div>
+              <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+                <p className="text-[11px] font-black text-emerald-800">แต้มสุทธิใน log</p>
+                <p className="mt-1 text-3xl font-black text-emerald-700 font-mono">{auditPointDelta.toLocaleString('th-TH')}</p>
+                <p className="text-[10px] text-emerald-700/75 font-bold">บวก/ลบจากกิจกรรมที่บันทึก</p>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-slate-100 pb-4">
+                <div>
+                  <h4 className="text-base font-black text-slate-950">รายการกิจกรรมล่าสุด</h4>
+                  <p className="text-xs text-slate-500 font-medium mt-1">แสดงกิจกรรมล่าสุดสูงสุด 120 รายการแรก เพื่อให้หน้าโหลดเร็วบนมือถือ</p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-[10px] font-black">
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-600">เจ้าของร้าน {ownerAuditCount}</span>
+                  <span className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-indigo-700">ลูกค้า {customerAuditCount}</span>
+                </div>
+              </div>
+
+              {sortedAuditLogs.length > 0 ? (
+                <div className="mt-4 space-y-3">
+                  {sortedAuditLogs.slice(0, 120).map((log) => (
+                    <div key={log.id} className="rounded-3xl border border-slate-200 bg-slate-50/80 p-4">
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${getAuditStatusClassName(log.status)}`}>
+                              {log.actionLabel}
+                            </span>
+                            <span className="rounded-full bg-white border border-slate-200 px-2.5 py-1 text-[10px] font-black text-slate-600">
+                              {formatAuditActorType(log.actorType)}
+                            </span>
+                            {typeof log.points === 'number' && (
+                              <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black ${log.points >= 0 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                                {log.points >= 0 ? '+' : ''}{log.points.toLocaleString('th-TH')} แต้ม
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-2 text-sm font-black text-slate-950 leading-relaxed">{log.description}</p>
+                          <p className="mt-1 text-xs text-slate-500 font-medium">
+                            ผู้ทำรายการ: <span className="font-black text-slate-700">{log.actorName}</span>
+                            {log.customerName ? <> • ลูกค้า: <span className="font-black text-slate-700">{log.customerName}</span></> : null}
+                          </p>
+                          {(log.targetType || log.targetId) && (
+                            <p className="mt-1 text-[11px] text-slate-400 font-mono break-all">
+                              {log.targetType || 'target'}: {log.targetId || '-'}
+                            </p>
+                          )}
+                        </div>
+                        <div className="shrink-0 text-left md:text-right">
+                          <p className="text-[11px] text-slate-500 font-mono">{formatReportDate(log.createdAt)}</p>
+                          <p className="mt-1 text-[10px] text-slate-400 font-mono break-all max-w-[180px]">{log.id}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center mx-auto text-xl">🧾</div>
+                  <h4 className="font-black text-slate-950 mt-3">ยังไม่มีประวัติกิจกรรม</h4>
+                  <p className="text-xs text-slate-500 font-medium mt-1">เมื่อสร้างลิงก์รับแต้ม อนุมัติรางวัล หรือ Export CSV รายการจะมาแสดงที่นี่</p>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
+              <h4 className="text-sm font-black text-amber-900">หมายเหตุ</h4>
+              <ul className="mt-3 space-y-2 text-xs text-amber-900 font-medium list-disc pl-5 leading-relaxed">
+                <li>กิจกรรมระบบนี้บันทึกไว้เพื่อช่วยตรวจย้อนหลัง ไม่ได้ใช้แทนระบบบัญชีอย่างเป็นทางการ</li>
+                <li>รายการใหม่จะถูกบันทึกอัตโนมัติจากการทำงานหลังบ้านและการทำรายการของลูกค้า</li>
+                <li>สามารถกด Export CSV เพื่อนำไปเปิดใน Excel / Google Sheets ได้</li>
               </ul>
             </div>
           </div>
