@@ -217,7 +217,7 @@ export default function App({
   ).length;
 
   return (
-    <div className="min-h-[100dvh] bg-slate-50 text-slate-800 flex flex-col font-sans select-none antialiased">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col font-sans select-none antialiased">
       {/* 🚀 Sticky Global Pilot Control Deck - shown only on the prototype demo route */}
       {isDemoMode && (
         <div className="bg-white/90 backdrop-blur-md border-b border-slate-200/80 px-4 py-3 sticky top-0 z-50 shadow-sm">
@@ -336,7 +336,7 @@ export default function App({
       >
         {activeRole === "customer" && (
           <div
-            className={`${isDemoMode ? "py-4 flex flex-col justify-center items-center" : "min-h-[100dvh] w-full"}`}
+            className={`${isDemoMode ? "py-4 flex flex-col justify-center items-center" : "min-h-screen w-full"}`}
           >
             {/* Elegant Mobile frame container wrap on desktop view */}
             {isDemoMode && (
@@ -359,7 +359,6 @@ export default function App({
               clearInitialCouponCode={() => setInitialCouponCode("")}
               initialTab={initialCustomerTab}
               displayMode={isDemoMode ? "demo" : "production"}
-              dataVersion={dataVersion}
               lineIdentity={lineIdentity}
               onLineIdentityChange={handleLineIdentityChange}
             />

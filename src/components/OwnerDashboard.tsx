@@ -9,8 +9,7 @@ import { Shop, Customer, Reward, Transaction, PromoBanner } from '../types';
 import { 
   getShops, saveShops, getCustomers, saveCustomers, 
   getRewards, saveRewards, getTransactions, saveTransactions,
-  getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons,
-  upsertRewardToNeon, deleteRewardFromNeon
+  getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons
 } from '../data/mockData';
 import { shopIdToSlug } from '../lib/shopSlug';
 import {
@@ -22,7 +21,7 @@ import {
   scopeApprovedShops,
 } from '../lib/shopScope';
 
-type MerchantTab = 'dashboard' | 'approvals' | 'customers' | 'rewards' | 'promotions' | 'generator' | 'settings';
+type MerchantTab = 'dashboard' | 'approvals' | 'customers' | 'rewards' | 'promotions' | 'generator' | 'reports' | 'settings';
 
 interface OwnerDashboardProps {
   key?: string;
@@ -45,14 +44,6 @@ export default function OwnerDashboard({
   const [activeTab, setActiveTab] = useState<MerchantTab>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const [approvalsSubTab, setApprovalsSubTab] = useState<'queue' | 'history'>('queue');
-  const [highlightedRedeemId, setHighlightedRedeemId] = useState('');
-  const [approvalLinkInput, setApprovalLinkInput] = useState('');
-  const [approvalLookupResult, setApprovalLookupResult] = useState<{
-    state: 'idle' | 'found' | 'processed' | 'invalid' | 'not_found' | 'wrong_shop' | 'wrong_type';
-    title: string;
-    message: string;
-    txId?: string;
-  } | null>(null);
   
   // Database States
   const [shops, setShops] = useState<Shop[]>([]);
@@ -91,7 +82,6 @@ export default function OwnerDashboard({
   const [shopShareMessageInput, setShopShareMessageInput] = useState('');
   const [shopRichMenuContactUrlInput, setShopRichMenuContactUrlInput] = useState('');
   const [shopIsActiveInput, setShopIsActiveInput] = useState(true);
-  const [pilotResetConfirmText, setPilotResetConfirmText] = useState('');
 
   const lineLiffId = process.env.NEXT_PUBLIC_LINE_LIFF_ID?.trim();
   const buildCustomerClaimUrl = (code: string) => {
@@ -101,40 +91,11 @@ export default function OwnerDashboard({
     return `/customer/${shopIdToSlug(selectedShopId)}?code=${encodedCode}`;
   };
 
-  const buildMerchantRedeemApprovalUrl = (redeemId: string) => {
-    const encodedRedeemId = encodeURIComponent(redeemId);
-    const slug = shopIdToSlug(selectedShopId);
-    if (typeof window !== 'undefined') return `${window.location.origin}/merchant/${slug}?merchantTab=approvals&redeem=${encodedRedeemId}`;
-    return `/merchant/${slug}?merchantTab=approvals&redeem=${encodedRedeemId}`;
-  };
-
   const defaultRewardImage = 'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=400&auto=format&fit=crop&q=80';
   const rewardImageMaxBytes = 2 * 1024 * 1024;
   const rewardImageAllowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
   const shopLogoImageMaxBytes = 2 * 1024 * 1024;
   const shopLogoImageAllowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const params = new URLSearchParams(window.location.search);
-    const merchantTab = params.get('merchantTab');
-    const redeemId = params.get('redeem') || '';
-
-    if (merchantTab === 'approvals') {
-      setActiveTab('approvals');
-      setApprovalsSubTab('queue');
-      setMenuOpen(false);
-    }
-
-    if (redeemId) {
-      setHighlightedRedeemId(redeemId);
-      window.setTimeout(() => {
-        const element = document.getElementById(`redeem-${redeemId}`);
-        element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }, 650);
-    }
-  }, []);
 
   const handleShopLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const input = event.currentTarget;
@@ -485,6 +446,175 @@ export default function OwnerDashboard({
     return 'border-emerald-200 bg-emerald-50 text-emerald-800 shadow-emerald-100';
   };
 
+
+  const formatReportDate = (value?: string | null) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString('th-TH', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const safeCsvCell = (value: unknown) => {
+    if (value === null || typeof value === 'undefined') return '';
+    const text = String(value).replace(/\r?\n/g, ' ').trim();
+    const escapedFormula = /^[=+\-@]/.test(text) ? `'${text}` : text;
+    return `"${escapedFormula.replace(/"/g, '""')}"`;
+  };
+
+  const downloadCsvReport = (
+    fileKey: string,
+    reportLabel: string,
+    rows: Array<Record<string, unknown>>,
+    fallbackHeaders: string[],
+    silent = false,
+  ) => {
+    const headers = rows.length > 0 ? Object.keys(rows[0]) : fallbackHeaders;
+    const csvLines = [
+      headers.map(safeCsvCell).join(','),
+      ...rows.map((row) => headers.map((header) => safeCsvCell(row[header])).join(',')),
+    ];
+    const csvContent = `\ufeff${csvLines.join('\n')}`;
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const shopSlug = shopIdToSlug(selectedShopId);
+    const dateKey = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `${shopSlug}-${fileKey}-${dateKey}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    if (!silent) showStatus(`✓ ดาวน์โหลดรายงาน${reportLabel}แล้ว (${rows.length.toLocaleString('th-TH')} รายการ)`);
+  };
+
+  const buildCustomerReportRows = () => customers.map((customer, index) => ({
+    'ลำดับ': index + 1,
+    'รหัสลูกค้า': customer.id,
+    'ชื่อสมาชิก': customer.name,
+    'ชื่อ LINE': customer.lineName || '',
+    'LINE user id': customer.lineId || '',
+    'เบอร์โทร': customer.phone || '',
+    'แต้มคงเหลือ': customer.currentPoints,
+    'แต้มสะสมทั้งหมด': customer.lifetimePoints,
+    'ระดับสมาชิก': customer.tier,
+    'วันที่สมัคร': formatReportDate(customer.createdAt),
+  }));
+
+  const buildTransactionReportRows = () => {
+    const rewardNameById = new Map(rewards.map((reward) => [reward.id, reward.name]));
+    return [...transactions]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .map((transaction, index) => ({
+        'ลำดับ': index + 1,
+        'รหัสรายการ': transaction.id,
+        'วันที่': formatReportDate(transaction.createdAt),
+        'ประเภท': transaction.type === 'earn' ? 'รับแต้ม' : 'แลกรางวัล',
+        'สถานะ': transaction.status === 'completed' ? 'สำเร็จ' : transaction.status === 'pending' ? 'รออนุมัติ' : 'ปฏิเสธ/ยกเลิก',
+        'ชื่อลูกค้า': transaction.userName,
+        'เบอร์โทร': transaction.userPhone || '',
+        'แต้ม': transaction.type === 'earn' ? transaction.points : -Math.abs(transaction.points),
+        'รายละเอียด': transaction.description,
+        'ของรางวัล': transaction.rewardId ? (rewardNameById.get(transaction.rewardId) || transaction.rewardId) : '',
+        'ร้านค้า': transaction.shopName || activeShopDetail?.name || '',
+      }));
+  };
+
+  const buildRedeemReportRows = () => {
+    const rewardNameById = new Map(rewards.map((reward) => [reward.id, reward.name]));
+    return [...rewardRedeems]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .map((transaction, index) => ({
+        'ลำดับ': index + 1,
+        'รหัสแลกรางวัล': transaction.id,
+        'วันที่ขอแลก': formatReportDate(transaction.createdAt),
+        'สถานะ': transaction.status === 'completed' ? 'อนุมัติแล้ว' : transaction.status === 'pending' ? 'รออนุมัติ' : 'ปฏิเสธและคืนแต้มแล้ว',
+        'ชื่อลูกค้า': transaction.userName,
+        'เบอร์โทร': transaction.userPhone || '',
+        'ของรางวัล': transaction.rewardId ? (rewardNameById.get(transaction.rewardId) || transaction.description) : transaction.description,
+        'แต้มที่ใช้': transaction.points,
+        'รายละเอียด': transaction.description,
+      }));
+  };
+
+  const buildCouponReportRows = () => generatedCouponsList.map((coupon: any, index: number) => {
+    const isExpired = new Date(coupon.expiresAt) < new Date();
+    const status = coupon.isUsed ? 'ใช้แล้ว' : isExpired ? 'หมดอายุ' : 'พร้อมใช้';
+    return {
+      'ลำดับ': index + 1,
+      'รหัสรับแต้ม': coupon.code,
+      'สถานะ': status,
+      'แต้ม': coupon.points,
+      'ยอดซื้อ': coupon.purchaseAmount || '',
+      'รายละเอียด': coupon.description || '',
+      'สร้างเมื่อ': formatReportDate(coupon.createdAt),
+      'หมดอายุเมื่อ': formatReportDate(coupon.expiresAt),
+      'ใช้โดยลูกค้า ID': coupon.usedByCustomerId || '',
+      'ใช้เมื่อ': formatReportDate(coupon.usedAt),
+      'ลิงก์รับแต้ม': buildCustomerClaimUrl(coupon.code),
+    };
+  });
+
+  const buildRewardReportRows = () => rewards.map((reward, index) => ({
+    'ลำดับ': index + 1,
+    'รหัสของรางวัล': reward.id,
+    'ชื่อของรางวัล': reward.name,
+    'รายละเอียด': reward.description,
+    'แต้มที่ใช้': reward.pointsCost,
+    'สต็อกคงเหลือ': reward.stock,
+    'สถานะการแสดงผล': reward.isAvailable ? 'เปิดให้แลก' : 'ซ่อนอยู่',
+    'ลิงก์รูปภาพ': reward.image,
+  }));
+
+  const buildPromoReportRows = () => banners.map((banner, index) => ({
+    'ลำดับ': index + 1,
+    'รหัสโปรโมชัน': banner.id,
+    'หัวข้อ': banner.title,
+    'รายละเอียด': banner.description,
+    'ประเภท': banner.isAd ? 'โฆษณาแพลตฟอร์ม' : 'โปรโมชันร้านค้า',
+    'หมดอายุ': formatReportDate(banner.expirationDate),
+    'ลิงก์': banner.url || '',
+    'ลิงก์รูปภาพ': banner.image,
+  }));
+
+  const exportReport = (type: 'customers' | 'transactions' | 'redeems' | 'coupons' | 'rewards' | 'promotions', silent = false) => {
+    if (type === 'customers') {
+      downloadCsvReport('customers', 'รายชื่อลูกค้า', buildCustomerReportRows(), ['ลำดับ', 'รหัสลูกค้า', 'ชื่อสมาชิก', 'ชื่อ LINE', 'LINE user id', 'เบอร์โทร', 'แต้มคงเหลือ', 'แต้มสะสมทั้งหมด', 'ระดับสมาชิก', 'วันที่สมัคร'], silent);
+      return;
+    }
+    if (type === 'transactions') {
+      downloadCsvReport('points-history', 'ประวัติแต้ม', buildTransactionReportRows(), ['ลำดับ', 'รหัสรายการ', 'วันที่', 'ประเภท', 'สถานะ', 'ชื่อลูกค้า', 'เบอร์โทร', 'แต้ม', 'รายละเอียด', 'ของรางวัล', 'ร้านค้า'], silent);
+      return;
+    }
+    if (type === 'redeems') {
+      downloadCsvReport('reward-redeems', 'รายการแลกรางวัล', buildRedeemReportRows(), ['ลำดับ', 'รหัสแลกรางวัล', 'วันที่ขอแลก', 'สถานะ', 'ชื่อลูกค้า', 'เบอร์โทร', 'ของรางวัล', 'แต้มที่ใช้', 'รายละเอียด'], silent);
+      return;
+    }
+    if (type === 'coupons') {
+      downloadCsvReport('point-links', 'ลิงก์รับแต้ม', buildCouponReportRows(), ['ลำดับ', 'รหัสรับแต้ม', 'สถานะ', 'แต้ม', 'ยอดซื้อ', 'รายละเอียด', 'สร้างเมื่อ', 'หมดอายุเมื่อ', 'ใช้โดยลูกค้า ID', 'ใช้เมื่อ', 'ลิงก์รับแต้ม'], silent);
+      return;
+    }
+    if (type === 'rewards') {
+      downloadCsvReport('rewards-stock', 'ของรางวัลและสต็อก', buildRewardReportRows(), ['ลำดับ', 'รหัสของรางวัล', 'ชื่อของรางวัล', 'รายละเอียด', 'แต้มที่ใช้', 'สต็อกคงเหลือ', 'สถานะการแสดงผล', 'ลิงก์รูปภาพ'], silent);
+      return;
+    }
+    downloadCsvReport('promotions', 'โปรโมชัน', buildPromoReportRows(), ['ลำดับ', 'รหัสโปรโมชัน', 'หัวข้อ', 'รายละเอียด', 'ประเภท', 'หมดอายุ', 'ลิงก์', 'ลิงก์รูปภาพ'], silent);
+  };
+
+  const exportAllReports = () => {
+    const reportTypes: Array<'customers' | 'transactions' | 'redeems' | 'coupons' | 'rewards' | 'promotions'> = ['customers', 'transactions', 'redeems', 'coupons', 'rewards', 'promotions'];
+    reportTypes.forEach((type, index) => {
+      window.setTimeout(() => exportReport(type, true), index * 260);
+    });
+    showStatus('✓ เริ่มดาวน์โหลดรายงาน CSV ทั้งหมด 6 ไฟล์แล้ว');
+  };
+
   const parsePositiveIntegerInput = (rawValue: string, fieldName: string, allowZero = false) => {
     const valueText = String(rawValue).trim();
     if (!valueText) {
@@ -617,197 +747,6 @@ export default function OwnerDashboard({
     }
   };
 
-  const extractRedeemIdFromApprovalLink = (rawValue: string) => {
-    const value = rawValue.trim();
-    if (!value) return '';
-
-    try {
-      const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://im-crm-two.vercel.app';
-      const parsedUrl = new URL(value, baseUrl);
-      const redeemFromQuery = parsedUrl.searchParams.get('redeem')
-        || parsedUrl.searchParams.get('redeemId')
-        || parsedUrl.searchParams.get('transaction')
-        || parsedUrl.searchParams.get('tx');
-      if (redeemFromQuery) return decodeURIComponent(redeemFromQuery).trim();
-    } catch {
-      // Not a URL. Continue with simple text patterns below.
-    }
-
-    const patternMatch = value.match(/(?:redeem|redeemId|transaction|tx)[:=\/\s]+([A-Za-z0-9_-]+)/i);
-    if (patternMatch?.[1]) return patternMatch[1].trim();
-
-    if (!value.includes(' ') && /^[A-Za-z0-9_-]{6,}$/.test(value)) {
-      return value;
-    }
-
-    return '';
-  };
-
-  const scrollToRedeemCard = (redeemId: string) => {
-    window.setTimeout(() => {
-      const element = document.getElementById(`redeem-${redeemId}`);
-      element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 180);
-  };
-
-  const handlePasteApprovalLinkFromClipboard = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      setApprovalLinkInput(text);
-      setApprovalLookupResult(null);
-      showStatus('✓ วางลิงก์จากคลิปบอร์ดแล้ว กดตรวจสอบลิงก์ได้เลย');
-    } catch {
-      showStatus('❌ อ่านคลิปบอร์ดไม่ได้ กรุณากดวางลิงก์เองในช่องนี้');
-    }
-  };
-
-  const handleVerifyApprovalLink = () => {
-    const rawLink = approvalLinkInput.trim();
-    const redeemId = extractRedeemIdFromApprovalLink(rawLink);
-
-    if (!rawLink) {
-      setApprovalLookupResult({
-        state: 'invalid',
-        title: 'ยังไม่ได้วางลิงก์',
-        message: 'กรุณาวางลิงก์ที่ลูกค้าส่งมา หรือวางรหัสรายการแลกรางวัลก่อนตรวจสอบ',
-      });
-      showStatus('❌ กรุณาวางลิงก์จากลูกค้าก่อนตรวจสอบ');
-      return;
-    }
-
-    if (!redeemId) {
-      setApprovalLookupResult({
-        state: 'invalid',
-        title: 'รูปแบบลิงก์ไม่ถูกต้อง',
-        message: 'ลิงก์ควรมีคำว่า redeem=... เช่น /merchant/im-sticker?merchantTab=approvals&redeem=tx_... ให้ลูกค้ากดคัดลอกลิงก์จากหน้าประวัติแล้วส่งใหม่อีกครั้ง',
-      });
-      showStatus('❌ รูปแบบลิงก์ไม่ถูกต้อง');
-      return;
-    }
-
-    const tx = getTransactions().find((item) => item.id === redeemId);
-
-    if (!tx) {
-      setApprovalLookupResult({
-        state: 'not_found',
-        title: 'ไม่พบรายการจากลิงก์นี้',
-        message: 'อาจคัดลอกลิงก์มาไม่ครบ รายการถูกล้างไปแล้ว หรือข้อมูลจากลูกค้ายังไม่ sync ให้ลองให้ลูกค้ากดคัดลอกลิงก์จากประวัติแล้วส่งใหม่',
-      });
-      showStatus('❌ ไม่พบรายการแลกรางวัลจากลิงก์นี้');
-      return;
-    }
-
-    if (tx.shopId !== selectedShopId) {
-      setApprovalLookupResult({
-        state: 'wrong_shop',
-        title: 'ลิงก์นี้ไม่ใช่ของร้านนี้',
-        message: `รายการนี้เป็นของร้าน ${tx.shopName || tx.shopId} จึงไม่สามารถอนุมัติจากร้านปัจจุบันได้`,
-        txId: tx.id,
-      });
-      showStatus('❌ ลิงก์นี้เป็นของร้านอื่น');
-      return;
-    }
-
-    if (tx.type !== 'redeem') {
-      setApprovalLookupResult({
-        state: 'wrong_type',
-        title: 'ลิงก์นี้ไม่ใช่รายการแลกรางวัล',
-        message: 'ลิงก์ที่วางมาไม่ใช่รายการแลกของรางวัล กรุณาให้ลูกค้าส่งลิงก์จากประวัติแลกรางวัลเท่านั้น',
-        txId: tx.id,
-      });
-      showStatus('❌ ลิงก์นี้ไม่ใช่รายการแลกรางวัล');
-      return;
-    }
-
-    setHighlightedRedeemId(tx.id);
-
-    if (tx.status === 'pending') {
-      setApprovalsSubTab('queue');
-      setApprovalLookupResult({
-        state: 'found',
-        title: 'พบรายการแลกรางวัล พร้อมตรวจสอบ',
-        message: 'ระบบพบรายการนี้ในคิวรออนุมัติแล้ว ตรวจของรางวัลกับลูกค้า จากนั้นกดอนุมัติหรือปฏิเสธได้เลย',
-        txId: tx.id,
-      });
-      showStatus('✓ พบรายการแลกรางวัลที่รออนุมัติแล้ว');
-      scrollToRedeemCard(tx.id);
-      return;
-    }
-
-    setApprovalsSubTab('history');
-    setApprovalLookupResult({
-      state: 'processed',
-      title: tx.status === 'completed' ? 'รายการนี้อนุมัติไปแล้ว' : 'รายการนี้ถูกปฏิเสธแล้ว',
-      message: tx.status === 'completed'
-        ? 'ไม่ต้องอนุมัติซ้ำ ระบบพบว่าร้านเคยอนุมัติและส่งมอบของรางวัลรายการนี้แล้ว'
-        : 'ระบบพบว่ารายการนี้ถูกปฏิเสธและคืนแต้มให้ลูกค้าแล้ว',
-      txId: tx.id,
-    });
-    showStatus(tx.status === 'completed' ? '✓ รายการนี้อนุมัติไปแล้ว' : 'ℹ️ รายการนี้ถูกปฏิเสธไปแล้ว');
-    scrollToRedeemCard(tx.id);
-  };
-
-  const clearApprovalLookup = () => {
-    setApprovalLinkInput('');
-    setApprovalLookupResult(null);
-    setHighlightedRedeemId('');
-  };
-
-  const handlePilotDataReset = () => {
-    const confirmation = pilotResetConfirmText.trim();
-    if (confirmation !== 'RESET') {
-      showStatus('❌ กรุณาพิมพ์ RESET ให้ถูกต้องก่อนล้างข้อมูลทดสอบ');
-      return;
-    }
-
-    const allCustomers = getCustomers();
-    const allTransactions = getTransactions();
-    const allCoupons = getGeneratedCoupons();
-
-    const shopCustomerIds = new Set(
-      filterCustomersByShop(allCustomers, selectedShopId, allTransactions, true).map((customer) => customer.id),
-    );
-    allTransactions
-      .filter((transaction) => transaction.shopId === selectedShopId)
-      .forEach((transaction) => shopCustomerIds.add(transaction.userId));
-
-    const customersToDelete = allCustomers.filter((customer) => shopCustomerIds.has(customer.id));
-    const transactionsToDelete = allTransactions.filter((transaction) => transaction.shopId === selectedShopId);
-    const couponsToDelete = allCoupons.filter((coupon: any) => coupon.shopId === selectedShopId);
-
-    const confirmed = window.confirm(`ยืนยันล้างข้อมูลทดสอบของร้านนี้ใช่ไหม?
-
-ระบบจะล้าง:
-- สมาชิก/ลูกค้า ${customersToDelete.length.toLocaleString('th-TH')} ราย
-- ประวัติแต้มและรายการแลกรางวัล ${transactionsToDelete.length.toLocaleString('th-TH')} รายการ
-- ลิงก์/รหัสรับแต้ม ${couponsToDelete.length.toLocaleString('th-TH')} รายการ
-
-ระบบจะคงไว้:
-- ตั้งค่าร้าน โลโก้ ข้อความ และอัตราแต้ม
-- รายการของรางวัลและรูปของรางวัล
-- โปรโมชัน/แบนเนอร์
-
-การล้างนี้เหมาะสำหรับเตรียมเปิด Pilot จริง`);
-    if (!confirmed) return;
-
-    const nextCustomers = allCustomers.filter((customer) => !shopCustomerIds.has(customer.id));
-    const nextTransactions = allTransactions.filter((transaction) => transaction.shopId !== selectedShopId);
-    const nextCoupons = allCoupons.filter((coupon: any) => coupon.shopId !== selectedShopId);
-
-    saveCustomers(nextCustomers);
-    saveTransactions(nextTransactions);
-    saveGeneratedCoupons(nextCoupons);
-
-    setPilotResetConfirmText('');
-    setSelectedCustForAdjust(null);
-    setSelectedSaleCustomerId('');
-    setGeneratedQRValue('');
-    setActiveCoupon(null);
-    showStatus('✓ ล้างข้อมูลทดสอบของร้านนี้เรียบร้อยแล้ว พร้อมเริ่ม Pilot จริง');
-    onDataChange();
-    loadData();
-  };
-
   const handleCreateCustomer = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -917,34 +856,26 @@ export default function OwnerDashboard({
     loadData();
   };
 
-  const handleToggleRewardAvailability = async (rewardId: string) => {
+  const handleToggleRewardAvailability = (rewardId: string) => {
     const allRewards = getRewards();
     const reward = allRewards.find((item) => item.id === rewardId && item.shopId === selectedShopId);
     if (!reward) return;
 
-    const updatedReward: Reward = { ...reward, isAvailable: !reward.isAvailable };
     const updatedRewards = allRewards.map((item) => {
       if (item.id === rewardId && item.shopId === selectedShopId) {
-        return updatedReward;
+        return { ...item, isAvailable: !item.isAvailable };
       }
       return item;
     });
 
     saveRewards(updatedRewards);
+    showStatus(reward.isAvailable ? '✓ ปิดการแสดงของรางวัลนี้แล้ว' : '✓ เปิดให้ลูกค้าเห็นของรางวัลนี้แล้ว');
     onDataChange();
     loadData();
-
-    try {
-      await upsertRewardToNeon(updatedReward);
-      showStatus(reward.isAvailable ? '✓ ปิดการแสดงของรางวัลนี้แล้ว' : '✓ เปิดให้ลูกค้าเห็นของรางวัลนี้แล้ว');
-    } catch (error) {
-      console.error(error);
-      showStatus('❌ บันทึกสถานะของรางวัลไปฐานข้อมูลไม่สำเร็จ กรุณาลองกดอีกครั้ง');
-    }
   };
 
   // 1. APPROVE CUSTOMER REWARD CLAIM
-  const handleApproveRedeem = async (txId: string) => {
+  const handleApproveRedeem = (txId: string) => {
     const allTxs = getTransactions();
     const tx = allTxs.find(t => t.id === txId && t.shopId === selectedShopId);
 
@@ -981,12 +912,10 @@ export default function OwnerDashboard({
 หลังอนุมัติ ระบบจะลดสต็อกของรางวัล 1 ชิ้น`);
     if (!confirmed) return;
 
-    let updatedRewardForSync: Reward | null = null;
     if (matchedReward) {
       const updatedRewards = allRewards.map(r => {
         if (r.id === tx.rewardId && r.shopId === selectedShopId) {
-          updatedRewardForSync = { ...r, stock: Math.max(0, r.stock - 1) };
-          return updatedRewardForSync;
+          return { ...r, stock: Math.max(0, r.stock - 1) };
         }
         return r;
       });
@@ -1000,18 +929,10 @@ export default function OwnerDashboard({
       return t;
     });
     saveTransactions(updatedTxs);
+
+    showStatus(`✓ อนุมัติให้ของรางวัล “${rewardName}” กับ ${tx.userName} แล้ว`);
     onDataChange();
     loadData();
-
-    try {
-      if (updatedRewardForSync) {
-        await upsertRewardToNeon(updatedRewardForSync);
-      }
-      showStatus(`✓ อนุมัติให้ของรางวัล “${rewardName}” กับ ${tx.userName} แล้ว`);
-    } catch (error) {
-      console.error(error);
-      showStatus('⚠️ อนุมัติรายการแล้ว แต่บันทึกสต็อกของรางวัลไปฐานข้อมูลไม่สำเร็จ กรุณารีเฟรชและตรวจสอบอีกครั้ง');
-    }
   };
 
   // 2. REJECT CUSTOMER REWARD CLAIM (refunds points)
@@ -1186,7 +1107,7 @@ export default function OwnerDashboard({
     setShowRewardModal(true);
   };
 
-  const saveRewardForm = async (e: React.FormEvent) => {
+  const saveRewardForm = (e: React.FormEvent) => {
     e.preventDefault();
     const allRewards = getRewards();
 
@@ -1212,26 +1133,26 @@ export default function OwnerDashboard({
     const rewardStockValue = parsedRewardStock.value;
     const rewardDescription = newRewDesc.trim() || 'ไม่มีเงื่อนไขเพิ่มเติม';
 
-    let rewardToPersist: Reward;
-    let successMessage = '✓ บันทึกเปิดตัวสินค้าของรางวัลใหม่สำเร็จ';
-
     if (editingReward) {
       // Edit
-      rewardToPersist = {
-        ...editingReward,
-        name: trimmedRewardName,
-        pointsCost: rewardPointsValue,
-        stock: rewardStockValue,
-        description: rewardDescription,
-        image: newRewImage || defaultRewardImage,
-        shopId: editingReward.shopId || selectedShopId,
-      };
-      const updated = allRewards.map(r => (r.id === editingReward.id ? rewardToPersist : r));
+      const updated = allRewards.map(r => {
+        if (r.id === editingReward.id) {
+          return {
+            ...r,
+            name: trimmedRewardName,
+            pointsCost: rewardPointsValue,
+            stock: rewardStockValue,
+            description: rewardDescription,
+            image: newRewImage || defaultRewardImage
+          };
+        }
+        return r;
+      });
       saveRewards(updated);
-      successMessage = '✓ อัปเดตรายการสินค้าของรางวัลสำเร็จ';
+      showStatus('✓ อัปเดตรายการสินค้าของรางวัลสำเร็จ');
     } else {
       // Add
-      rewardToPersist = {
+      const newRew: Reward = {
         id: `rew_${Date.now()}`,
         name: trimmedRewardName,
         pointsCost: rewardPointsValue,
@@ -1241,45 +1162,23 @@ export default function OwnerDashboard({
         isAvailable: true,
         shopId: selectedShopId
       };
-      saveRewards([...allRewards, rewardToPersist]);
+      saveRewards([...allRewards, newRew]);
+      showStatus('✓ บันทึกเปิดตัวสินค้าของรางวัลใหม่สำเร็จ');
     }
 
     setShowRewardModal(false);
     setActiveTab('rewards');
     onDataChange();
     loadData();
-    showStatus('กำลังบันทึกของรางวัลไปฐานข้อมูล...');
-
-    try {
-      await upsertRewardToNeon(rewardToPersist);
-      showStatus(successMessage);
-    } catch (error) {
-      console.error(error);
-      showStatus('❌ บันทึกของรางวัลไปฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้งก่อนรีเฟรชหน้า');
-    }
   };
 
-  const handleDeleteReward = async (rewId: string) => {
-    const targetReward = getRewards().find(r => r.id === rewId && r.shopId === selectedShopId);
-    if (!targetReward) {
-      showStatus('❌ ไม่พบของรางวัลนี้ในร้านปัจจุบัน');
-      return;
-    }
-
-    if (confirm('คุณต้องการยกเลิกและลบของรางวัลนี้ถาวรใช่หรือไม่?')) {
+  const handleDeleteReward = (rewId: string) => {
+    if (confirm('คุณต้องการยกเลิกและลบบาร์นี้ถาวรจากฐานสตรีมมิ่งเลยใช่หรือไม่?')) {
       const filtered = getRewards().filter(r => r.id !== rewId);
       saveRewards(filtered);
+      showStatus('✓ ลบสินค้าของรางวัลเรียบร้อยแล้ว');
       onDataChange();
       loadData();
-      showStatus('กำลังลบของรางวัลจากฐานข้อมูล...');
-
-      try {
-        await deleteRewardFromNeon(rewId, selectedShopId);
-        showStatus('✓ ลบสินค้าของรางวัลเรียบร้อยแล้ว');
-      } catch (error) {
-        console.error(error);
-        showStatus('❌ ลบของรางวัลจากฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
-      }
     }
   };
 
@@ -1341,67 +1240,13 @@ export default function OwnerDashboard({
   const availableRewards = rewards.filter(reward => reward.isAvailable);
   const usableCoupons = generatedCouponsList.filter((coupon: any) => !coupon.isUsed && new Date(coupon.expiresAt) > new Date());
   const latestActivities = [...transactions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
-  const dashboardNow = new Date();
-  const dashboardTodayStart = new Date(dashboardNow);
-  dashboardTodayStart.setHours(0, 0, 0, 0);
-  const isToday = (value?: string) => {
-    if (!value) return false;
-    const date = new Date(value);
-    return Number.isFinite(date.getTime()) && date >= dashboardTodayStart;
-  };
-  const formatCompactDateTime = (value?: string) => {
-    if (!value) return '-';
-    const date = new Date(value);
-    if (!Number.isFinite(date.getTime())) return '-';
-    return date.toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' });
-  };
-  const formatCompactDate = (value?: string) => {
-    if (!value) return '-';
-    const date = new Date(value);
-    if (!Number.isFinite(date.getTime())) return '-';
-    return date.toLocaleDateString('th-TH', { day: '2-digit', month: 'short' });
-  };
-  const newCustomersToday = customers.filter(customer => isToday(customer.createdAt));
-  const earnTodayTransactions = earnTransactions.filter(tx => isToday(tx.createdAt));
-  const pointsIssuedToday = earnTodayTransactions.reduce((sum, tx) => sum + tx.points, 0);
-  const redeemsToday = rewardRedeems.filter(tx => isToday(tx.createdAt));
-  const pendingApprovalPreview = pendingRedeems.slice(0, 4);
-  const latestCustomers = [...customers]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5);
-  const lowStockRewards = rewards
-    .filter(reward => reward.isAvailable && reward.stock <= 3)
-    .sort((a, b) => a.stock - b.stock)
-    .slice(0, 5);
-  const inactiveRewards = rewards.filter(reward => !reward.isAvailable);
-  const usedCouponsCount = generatedCouponsList.filter((coupon: any) => coupon.isUsed).length;
-  const expiredCouponsCount = generatedCouponsList.filter((coupon: any) => {
-    const expiresAt = coupon?.expiresAt ? new Date(coupon.expiresAt) : null;
-    return !coupon?.isUsed && expiresAt && Number.isFinite(expiresAt.getTime()) && expiresAt <= dashboardNow;
-  }).length;
-  const totalMemberPoints = customers.reduce((sum, customer) => sum + customer.currentPoints, 0);
-  const totalRewardStock = rewards.reduce((sum, reward) => sum + Math.max(0, reward.stock || 0), 0);
-  const activeRewardCount = availableRewards.length;
-  const needsAttentionCount = pendingRedeems.length + lowStockRewards.length;
-  const approvalLookupTransaction = approvalLookupResult?.txId
-    ? rewardRedeems.find((item) => item.id === approvalLookupResult.txId)
-    : null;
-  const approvalLookupReward = approvalLookupTransaction?.rewardId
-    ? rewards.find((item) => item.id === approvalLookupTransaction.rewardId)
-    : null;
-  const approvalLookupCustomer = approvalLookupTransaction?.userId
-    ? customers.find((item) => item.id === approvalLookupTransaction.userId)
-    : null;
-  const approvalLookupRewardName = approvalLookupReward?.name
-    || approvalLookupTransaction?.description.replace('ขอแลกรางวัล: ', '').replace(' (ร้านปฏิเสธ - คืนแต้มแล้ว)', '')
-    || '';
-  const approvalLookupStockDanger = Boolean(approvalLookupReward && approvalLookupReward.stock <= 0);
 
   const merchantPages: Array<{ id: MerchantTab; label: string; shortLabel: string; icon: string; count?: number; description: string }> = [
     { id: 'dashboard', label: 'แดชบอร์ด', shortLabel: 'หน้าแรก', icon: '🏠', description: 'ภาพรวมของร้านวันนี้' },
     { id: 'generator', label: 'ลิงก์รับแต้ม', shortLabel: 'รับแต้ม', icon: '🔗', count: usableCoupons.length, description: 'สร้างลิงก์หรือ QR สำหรับให้ลูกค้ารับแต้ม' },
     { id: 'rewards', label: 'ของรางวัล', shortLabel: 'รางวัล', icon: '🎁', count: rewards.length, description: 'เพิ่ม แก้ไข และเปิดปิดของรางวัล' },
     { id: 'approvals', label: 'อนุมัติรางวัล', shortLabel: 'อนุมัติ', icon: '✅', count: pendingRedeems.length, description: 'ตรวจรายการที่ลูกค้าขอแลกรางวัล' },
+    { id: 'reports', label: 'รายงาน', shortLabel: 'รายงาน', icon: '📊', description: 'ดาวน์โหลด CSV สำหรับ Excel / Google Sheets' },
     { id: 'settings', label: 'ตั้งค่า', shortLabel: 'ตั้งค่า', icon: '⚙️', description: 'ข้อมูลร้านและลิงก์สำคัญ' },
     { id: 'customers', label: 'สมาชิก', shortLabel: 'สมาชิก', icon: '👥', count: customers.length, description: 'รายชื่อลูกค้าและการปรับแต้ม' },
     { id: 'promotions', label: 'โปรโมชัน', shortLabel: 'โปรโมชัน', icon: '📢', count: banners.length, description: 'แบนเนอร์และโปรโมชันที่แสดงในหน้าลูกค้า' },
@@ -1438,11 +1283,51 @@ export default function OwnerDashboard({
     ...(shopRichMenuContactUrlInput.trim() ? [{ label: 'ติดต่อร้าน', value: shopRichMenuContactUrlInput.trim(), note: 'ใช้กับปุ่มติดต่อร้าน' }] : []),
   ];
 
-  const pilotResetCustomerCount = customers.length;
-  const pilotResetTransactionCount = transactions.length;
-  const pilotResetCouponCount = generatedCouponsList.length;
-  const pilotResetPendingRedeemCount = pendingRedeems.length;
-  const pilotResetCanRun = pilotResetConfirmText.trim() === 'RESET';
+
+  const reportDownloadCards = [
+    {
+      id: 'customers' as const,
+      title: 'รายชื่อลูกค้า',
+      description: 'รายชื่อสมาชิก เบอร์โทร LINE ID แต้มคงเหลือ และระดับสมาชิก',
+      count: customers.length,
+      accent: 'from-sky-50 to-white border-sky-200 text-sky-800',
+    },
+    {
+      id: 'transactions' as const,
+      title: 'ประวัติแต้ม',
+      description: 'ทุกธุรกรรมรับแต้มและแลกรางวัล พร้อมสถานะและรายละเอียด',
+      count: transactions.length,
+      accent: 'from-emerald-50 to-white border-emerald-200 text-emerald-800',
+    },
+    {
+      id: 'redeems' as const,
+      title: 'รายการแลกรางวัล',
+      description: 'รายการรออนุมัติ อนุมัติแล้ว และปฏิเสธ/คืนแต้มแล้ว',
+      count: rewardRedeems.length,
+      accent: 'from-amber-50 to-white border-amber-200 text-amber-800',
+    },
+    {
+      id: 'coupons' as const,
+      title: 'ลิงก์รับแต้ม',
+      description: 'รหัสรับแต้ม สถานะลิงก์ วันหมดอายุ และลิงก์สำหรับตรวจย้อนหลัง',
+      count: generatedCouponsList.length,
+      accent: 'from-violet-50 to-white border-violet-200 text-violet-800',
+    },
+    {
+      id: 'rewards' as const,
+      title: 'ของรางวัล / สต็อก',
+      description: 'รายการของรางวัล แต้มที่ใช้ สต็อก และสถานะเปิดให้แลก',
+      count: rewards.length,
+      accent: 'from-rose-50 to-white border-rose-200 text-rose-800',
+    },
+    {
+      id: 'promotions' as const,
+      title: 'โปรโมชัน',
+      description: 'แบนเนอร์และโปรโมชันที่แสดงในหน้าลูกค้าของร้าน',
+      count: banners.length,
+      accent: 'from-slate-50 to-white border-slate-200 text-slate-800',
+    },
+  ];
 
   return (
     <div className="relative bg-white border border-slate-200 rounded-3xl p-5 md:p-6.5 pb-24 md:pb-6.5 shadow-sm space-y-6.5 text-slate-900">
@@ -1564,257 +1449,102 @@ export default function OwnerDashboard({
       <div className="mt-4">
         {activeTab === 'dashboard' && (
           <div className="space-y-5 animate-fade-in">
-            <div className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-amber-950 p-5 md:p-6 text-white shadow-sm overflow-hidden relative">
-              <div className="absolute -right-10 -top-10 w-40 h-40 rounded-full bg-amber-400/20 blur-3xl" />
-              <div className="absolute -left-12 bottom-0 w-48 h-48 rounded-full bg-sky-400/10 blur-3xl" />
-              <div className="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
-                <div className="max-w-2xl">
-                  <p className="text-[10px] font-black text-amber-300 tracking-[0.22em] uppercase">Pilot dashboard</p>
-                  <h3 className="text-2xl md:text-3xl font-black mt-2">ภาพรวมร้าน {activeShopDetail?.name || 'ร้านค้า'}</h3>
-                  <p className="text-sm text-slate-300 font-medium mt-2 leading-6">ดูสถานะวันนี้ รายการที่ต้องจัดการ และทางลัดสำคัญสำหรับการเปิด Pilot จริง</p>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4 gap-2.5 min-w-0 lg:min-w-[430px]">
-                  <button type="button" onClick={() => goToTab('generator')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-3 text-left transition active:scale-[0.98]">
-                    <span className="block text-lg">🔗</span>
-                    <span className="block text-xs font-black mt-1">แจกแต้ม</span>
-                    <span className="block text-[9px] text-slate-300 mt-0.5">สร้างลิงก์</span>
-                  </button>
-                  <button type="button" onClick={() => goToTab('approvals')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-3 text-left transition active:scale-[0.98]">
-                    <span className="block text-lg">✅</span>
-                    <span className="block text-xs font-black mt-1">อนุมัติ</span>
-                    <span className="block text-[9px] text-slate-300 mt-0.5">รอ {pendingRedeems.length}</span>
-                  </button>
-                  <button type="button" onClick={() => goToTab('rewards')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-3 text-left transition active:scale-[0.98]">
-                    <span className="block text-lg">🎁</span>
-                    <span className="block text-xs font-black mt-1">รางวัล</span>
-                    <span className="block text-[9px] text-slate-300 mt-0.5">จัดการ</span>
-                  </button>
-                  <button type="button" onClick={() => goToTab('customers')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-3 text-left transition active:scale-[0.98]">
-                    <span className="block text-lg">👥</span>
-                    <span className="block text-xs font-black mt-1">สมาชิก</span>
-                    <span className="block text-[9px] text-slate-300 mt-0.5">ดูรายชื่อ</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
               <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-black text-amber-800">รางวัลรออนุมัติ</p>
-                  {pendingRedeems.length > 0 && <span className="min-w-6 h-6 rounded-full bg-amber-600 text-white text-[10px] font-black flex items-center justify-center">!</span>}
-                </div>
+                <p className="text-[11px] font-black text-amber-800">รางวัลที่รอยืนยัน</p>
                 <p className="mt-1 text-3xl font-black text-amber-700 font-mono">{pendingRedeems.length}</p>
-                <p className="text-[10px] text-amber-700/75 font-bold">แต้มในคิว {pendingRedeemPoints.toLocaleString('th-TH')} แต้ม</p>
+                <p className="text-[10px] text-amber-700/75 font-bold">ควรตรวจรายการก่อนส่งมอบ</p>
               </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-[11px] font-black text-slate-600">สมาชิกทั้งหมด</p>
                 <p className="mt-1 text-3xl font-black text-slate-950 font-mono">{customers.length}</p>
-                <p className="text-[10px] text-slate-500 font-bold">ใหม่วันนี้ {newCustomersToday.length.toLocaleString('th-TH')} ราย</p>
+                <p className="text-[10px] text-slate-500 font-bold">ลูกค้าของร้านนี้</p>
               </div>
               <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-                <p className="text-[11px] font-black text-emerald-800">แต้มที่แจกวันนี้</p>
-                <p className="mt-1 text-3xl font-black text-emerald-700 font-mono">{pointsIssuedToday.toLocaleString('th-TH')}</p>
-                <p className="text-[10px] text-emerald-700/75 font-bold">ทั้งหมด {totalPointsIssued.toLocaleString('th-TH')} แต้ม</p>
+                <p className="text-[11px] font-black text-emerald-800">แต้มที่แจกแล้ว</p>
+                <p className="mt-1 text-3xl font-black text-emerald-700 font-mono">{totalPointsIssued}</p>
+                <p className="text-[10px] text-emerald-700/75 font-bold">รวมจากรายการที่บันทึกสำเร็จ</p>
               </div>
-              <div className={`rounded-3xl border p-4 shadow-sm ${needsAttentionCount > 0 ? 'border-rose-200 bg-rose-50' : 'border-sky-200 bg-sky-50'}`}>
-                <p className={`text-[11px] font-black ${needsAttentionCount > 0 ? 'text-rose-800' : 'text-sky-800'}`}>สิ่งที่ต้องดูแล</p>
-                <p className={`mt-1 text-3xl font-black font-mono ${needsAttentionCount > 0 ? 'text-rose-700' : 'text-sky-700'}`}>{needsAttentionCount}</p>
-                <p className={`text-[10px] font-bold ${needsAttentionCount > 0 ? 'text-rose-700/75' : 'text-sky-700/75'}`}>รออนุมัติ + ของใกล้หมด</p>
+              <div className="rounded-3xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
+                <p className="text-[11px] font-black text-sky-800">ลิงก์รับแต้มพร้อมใช้</p>
+                <p className="mt-1 text-3xl font-black text-sky-700 font-mono">{usableCoupons.length}</p>
+                <p className="text-[10px] text-sky-700/75 font-bold">ยังไม่หมดอายุและยังไม่ถูกใช้</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-              <div className="xl:col-span-2 space-y-4">
-                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                    <div>
-                      <h4 className="text-base font-black text-slate-950">ภาพรวมการใช้งาน</h4>
-                      <p className="text-xs text-slate-500 font-medium mt-1">ตัวเลขหลักที่เจ้าของร้านควรรู้ก่อนเริ่มขายหรือแจกแต้มวันนี้</p>
-                    </div>
-                    <button type="button" onClick={loadData} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-black text-slate-700 hover:bg-white transition active:scale-95 w-fit">
-                      <RefreshCw className="w-3.5 h-3.5" /> โหลดข้อมูลล่าสุด
-                    </button>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="lg:col-span-2 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-base font-black text-slate-950">ภาพรวมร้านวันนี้</h4>
+                    <p className="text-xs text-slate-500 font-medium mt-1">สรุปข้อมูลสำคัญสำหรับเจ้าของร้าน ก่อนเข้าไปจัดการแต่ละเมนู</p>
                   </div>
+                  <button type="button" onClick={() => goToTab('approvals')} className="text-xs font-black text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5">
+                    ดูรายการรออนุมัติ
+                  </button>
+                </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                      <p className="text-[10px] font-black text-slate-500">แต้มคงเหลือลูกค้ารวม</p>
-                      <p className="text-2xl font-black text-slate-950 font-mono mt-1">{totalMemberPoints.toLocaleString('th-TH')}</p>
-                      <p className="text-[10px] text-slate-500 font-medium">แต้มที่ลูกค้ายังถืออยู่</p>
-                    </div>
-                    <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                      <p className="text-[10px] font-black text-slate-500">ของรางวัลเปิดให้แลก</p>
-                      <p className="text-2xl font-black text-slate-950 font-mono mt-1">{activeRewardCount}</p>
-                      <p className="text-[10px] text-slate-500 font-medium">จากทั้งหมด {rewards.length} รายการ</p>
-                    </div>
-                    <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                      <p className="text-[10px] font-black text-slate-500">สต็อกของรางวัลรวม</p>
-                      <p className="text-2xl font-black text-slate-950 font-mono mt-1">{totalRewardStock.toLocaleString('th-TH')}</p>
-                      <p className="text-[10px] text-slate-500 font-medium">ชิ้นที่เหลือในระบบ</p>
-                    </div>
-                    <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                      <p className="text-[10px] font-black text-slate-500">ลิงก์รับแต้มพร้อมใช้</p>
-                      <p className="text-2xl font-black text-slate-950 font-mono mt-1">{usableCoupons.length}</p>
-                      <p className="text-[10px] text-slate-500 font-medium">ใช้แล้ว {usedCouponsCount} / หมดอายุ {expiredCouponsCount}</p>
-                    </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                    <p className="text-[10px] font-black text-slate-500">ของรางวัลที่เปิดให้แลก</p>
+                    <p className="text-2xl font-black text-slate-950 font-mono mt-1">{availableRewards.length}</p>
+                    <p className="text-[10px] text-slate-500 font-medium">จากทั้งหมด {rewards.length} รายการ</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                    <p className="text-[10px] font-black text-slate-500">รายการแลกสำเร็จ</p>
+                    <p className="text-2xl font-black text-slate-950 font-mono mt-1">{completedRedeems.length}</p>
+                    <p className="text-[10px] text-slate-500 font-medium">รายการที่ร้านอนุมัติแล้ว</p>
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                    <p className="text-[10px] font-black text-slate-500">โปรโมชันที่แสดงอยู่</p>
+                    <p className="text-2xl font-black text-slate-950 font-mono mt-1">{banners.length}</p>
+                    <p className="text-[10px] text-slate-500 font-medium">แสดงในหน้าลูกค้า</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                    <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
-                      <div>
-                        <h4 className="text-sm font-black text-slate-900">รายการรออนุมัติ</h4>
-                        <p className="text-[10px] text-slate-500 font-bold mt-0.5">คำขอแลกรางวัลจากลูกค้า</p>
-                      </div>
-                      <button type="button" onClick={() => goToTab('approvals')} className="rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1.5 text-[10px] font-black">ดูทั้งหมด</button>
-                    </div>
-                    <div className="divide-y divide-slate-100">
-                      {pendingApprovalPreview.map((tx) => (
-                        <div key={tx.id} className="px-5 py-3 flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-xs font-black text-slate-900 truncate">{tx.userName}</p>
-                            <p className="text-[10px] text-slate-500 truncate">{tx.description.replace('ขอแลกรางวัล: ', '')}</p>
-                            <p className="text-[9px] text-slate-400 font-bold mt-0.5">{formatCompactDateTime(tx.createdAt)}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-xs font-black text-rose-600 font-mono">-{tx.points}</p>
-                            <p className="text-[9px] text-slate-500 font-bold">แต้ม</p>
-                          </div>
-                        </div>
-                      ))}
-                      {pendingApprovalPreview.length === 0 && (
-                        <div className="px-5 py-9 text-center">
-                          <Check className="w-8 h-8 mx-auto text-emerald-500 mb-2" />
-                          <p className="text-xs font-black text-slate-700">ไม่มีรายการรออนุมัติ</p>
-                          <p className="text-[10px] text-slate-500 mt-1">ตอนนี้คิวรางวัลว่างอยู่</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                    <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
-                      <div>
-                        <h4 className="text-sm font-black text-slate-900">ของรางวัลใกล้หมด</h4>
-                        <p className="text-[10px] text-slate-500 font-bold mt-0.5">สต็อก 0-3 ชิ้น ควรตรวจสอบ</p>
-                      </div>
-                      <button type="button" onClick={() => goToTab('rewards')} className="rounded-full bg-slate-900 text-white px-3 py-1.5 text-[10px] font-black">จัดการ</button>
-                    </div>
-                    <div className="divide-y divide-slate-100">
-                      {lowStockRewards.map((reward) => (
-                        <div key={reward.id} className="px-5 py-3 flex items-center gap-3">
-                          <div className="w-11 h-11 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 shrink-0">
-                            {reward.image ? <img src={reward.image} alt={reward.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <Award className="w-5 h-5 m-3 text-slate-400" />}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-black text-slate-900 truncate">{reward.name}</p>
-                            <p className="text-[10px] text-slate-500 font-bold">ใช้ {reward.pointsCost.toLocaleString('th-TH')} แต้ม</p>
-                          </div>
-                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${reward.stock <= 0 ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                            เหลือ {reward.stock}
-                          </span>
-                        </div>
-                      ))}
-                      {lowStockRewards.length === 0 && (
-                        <div className="px-5 py-9 text-center">
-                          <Award className="w-8 h-8 mx-auto text-emerald-500 mb-2" />
-                          <p className="text-xs font-black text-slate-700">สต็อกยังดูดี</p>
-                          <p className="text-[10px] text-slate-500 mt-1">ยังไม่มีของรางวัลที่ใกล้หมด</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                  <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-sm font-black text-slate-900">ประวัติล่าสุด</h4>
-                      <p className="text-[10px] text-slate-500 font-bold mt-0.5">แต้มเข้า-ออก และรายการแลกรางวัลล่าสุด</p>
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-black">5 รายการล่าสุด</span>
+                <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <span className="text-xs font-black text-slate-800">รายการล่าสุด</span>
+                    <span className="text-[10px] text-slate-500 font-bold">แสดง 5 รายการล่าสุด</span>
                   </div>
                   <div className="divide-y divide-slate-100">
                     {latestActivities.map((tx) => (
-                      <div key={tx.id} className="px-5 py-3 flex items-center justify-between gap-3">
+                      <div key={tx.id} className="px-4 py-3 flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <p className="text-xs font-black text-slate-900 truncate">{tx.userName}</p>
-                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black ${tx.status === 'pending' ? 'bg-amber-50 text-amber-700 border border-amber-200' : tx.status === 'rejected' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
-                              {tx.status === 'pending' ? 'รออนุมัติ' : tx.status === 'rejected' ? 'ปฏิเสธ' : 'สำเร็จ'}
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-slate-500 truncate mt-0.5">{tx.description}</p>
-                          <p className="text-[9px] text-slate-400 font-bold mt-0.5">{formatCompactDateTime(tx.createdAt)}</p>
+                          <p className="text-xs font-bold text-slate-900 truncate">{tx.userName}</p>
+                          <p className="text-[10px] text-slate-500 truncate">{tx.description}</p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className={`text-xs font-black font-mono ${tx.type === 'earn' ? 'text-emerald-700' : 'text-rose-600'}`}>{tx.type === 'earn' ? '+' : '-'}{tx.points.toLocaleString('th-TH')}</p>
-                          <p className="text-[9px] text-slate-500 font-bold">แต้ม</p>
+                          <p className={`text-xs font-black font-mono ${tx.type === 'earn' ? 'text-emerald-700' : 'text-rose-600'}`}>{tx.type === 'earn' ? '+' : '-'}{tx.points}</p>
+                          <p className="text-[9px] text-slate-500">{new Date(tx.createdAt).toLocaleDateString('th-TH')}</p>
                         </div>
                       </div>
                     ))}
                     {latestActivities.length === 0 && (
-                      <div className="px-5 py-10 text-center text-xs text-slate-500 font-medium">ยังไม่มีประวัติในร้านนี้</div>
+                      <div className="px-4 py-8 text-center text-xs text-slate-500 font-medium">ยังไม่มีรายการในร้านนี้</div>
                     )}
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h4 className="text-sm font-black text-slate-900">สมาชิกใหม่ล่าสุด</h4>
-                      <p className="text-[10px] text-slate-500 font-bold mt-0.5">ลูกค้าที่เข้าระบบล่าสุด</p>
-                    </div>
-                    <button type="button" onClick={() => goToTab('customers')} className="rounded-full bg-slate-50 border border-slate-200 px-3 py-1.5 text-[10px] font-black text-slate-700">ดูสมาชิก</button>
-                  </div>
-                  <div className="space-y-2.5">
-                    {latestCustomers.map((customer) => (
-                      <div key={customer.id} className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5">
-                        <img src={customer.avatar} alt={customer.name} className="w-10 h-10 rounded-2xl object-cover border border-slate-200 bg-white" referrerPolicy="no-referrer" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-black text-slate-900 truncate">{customer.name}</p>
-                          <p className="text-[10px] text-slate-500 font-bold truncate">{customer.currentPoints.toLocaleString('th-TH')} แต้ม · {formatCompactDate(customer.createdAt)}</p>
-                        </div>
-                      </div>
-                    ))}
-                    {latestCustomers.length === 0 && (
-                      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 py-8 text-center">
-                        <Users className="w-8 h-8 mx-auto text-slate-300 mb-2" />
-                        <p className="text-xs font-black text-slate-600">ยังไม่มีสมาชิก</p>
-                        <p className="text-[10px] text-slate-500 mt-1">ลองสร้างลิงก์รับแต้มแล้วส่งให้ลูกค้า</p>
-                      </div>
-                    )}
-                  </div>
+              <div className="rounded-3xl border border-slate-200 bg-slate-950 text-white p-5 shadow-sm space-y-4">
+                <div>
+                  <p className="text-[10px] font-black text-amber-300 tracking-[0.18em] uppercase">ทางลัด</p>
+                  <h4 className="text-lg font-black mt-1">ทำรายการที่ใช้บ่อย</h4>
                 </div>
-
-                <div className="rounded-3xl border border-slate-200 bg-slate-950 text-white p-5 shadow-sm space-y-4">
-                  <div>
-                    <p className="text-[10px] font-black text-amber-300 tracking-[0.18em] uppercase">Pilot checklist</p>
-                    <h4 className="text-lg font-black mt-1">เช็คความพร้อมร้าน</h4>
-                  </div>
-                  <div className="space-y-2.5">
-                    <div className="flex items-center justify-between gap-3 rounded-2xl bg-white/10 border border-white/10 px-3 py-2.5">
-                      <span className="text-xs font-bold text-slate-100">มีของรางวัลให้แลก</span>
-                      <span className={`text-[10px] font-black rounded-full px-2 py-1 ${activeRewardCount > 0 ? 'bg-emerald-400/20 text-emerald-200' : 'bg-rose-400/20 text-rose-200'}`}>{activeRewardCount > 0 ? 'พร้อม' : 'ยังไม่มี'}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3 rounded-2xl bg-white/10 border border-white/10 px-3 py-2.5">
-                      <span className="text-xs font-bold text-slate-100">อัตราแต้มตั้งแล้ว</span>
-                      <span className="text-[10px] font-black rounded-full px-2 py-1 bg-emerald-400/20 text-emerald-200">{pointsRate} บาท = 1 แต้ม</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3 rounded-2xl bg-white/10 border border-white/10 px-3 py-2.5">
-                      <span className="text-xs font-bold text-slate-100">รายการรออนุมัติ</span>
-                      <span className={`text-[10px] font-black rounded-full px-2 py-1 ${pendingRedeems.length > 0 ? 'bg-amber-400/20 text-amber-200' : 'bg-emerald-400/20 text-emerald-200'}`}>{pendingRedeems.length > 0 ? `${pendingRedeems.length} รายการ` : 'ไม่มีค้าง'}</span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3 rounded-2xl bg-white/10 border border-white/10 px-3 py-2.5">
-                      <span className="text-xs font-bold text-slate-100">ของรางวัลปิดอยู่</span>
-                      <span className={`text-[10px] font-black rounded-full px-2 py-1 ${inactiveRewards.length > 0 ? 'bg-slate-400/20 text-slate-200' : 'bg-emerald-400/20 text-emerald-200'}`}>{inactiveRewards.length.toLocaleString('th-TH')} รายการ</span>
-                    </div>
-                  </div>
-                  <button type="button" onClick={() => goToTab('settings')} className="w-full rounded-2xl bg-amber-400 text-slate-950 py-3 text-xs font-black hover:bg-amber-300 transition active:scale-95">ไปตั้งค่าร้านค้า</button>
+                <div className="grid gap-2.5">
+                  <button type="button" onClick={() => goToTab('generator')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-4 py-3 text-left transition">
+                    <span className="block text-sm font-black">สร้างลิงก์รับแต้ม</span>
+                    <span className="block text-[10px] text-slate-300 mt-0.5">ส่งให้ลูกค้าทาง LINE หรือทำ QR หน้าร้าน</span>
+                  </button>
+                  <button type="button" onClick={() => goToTab('rewards')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-4 py-3 text-left transition">
+                    <span className="block text-sm font-black">จัดการของรางวัล</span>
+                    <span className="block text-[10px] text-slate-300 mt-0.5">เพิ่ม ปิด เปิด หรือแก้ไขของรางวัล</span>
+                  </button>
+                  <button type="button" onClick={() => goToTab('customers')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-4 py-3 text-left transition">
+                    <span className="block text-sm font-black">ดูสมาชิก</span>
+                    <span className="block text-[10px] text-slate-300 mt-0.5">ค้นหาลูกค้าและปรับแต้มเมื่อจำเป็น</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -2064,87 +1794,94 @@ export default function OwnerDashboard({
               </div>
             </div>
 
-
-            <div className="rounded-3xl border border-rose-200 bg-rose-50 p-5 shadow-sm space-y-4">
-              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-black text-rose-700 uppercase tracking-[0.22em]">Pilot cleanup</p>
-                  <h4 className="text-base font-black text-rose-950 mt-1">ล้างข้อมูลทดสอบก่อนเปิดใช้จริง</h4>
-                  <p className="text-xs text-rose-800/80 font-medium mt-1">ใช้เมื่อทดสอบครบแล้วและต้องการเริ่มเก็บข้อมูลลูกค้าจริงแบบสะอาด</p>
-                </div>
-                <div className="rounded-2xl bg-white/80 border border-rose-200 px-4 py-3 text-right">
-                  <p className="text-[10px] font-black text-rose-500">สถานะ</p>
-                  <p className="text-sm font-black text-rose-800">ต้องยืนยันก่อนล้าง</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-                <div className="rounded-2xl border border-rose-200 bg-white p-3">
-                  <p className="text-[10px] font-black text-slate-500">สมาชิกที่จะล้าง</p>
-                  <p className="text-2xl font-black text-rose-700 font-mono">{pilotResetCustomerCount}</p>
-                </div>
-                <div className="rounded-2xl border border-rose-200 bg-white p-3">
-                  <p className="text-[10px] font-black text-slate-500">ประวัติแต้ม</p>
-                  <p className="text-2xl font-black text-rose-700 font-mono">{pilotResetTransactionCount}</p>
-                </div>
-                <div className="rounded-2xl border border-rose-200 bg-white p-3">
-                  <p className="text-[10px] font-black text-slate-500">ลิงก์รับแต้ม</p>
-                  <p className="text-2xl font-black text-rose-700 font-mono">{pilotResetCouponCount}</p>
-                </div>
-                <div className="rounded-2xl border border-rose-200 bg-white p-3">
-                  <p className="text-[10px] font-black text-slate-500">รออนุมัติ</p>
-                  <p className="text-2xl font-black text-rose-700 font-mono">{pilotResetPendingRedeemCount}</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-medium">
-                <div className="rounded-2xl border border-rose-200 bg-white p-4">
-                  <p className="font-black text-rose-900">ระบบจะล้าง</p>
-                  <ul className="mt-2 space-y-1.5 list-disc pl-4 text-rose-800">
-                    <li>สมาชิก/ลูกค้าที่อยู่ในร้านนี้</li>
-                    <li>ประวัติแต้ม รายการแลกรางวัล และรายการรออนุมัติ</li>
-                    <li>ลิงก์หรือรหัสรับแต้มที่เคยสร้างไว้</li>
-                  </ul>
-                </div>
-                <div className="rounded-2xl border border-emerald-200 bg-white p-4">
-                  <p className="font-black text-emerald-900">ระบบจะคงไว้</p>
-                  <ul className="mt-2 space-y-1.5 list-disc pl-4 text-emerald-800">
-                    <li>ชื่อร้าน โลโก้ ข้อความร้าน และอัตราแต้ม</li>
-                    <li>ของรางวัล รูปของรางวัล และสต็อกปัจจุบัน</li>
-                    <li>โปรโมชัน แบนเนอร์ และลิงก์ Rich Menu</li>
-                  </ul>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-rose-200 bg-white p-4 space-y-3">
-                <div>
-                  <label className="text-[10px] font-black text-rose-700">พิมพ์ RESET เพื่อยืนยัน</label>
-                  <input
-                    type="text"
-                    value={pilotResetConfirmText}
-                    onChange={(e) => setPilotResetConfirmText(e.target.value)}
-                    placeholder="RESET"
-                    className="mt-1.5 w-full rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-black text-rose-950 outline-none focus:ring-2 focus:ring-rose-300"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handlePilotDataReset}
-                  disabled={!pilotResetCanRun}
-                  className={`w-full rounded-2xl px-5 py-3.5 text-sm font-black text-white transition active:scale-95 ${pilotResetCanRun ? 'bg-rose-600 hover:bg-rose-700 shadow-sm' : 'bg-slate-300 cursor-not-allowed'}`}
-                >
-                  ล้างข้อมูลทดสอบของร้านนี้
-                </button>
-                <p className="text-[10px] leading-5 text-rose-700 font-medium">แนะนำให้ใช้หลังจากทดสอบ flow ครบแล้วเท่านั้น ก่อนเปิดให้ลูกค้าจริงใช้งาน</p>
-              </div>
-            </div>
-
             <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
               <h4 className="text-sm font-black text-amber-900">หมายเหตุสำหรับ pilot</h4>
               <ul className="mt-3 space-y-2 text-xs text-amber-900 font-medium list-disc pl-5">
                 <li>ข้อมูลที่บันทึกตรงนี้จะถูกใช้กับหน้าลูกค้าและข้อความแชร์รับแต้ม</li>
                 <li>ลิงก์ LIFF ใช้รูปแบบ query เช่น ?tab=rewards / ?tab=code เพื่อไม่ให้เกิด 404</li>
                 <li>ถ้าจะเปิดหลายร้านจริงในอนาคต ควรย้ายรูปโลโก้และรูปของรางวัลไปเก็บใน Storage จริง</li>
+              </ul>
+            </div>
+          </div>
+        )}
+
+
+        {activeTab === 'reports' && (
+          <div className="space-y-5 animate-fade-in">
+            <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-amber-950 p-5 text-white shadow-sm overflow-hidden relative">
+              <div className="absolute -right-10 -top-10 w-36 h-36 rounded-full bg-amber-400/20 blur-2xl" />
+              <div className="absolute -left-10 bottom-0 w-32 h-32 rounded-full bg-white/10 blur-2xl" />
+              <div className="relative flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black text-amber-300 uppercase tracking-[0.22em]">CSV reports</p>
+                  <h3 className="mt-1 text-2xl font-black">รายงานร้านค้า</h3>
+                  <p className="mt-2 text-sm text-slate-200 max-w-2xl leading-relaxed">
+                    ดาวน์โหลดข้อมูลของร้านเป็นไฟล์ CSV สำหรับเปิดใน Excel หรือ Google Sheets ก่อนส่งบัญชี ตรวจย้อนหลัง หรือสำรองข้อมูลช่วง Pilot
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={exportAllReports}
+                  className="shrink-0 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black px-5 py-3 text-sm shadow-lg shadow-amber-950/20 transition active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <FileText className="w-4 h-4" /> ดาวน์โหลดทั้งหมด
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+              <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-[11px] font-black text-slate-600">สมาชิก</p>
+                <p className="mt-1 text-3xl font-black text-slate-950 font-mono">{customers.length}</p>
+                <p className="text-[10px] text-slate-500 font-bold">ใช้ในรายงานลูกค้า</p>
+              </div>
+              <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+                <p className="text-[11px] font-black text-emerald-800">ธุรกรรมแต้ม</p>
+                <p className="mt-1 text-3xl font-black text-emerald-700 font-mono">{transactions.length}</p>
+                <p className="text-[10px] text-emerald-700/75 font-bold">รับแต้มและแลกรางวัล</p>
+              </div>
+              <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
+                <p className="text-[11px] font-black text-amber-800">รออนุมัติ</p>
+                <p className="mt-1 text-3xl font-black text-amber-700 font-mono">{pendingRedeems.length}</p>
+                <p className="text-[10px] text-amber-700/75 font-bold">รายการแลกรางวัลค้างอยู่</p>
+              </div>
+              <div className="rounded-3xl border border-violet-200 bg-violet-50 p-4 shadow-sm">
+                <p className="text-[11px] font-black text-violet-800">ลิงก์รับแต้ม</p>
+                <p className="mt-1 text-3xl font-black text-violet-700 font-mono">{generatedCouponsList.length}</p>
+                <p className="text-[10px] text-violet-700/75 font-bold">รวมทุกสถานะ</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+              {reportDownloadCards.map((card) => (
+                <div key={card.id} className={`rounded-3xl border bg-gradient-to-br p-5 shadow-sm ${card.accent}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-black text-slate-950">{card.title}</p>
+                      <p className="mt-1 text-xs text-slate-600 leading-relaxed min-h-[48px]">{card.description}</p>
+                    </div>
+                    <div className="shrink-0 w-11 h-11 rounded-2xl bg-white/85 border border-white shadow-sm flex items-center justify-center text-lg font-black">
+                      {card.count.toLocaleString('th-TH')}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => exportReport(card.id)}
+                    className="mt-4 w-full rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs py-3 transition active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <FileText className="w-4 h-4" /> ดาวน์โหลด CSV
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
+              <h4 className="text-sm font-black text-amber-900">วิธีใช้งานไฟล์ CSV</h4>
+              <ul className="mt-3 space-y-2 text-xs text-amber-900 font-medium list-disc pl-5 leading-relaxed">
+                <li>ไฟล์มี BOM ภาษาไทย เพื่อให้ Excel เปิดแล้วอ่านภาษาไทยได้ง่ายขึ้น</li>
+                <li>ถ้าเปิดใน Google Sheets ให้เลือก File → Import แล้วอัปโหลดไฟล์ CSV</li>
+                <li>ข้อมูลในรายงานเป็นข้อมูลของร้านที่กำลังเปิดอยู่เท่านั้น ไม่รวมร้านอื่น</li>
+                <li>แนะนำดาวน์โหลดก่อนกดล้างข้อมูลหรือก่อนเริ่มแคมเปญใหญ่ทุกครั้ง</li>
               </ul>
             </div>
           </div>
@@ -2188,190 +1925,6 @@ export default function OwnerDashboard({
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
-              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Customer link check</p>
-                  <h4 className="text-base font-black text-slate-950 mt-1">ตรวจลิงก์แลกรางวัลจากลูกค้า</h4>
-                  <p className="text-xs text-slate-500 font-medium mt-1">
-                    วางลิงก์ที่ลูกค้าส่งมา ระบบจะตรวจว่าเป็นรายการของร้านนี้หรือไม่ และพาไปยังรายการที่ต้องอนุมัติทันที
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-2 text-[10px] text-slate-600 font-bold">
-                  รูปแบบที่ถูกต้อง: <span className="font-mono text-slate-900">?merchantTab=approvals&redeem=...</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-2">
-                <div className="relative">
-                  <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                  <input
-                    value={approvalLinkInput}
-                    onChange={(event) => {
-                      setApprovalLinkInput(event.target.value);
-                      setApprovalLookupResult(null);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') handleVerifyApprovalLink();
-                    }}
-                    placeholder="วางลิงก์จากลูกค้า เช่น https://im-crm-two.vercel.app/merchant/im-sticker?merchantTab=approvals&redeem=tx_..."
-                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-3 py-3 text-xs font-semibold text-slate-900 outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-100"
-                  />
-                </div>
-                <div className="grid grid-cols-3 lg:flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handlePasteApprovalLinkFromClipboard}
-                    className="rounded-2xl bg-white border border-slate-200 px-3 py-3 text-xs font-black text-slate-700 hover:bg-slate-50 active:scale-95 transition"
-                  >
-                    วาง
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleVerifyApprovalLink}
-                    className="rounded-2xl bg-slate-950 px-3 py-3 text-xs font-black text-white hover:bg-slate-800 active:scale-95 transition"
-                  >
-                    ตรวจสอบ
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearApprovalLookup}
-                    className="rounded-2xl bg-slate-100 px-3 py-3 text-xs font-black text-slate-600 hover:bg-slate-200 active:scale-95 transition"
-                  >
-                    ล้าง
-                  </button>
-                </div>
-              </div>
-
-              {approvalLookupResult && (
-                <div className={`rounded-3xl border p-4 space-y-3 ${
-                  approvalLookupResult.state === 'found'
-                    ? 'bg-emerald-50 border-emerald-200'
-                    : approvalLookupResult.state === 'processed'
-                      ? 'bg-sky-50 border-sky-200'
-                      : 'bg-rose-50 border-rose-200'
-                }`}>
-                  <div className="flex items-start gap-3">
-                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
-                      approvalLookupResult.state === 'found'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : approvalLookupResult.state === 'processed'
-                          ? 'bg-sky-100 text-sky-700'
-                          : 'bg-rose-100 text-rose-700'
-                    }`}>
-                      {approvalLookupResult.state === 'found' ? <Check className="w-5 h-5" /> : approvalLookupResult.state === 'processed' ? <FileText className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h5 className="font-black text-slate-950">{approvalLookupResult.title}</h5>
-                      <p className="text-xs text-slate-700 font-medium mt-1 leading-relaxed">{approvalLookupResult.message}</p>
-                    </div>
-                  </div>
-
-                  {approvalLookupTransaction && (
-                    <div className="rounded-2xl bg-white/80 border border-white p-3 space-y-3">
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs">
-                        <div className="rounded-2xl bg-white border border-slate-200 p-3">
-                          <p className="text-[10px] font-black text-slate-500">ลูกค้า</p>
-                          <p className="font-black text-slate-950 mt-1 truncate">{approvalLookupTransaction.userName}</p>
-                          <p className="text-[11px] text-slate-500 mt-0.5">{approvalLookupTransaction.userPhone || '-'}</p>
-                        </div>
-                        <div className="rounded-2xl bg-white border border-slate-200 p-3">
-                          <p className="text-[10px] font-black text-slate-500">ของรางวัล</p>
-                          <p className="font-black text-slate-950 mt-1 truncate">{approvalLookupRewardName}</p>
-                          <p className={`text-[11px] font-bold mt-0.5 ${approvalLookupStockDanger ? 'text-rose-700' : 'text-slate-500'}`}>
-                            สต็อก: {approvalLookupReward ? `${approvalLookupReward.stock} ชิ้น` : 'ไม่พบ'}
-                          </p>
-                        </div>
-                        <div className="rounded-2xl bg-white border border-slate-200 p-3">
-                          <p className="text-[10px] font-black text-slate-500">แต้มที่ใช้</p>
-                          <p className="font-black text-rose-700 mt-1">-{approvalLookupTransaction.points.toLocaleString('th-TH')} แต้ม</p>
-                          {approvalLookupCustomer && <p className="text-[11px] text-slate-500 mt-0.5">คงเหลือ {approvalLookupCustomer.currentPoints.toLocaleString('th-TH')}</p>}
-                        </div>
-                        <div className="rounded-2xl bg-white border border-slate-200 p-3">
-                          <p className="text-[10px] font-black text-slate-500">สถานะ</p>
-                          <p className="font-black text-slate-950 mt-1">
-                            {approvalLookupTransaction.status === 'pending' ? 'รออนุมัติ' : approvalLookupTransaction.status === 'completed' ? 'อนุมัติแล้ว' : 'ปฏิเสธแล้ว'}
-                          </p>
-                          <p className="text-[11px] text-slate-500 mt-0.5">{formatCompactDateTime(approvalLookupTransaction.createdAt)}</p>
-                        </div>
-                      </div>
-
-                      {approvalLookupStockDanger && approvalLookupTransaction.status === 'pending' && (
-                        <div className="rounded-2xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700">
-                          พบรายการแล้ว แต่ของรางวัลหมดสต็อก ต้องเพิ่มสต็อกก่อนจึงจะอนุมัติได้
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        {approvalLookupTransaction.status === 'pending' ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleApproveRedeem(approvalLookupTransaction.id)}
-                              disabled={approvalLookupStockDanger}
-                              className="rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 px-3 py-2.5 text-xs font-black text-white transition disabled:cursor-not-allowed"
-                            >
-                              อนุมัติรายการนี้
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleRejectRedeem(approvalLookupTransaction.id)}
-                              className="rounded-2xl bg-white border border-rose-200 px-3 py-2.5 text-xs font-black text-rose-700 hover:bg-rose-50 transition"
-                            >
-                              ปฏิเสธและคืนแต้ม
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setApprovalsSubTab('history');
-                              scrollToRedeemCard(approvalLookupTransaction.id);
-                            }}
-                            className="rounded-2xl bg-white border border-slate-200 px-3 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 transition"
-                          >
-                            ดูในประวัติ
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setApprovalsSubTab(approvalLookupTransaction.status === 'pending' ? 'queue' : 'history');
-                            scrollToRedeemCard(approvalLookupTransaction.id);
-                          }}
-                          className="rounded-2xl bg-white border border-slate-200 px-3 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 transition"
-                        >
-                          เลื่อนไปยังรายการ
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleCopyText(buildMerchantRedeemApprovalUrl(approvalLookupTransaction.id), 'ลิงก์รายการแลกรางวัล')}
-                          className="rounded-2xl bg-white border border-slate-200 px-3 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 transition inline-flex items-center justify-center gap-1.5"
-                        >
-                          <Copy className="w-3.5 h-3.5" /> คัดลอกลิงก์
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] text-slate-600">
-                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3">
-                  <p className="font-black text-slate-900">1. ลูกค้าส่งลิงก์</p>
-                  <p className="mt-1">ให้ลูกค้ากดคัดลอกลิงก์จากหน้าประวัติแลกรางวัล</p>
-                </div>
-                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3">
-                  <p className="font-black text-slate-900">2. ร้านตรวจลิงก์</p>
-                  <p className="mt-1">ระบบจะเช็คว่าเป็นรายการของร้านนี้และยังรออนุมัติอยู่หรือไม่</p>
-                </div>
-                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3">
-                  <p className="font-black text-slate-900">3. อนุมัติหลังส่งของ</p>
-                  <p className="mt-1">กดอนุมัติเมื่อส่งมอบของแล้ว หรือปฏิเสธเพื่อคืนแต้ม</p>
-                </div>
-              </div>
-            </div>
-
             {/* Sub-Tabs Switches */}
             <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 gap-1.5 self-start w-fit max-w-full overflow-x-auto">
               <button
@@ -2409,21 +1962,12 @@ export default function OwnerDashboard({
                       const stockLabel = reward ? `${reward.stock} ชิ้น` : 'ไม่พบข้อมูลสต็อก';
                       const stockDanger = reward ? reward.stock <= 0 : false;
                       return (
-                        <div
-                          id={`redeem-${t.id}`}
-                          key={t.id}
-                          className={`rounded-3xl border bg-white p-4 shadow-sm space-y-4 transition ${highlightedRedeemId === t.id ? 'border-emerald-400 ring-4 ring-emerald-100' : 'border-slate-200'}`}
-                        >
+                        <div key={t.id} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <p className="text-[10px] font-black text-amber-700 uppercase tracking-wider">รายการรออนุมัติ</p>
                               <h4 className="text-base font-black text-slate-950 mt-1 truncate">{rewardName}</h4>
                               <p className="text-[11px] text-slate-500 font-mono mt-1">{new Date(t.createdAt).toLocaleString('th-TH')}</p>
-                              {highlightedRedeemId === t.id && (
-                                <p className="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700 border border-emerald-200">
-                                  เปิดจากลิงก์ที่ลูกค้าส่งมา
-                                </p>
-                              )}
                             </div>
                             <span className="shrink-0 rounded-full bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1 text-[10px] font-black">
                               รอดำเนินการ
@@ -2449,20 +1993,6 @@ export default function OwnerDashboard({
                               ของรางวัลนี้หมดสต็อกแล้ว ระบบจะไม่ให้อนุมัติจนกว่าจะเพิ่มสต็อกก่อน
                             </div>
                           )}
-
-                          <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                            <div className="min-w-0">
-                              <p className="text-[10px] font-black text-slate-500">ลิงก์รายการนี้</p>
-                              <p className="text-[10px] font-mono text-slate-500 truncate mt-1">{buildMerchantRedeemApprovalUrl(t.id)}</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleCopyText(buildMerchantRedeemApprovalUrl(t.id), 'ลิงก์รายการแลกรางวัล')}
-                              className="shrink-0 rounded-xl bg-white border border-slate-200 px-3 py-2 text-[10px] font-black text-slate-700 hover:bg-slate-50 transition inline-flex items-center justify-center gap-1.5"
-                            >
-                              <Copy className="w-3.5 h-3.5" /> คัดลอกลิงก์
-                            </button>
-                          </div>
 
                           <div className="grid grid-cols-2 gap-2">
                             <button 
@@ -2520,11 +2050,7 @@ export default function OwnerDashboard({
                             ? <span className="px-2 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">อนุมัติแล้ว</span>
                             : <span className="px-2 py-1 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200">ปฏิเสธ / คืนแต้มแล้ว</span>;
                         return (
-                          <tr
-                            id={`redeem-${t.id}`}
-                            key={t.id}
-                            className={`hover:bg-amber-50/40 ${highlightedRedeemId === t.id ? 'bg-emerald-50 outline outline-2 outline-emerald-300' : ''}`}
-                          >
+                          <tr key={t.id} className="hover:bg-amber-50/40">
                             <td className="py-3.5 pl-4">
                               <div className="font-black text-slate-950">{t.userName}</div>
                               <div className="text-[10px] text-slate-500 font-mono">{t.userPhone || '-'}</div>
@@ -2539,32 +2065,20 @@ export default function OwnerDashboard({
                             <td className="py-3.5">{statusBadge}</td>
                             <td className="py-3.5 text-right pr-4">
                               {t.status === 'pending' ? (
-                                <div className="inline-flex flex-wrap justify-end gap-1.5">
+                                <div className="inline-flex gap-1.5">
                                   <button type="button" onClick={() => handleApproveRedeem(t.id)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-2 py-1 text-[10px] font-black">อนุมัติ</button>
                                   <button type="button" onClick={() => handleRejectRedeem(t.id)} className="bg-rose-600 hover:bg-rose-700 text-white rounded-lg px-2 py-1 text-[10px] font-black">ปฏิเสธ</button>
-                                  <button type="button" onClick={() => handleCopyText(buildMerchantRedeemApprovalUrl(t.id), 'ลิงก์รายการแลกรางวัล')} className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg px-2 py-1 text-[10px] font-black inline-flex items-center gap-1"><Copy className="w-3 h-3" /> ลิงก์</button>
                                 </div>
                               ) : (
-                                <div className="inline-flex flex-wrap justify-end gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCopyText(buildMerchantRedeemApprovalUrl(t.id), 'ลิงก์รายการแลกรางวัล')}
-                                    className="p-1 px-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg transition duration-150 text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
-                                    title="คัดลอกลิงก์"
-                                  >
-                                    <Copy className="w-3.5 h-3.5" />
-                                    ลิงก์
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteTransactionPermanently(t.id)}
-                                    className="p-1 px-2 border border-red-500/20 bg-red-500/10 hover:bg-rose-600 text-rose-600 hover:text-white rounded-lg transition duration-150 text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
-                                    title="ลบถาวร"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                    ลบถาวร
-                                  </button>
-                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteTransactionPermanently(t.id)}
+                                  className="p-1 px-2 border border-red-500/20 bg-red-500/10 hover:bg-rose-600 text-rose-600 hover:text-white rounded-lg transition duration-150 text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
+                                  title="ลบถาวร"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  ลบถาวร
+                                </button>
                               )}
                             </td>
                           </tr>

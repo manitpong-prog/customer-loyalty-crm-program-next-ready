@@ -397,72 +397,21 @@ function canUseStorage() {
   return typeof window !== 'undefined' && Boolean(window.localStorage);
 }
 
-async function sendNeonSync<T>(key: SyncableKey, data: T) {
-  if (typeof window === 'undefined') return;
-
-  const entity = KEY_TO_ENTITY[key];
-  if (!entity) return;
-
-  const response = await window.fetch('/api/db/sync', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entity, rows: data }),
-    cache: 'no-store',
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || payload?.ok === false) {
-    throw new Error(payload?.message || `Could not sync ${entity} to Neon.`);
-  }
-}
-
 function queueNeonSync<T>(key: SyncableKey, data: T) {
   if (typeof window === 'undefined') return;
 
   const entity = KEY_TO_ENTITY[key];
   if (!entity) return;
 
-  // Reward CRUD uses /api/db/rewards so we do not replace the whole rewards table from a stale browser cache.
-  // This avoids newly created rewards disappearing after refresh when an older full-list sync wins the race.
-  if (entity === 'rewards') return;
-
   // Fire-and-forget: the UI remains responsive while the server persists the latest full list to Neon.
-  // Do not use keepalive here because uploaded images/data URLs can exceed browser keepalive payload limits.
-  sendNeonSync(key, data).catch((error) => {
+  window.fetch('/api/db/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entity, rows: data }),
+    keepalive: true,
+  }).catch((error) => {
     console.warn(`[crm-db] Could not sync ${entity} to Neon. Local cache is still updated.`, error);
   });
-}
-
-export async function upsertRewardToNeon(reward: Reward): Promise<void> {
-  if (typeof window === 'undefined') return;
-
-  const response = await window.fetch('/api/db/rewards', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'upsert', reward }),
-    cache: 'no-store',
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || payload?.ok === false) {
-    throw new Error(payload?.message || 'Could not save reward to Neon.');
-  }
-}
-
-export async function deleteRewardFromNeon(rewardId: string, shopId: string): Promise<void> {
-  if (typeof window === 'undefined') return;
-
-  const response = await window.fetch('/api/db/rewards', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'delete', rewardId, shopId }),
-    cache: 'no-store',
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || payload?.ok === false) {
-    throw new Error(payload?.message || 'Could not delete reward from Neon.');
-  }
 }
 
 export function getStoredData<T>(key: SyncableKey, defaults: T): T {
@@ -580,8 +529,7 @@ export function getRewards(): Reward[] {
 }
 
 export function saveRewards(rewards: Reward[]) {
-  // Reward changes are persisted through dedicated upsert/delete endpoints to avoid full-table stale sync races.
-  saveStoredData(KEYS.REWARDS, rewards, { sync: false });
+  saveStoredData(KEYS.REWARDS, rewards);
 }
 
 export function getBanners(): PromoBanner[] {
