@@ -1,3 +1,5 @@
+export type PointRoundingMode = 'floor' | 'nearest';
+
 export interface Shop {
   id: string;
   name: string;
@@ -5,6 +7,11 @@ export interface Shop {
   logo: string;
   category: string;
   pointsRate: number; // e.g. 10 Baht = 1 Point
+  pointRoundingMode?: PointRoundingMode;
+  minimumPurchaseForPoints?: number;
+  pointLinkExpiryDays?: number;
+  pointExpiryDays?: number;
+  pointExpiryReminderDays?: number;
   isActive: boolean;
   registrationStatus: 'pending' | 'approved' | 'rejected';
   phone: string;

@@ -267,3 +267,19 @@ neon/migrations/002_phase_6c5_pilot_checklist.sql
 ```
 
 รายละเอียดอยู่ใน `docs/PILOT_CHECKLIST_PHASE6C5_TH.md`.
+
+
+## Phase 6D - Point Rules Schema and UI
+
+เพิ่มการตั้งค่ากฎการสะสมแต้มแบบบันทึกลงฐานข้อมูลจริงในตาราง `shops` ได้แก่ วิธีปัดเศษแต้ม, ยอดซื้อขั้นต่ำที่จะได้แต้ม, จำนวนวันหมดอายุของลิงก์รับแต้ม, จำนวนวันหมดอายุของแต้ม และจำนวนวันแจ้งเตือนก่อนแต้มหมดอายุ
+
+Migration ที่ต้องรันก่อน deploy code:
+
+```text
+neon/migrations/003_phase_6d_point_rules.sql
+```
+
+รายละเอียดอยู่ใน `docs/POINT_RULES_PHASE6D_TH.md`.
+
+
+Phase 6D cleanup: removed duplicate-claim-per-link setting. Coupons are intentionally one-use only. If the earlier 6D migration was already run, use neon/migrations/004_phase_6d_remove_duplicate_claim_setting.sql to drop the old column.

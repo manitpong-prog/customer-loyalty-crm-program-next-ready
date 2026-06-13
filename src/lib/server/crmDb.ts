@@ -91,12 +91,52 @@ export async function ensureCrmSchema() {
     logo text not null default '',
     category text not null default 'General',
     points_rate integer not null default 10 check (points_rate > 0),
+    point_rounding_mode text not null default 'floor' check (point_rounding_mode in ('floor', 'nearest')),
+    minimum_purchase_for_points integer not null default 1 check (minimum_purchase_for_points >= 0),
+    point_link_expiry_days integer not null default 7 check (point_link_expiry_days > 0),
+    point_expiry_days integer not null default 365 check (point_expiry_days > 0),
+    point_expiry_reminder_days integer not null default 30 check (point_expiry_reminder_days >= 0),
     is_active boolean not null default false,
     registration_status text not null default 'pending' check (registration_status in ('pending', 'approved', 'rejected')),
     phone text not null default '',
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
   )`;
+
+  await sql`alter table shops add column if not exists point_rounding_mode text not null default 'floor'`;
+  await sql`alter table shops add column if not exists minimum_purchase_for_points integer not null default 1`;
+  await sql`alter table shops add column if not exists point_link_expiry_days integer not null default 7`;
+  await sql`alter table shops add column if not exists point_expiry_days integer not null default 365`;
+  await sql`alter table shops add column if not exists point_expiry_reminder_days integer not null default 30`;
+  await sql`
+    do $$
+    begin
+      if not exists (
+        select 1 from pg_constraint where conname = 'shops_point_rounding_mode_check'
+      ) then
+        alter table shops add constraint shops_point_rounding_mode_check check (point_rounding_mode in ('floor', 'nearest'));
+      end if;
+    end
+    $$
+  `;
+  await sql`
+    do $$
+    begin
+      if not exists (select 1 from pg_constraint where conname = 'shops_minimum_purchase_for_points_check') then
+        alter table shops add constraint shops_minimum_purchase_for_points_check check (minimum_purchase_for_points >= 0);
+      end if;
+      if not exists (select 1 from pg_constraint where conname = 'shops_point_link_expiry_days_check') then
+        alter table shops add constraint shops_point_link_expiry_days_check check (point_link_expiry_days > 0);
+      end if;
+      if not exists (select 1 from pg_constraint where conname = 'shops_point_expiry_days_check') then
+        alter table shops add constraint shops_point_expiry_days_check check (point_expiry_days > 0);
+      end if;
+      if not exists (select 1 from pg_constraint where conname = 'shops_point_expiry_reminder_days_check') then
+        alter table shops add constraint shops_point_expiry_reminder_days_check check (point_expiry_reminder_days >= 0);
+      end if;
+    end
+    $$
+  `;
 
   await sql`create table if not exists customers (
     id text primary key,
@@ -284,7 +324,7 @@ export async function getCrmSnapshot(): Promise<CrmSnapshot> {
   const sql = requireSql();
 
   const [shops, customers, rewards, banners, transactions, coupons, auditLogs, onboardingChecklists] = await Promise.all([
-    sql`select id, name, description, logo, category, points_rate as "pointsRate", is_active as "isActive", registration_status as "registrationStatus", phone, created_at as "createdAt" from shops order by created_at asc`,
+    sql`select id, name, description, logo, category, points_rate as "pointsRate", point_rounding_mode as "pointRoundingMode", minimum_purchase_for_points as "minimumPurchaseForPoints", point_link_expiry_days as "pointLinkExpiryDays", point_expiry_days as "pointExpiryDays", point_expiry_reminder_days as "pointExpiryReminderDays", is_active as "isActive", registration_status as "registrationStatus", phone, created_at as "createdAt" from shops order by created_at asc`,
     sql`select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds" from customers order by created_at asc`,
     sql`select id, name, image, description, points_cost as "pointsCost", stock, is_available as "isAvailable", shop_id as "shopId" from rewards order by created_at asc`,
     sql`select id, title, image, description, is_ad as "isAd", shop_id as "shopId", url, expiration_date as "expirationDate" from promo_banners order by created_at asc`,
@@ -329,15 +369,57 @@ async function syncShops(rows: Shop[]) {
   if (!rows.length) return;
 
   await sql`
-    insert into shops (id, name, description, logo, category, points_rate, is_active, registration_status, phone, created_at, updated_at)
-    select id, name, coalesce(description, ''), coalesce(logo, ''), coalesce(category, 'General'), coalesce("pointsRate", 10), coalesce("isActive", false), coalesce("registrationStatus", 'pending'), coalesce(phone, ''), coalesce("createdAt"::timestamptz, now()), now()
-    from jsonb_to_recordset(${payload}::jsonb) as x(id text, name text, description text, logo text, category text, "pointsRate" integer, "isActive" boolean, "registrationStatus" text, phone text, "createdAt" text)
+    insert into shops (
+      id, name, description, logo, category, points_rate,
+      point_rounding_mode, minimum_purchase_for_points, point_link_expiry_days,
+      point_expiry_days, point_expiry_reminder_days,
+      is_active, registration_status, phone, created_at, updated_at
+    )
+    select
+      id,
+      name,
+      coalesce(description, ''),
+      coalesce(logo, ''),
+      coalesce(category, 'General'),
+      greatest(1, coalesce("pointsRate", 10)),
+      case when "pointRoundingMode" = 'nearest' then 'nearest' else 'floor' end,
+      greatest(0, coalesce("minimumPurchaseForPoints", 1)),
+      greatest(1, coalesce("pointLinkExpiryDays", 7)),
+      greatest(1, coalesce("pointExpiryDays", 365)),
+      greatest(0, coalesce("pointExpiryReminderDays", 30)),
+      coalesce("isActive", false),
+      coalesce("registrationStatus", 'pending'),
+      coalesce(phone, ''),
+      coalesce("createdAt"::timestamptz, now()),
+      now()
+    from jsonb_to_recordset(${payload}::jsonb) as x(
+      id text,
+      name text,
+      description text,
+      logo text,
+      category text,
+      "pointsRate" integer,
+      "pointRoundingMode" text,
+      "minimumPurchaseForPoints" integer,
+      "pointLinkExpiryDays" integer,
+      "pointExpiryDays" integer,
+      "pointExpiryReminderDays" integer,
+      "isActive" boolean,
+      "registrationStatus" text,
+      phone text,
+      "createdAt" text
+    )
     on conflict (id) do update set
       name = excluded.name,
       description = excluded.description,
       logo = excluded.logo,
       category = excluded.category,
       points_rate = excluded.points_rate,
+      point_rounding_mode = excluded.point_rounding_mode,
+      minimum_purchase_for_points = excluded.minimum_purchase_for_points,
+      point_link_expiry_days = excluded.point_link_expiry_days,
+      point_expiry_days = excluded.point_expiry_days,
+      point_expiry_reminder_days = excluded.point_expiry_reminder_days,
       is_active = excluded.is_active,
       registration_status = excluded.registration_status,
       phone = excluded.phone,

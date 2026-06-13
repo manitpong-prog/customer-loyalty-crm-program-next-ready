@@ -5,7 +5,7 @@ import {
   ShoppingBag, Award, PlusCircle, MinusCircle, Search, 
   Image, HelpCircle, Calendar, RefreshCw, AlertCircle, FileText, Copy, UserPlus, ReceiptText, Share2
 } from 'lucide-react';
-import { Shop, Customer, Reward, Transaction, PromoBanner, AuditLog, ShopOnboardingChecklist } from '../types';
+import { Shop, Customer, Reward, Transaction, PromoBanner, AuditLog, ShopOnboardingChecklist, PointRoundingMode } from '../types';
 import { 
   getShops, saveShops, getCustomers, saveCustomers, 
   getRewards, saveRewards, getTransactions, saveTransactions,
@@ -21,6 +21,7 @@ import {
   filterTransactionsByShop,
   scopeApprovedShops,
 } from '../lib/shopScope';
+import { calculateEarnPoints, getPointRuleSummary, getPointRules } from '../lib/pointRules';
 
 type MerchantTab = 'dashboard' | 'approvals' | 'customers' | 'rewards' | 'promotions' | 'generator' | 'reports' | 'audit' | 'settings';
 
@@ -70,11 +71,15 @@ export default function OwnerDashboard({
   const [generatePurchaseAmount, setGeneratePurchaseAmount] = useState('500');
   const [generateDesc, setGenerateDesc] = useState('ยอดซื้อหน้าร้าน');
   const [generatedQRValue, setGeneratedQRValue] = useState('');
-  const [expiryMinutes, setExpiryMinutes] = useState('15');
   const [activeCoupon, setActiveCoupon] = useState<any | null>(null);
   const [generatedCouponsList, setGeneratedCouponsList] = useState<any[]>([]);
   const [copiedLink, setCopiedLink] = useState(false);
   const [shopPointRateInput, setShopPointRateInput] = useState('10');
+  const [shopPointRoundingModeInput, setShopPointRoundingModeInput] = useState<PointRoundingMode>('floor');
+  const [shopMinimumPurchaseInput, setShopMinimumPurchaseInput] = useState('1');
+  const [shopPointLinkExpiryDaysInput, setShopPointLinkExpiryDaysInput] = useState('7');
+  const [shopPointExpiryDaysInput, setShopPointExpiryDaysInput] = useState('365');
+  const [shopPointExpiryReminderDaysInput, setShopPointExpiryReminderDaysInput] = useState('30');
   const [shopNameInput, setShopNameInput] = useState('');
   const [shopDescriptionInput, setShopDescriptionInput] = useState('');
   const [shopCategoryInput, setShopCategoryInput] = useState('');
@@ -224,9 +229,10 @@ export default function OwnerDashboard({
 
   const generateNewCouponAndLink = () => {
     const activeShop = shops.length > 0 ? shops.find(s => s.id === selectedShopId) : getShops().find(s => s.id === selectedShopId);
-    const currentPointsRate = Math.max(1, activeShop?.pointsRate || 10);
+    const activePointRules = getPointRules(activeShop);
+    const currentPointsRate = activePointRules.pointsRate;
     const purchaseAmountText = String(generatePurchaseAmount).trim();
-    const expiryMinutesText = String(expiryMinutes).trim();
+
 
     if (!purchaseAmountText) {
       showStatus('❌ กรุณาใส่ยอดซื้อก่อนสร้างลิงก์รับแต้ม');
@@ -239,22 +245,10 @@ export default function OwnerDashboard({
       return;
     }
 
-    if (!expiryMinutesText) {
-      showStatus('❌ กรุณาใส่เวลาหมดอายุของลิงก์');
-      return;
-    }
-
-    const parsedExpiryMinutes = Number(expiryMinutesText);
-    if (!Number.isFinite(parsedExpiryMinutes) || parsedExpiryMinutes <= 0) {
-      showStatus('❌ กรุณาใส่เวลาหมดอายุเป็นตัวเลข 1 - 60 นาที');
-      return;
-    }
-
-    const boundedExpiryMinutes = Math.max(1, Math.min(60, Math.floor(parsedExpiryMinutes)));
-    const couponPoints = Math.floor(purchaseAmount / currentPointsRate);
+    const couponPoints = calculateEarnPoints(purchaseAmount, activeShop);
 
     if (couponPoints <= 0) {
-      showStatus(`❌ ยอดซื้อยังไม่ถึงอัตราแจกแต้มของร้าน (${currentPointsRate} บาท = 1 แต้ม)`);
+      showStatus(`❌ ยอดซื้อยังไม่ถึงกฎแจกแต้มของร้าน (${activePointRules.minimumPurchaseForPoints.toLocaleString('th-TH')} บาทขั้นต่ำ / ${currentPointsRate.toLocaleString('th-TH')} บาท = 1 แต้ม)`);
       return;
     }
 
@@ -265,7 +259,7 @@ export default function OwnerDashboard({
 
     const coupons = getGeneratedCoupons();
 
-    const expiresAt = new Date(Date.now() + boundedExpiryMinutes * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + activePointRules.pointLinkExpiryDays * 24 * 60 * 60 * 1000).toISOString();
 
     const newCoupon = {
       code: uniqueCode,
@@ -275,6 +269,9 @@ export default function OwnerDashboard({
       description: generateDesc || `ยอดซื้อ ${purchaseAmount.toLocaleString('th-TH')} บาท`,
       purchaseAmount,
       pointsRate: currentPointsRate,
+      pointRoundingMode: activePointRules.pointRoundingMode,
+      minimumPurchaseForPoints: activePointRules.minimumPurchaseForPoints,
+      pointLinkExpiryDays: activePointRules.pointLinkExpiryDays,
       createdAt: new Date().toISOString(),
       expiresAt: expiresAt,
       isUsed: false
@@ -293,7 +290,7 @@ export default function OwnerDashboard({
       targetType: 'coupon',
       targetId: uniqueCode,
       points: couponPoints,
-      metadata: { purchaseAmount, pointsRate: currentPointsRate, expiresAt, url: generatedUrl },
+      metadata: { purchaseAmount, ...activePointRules, expiresAt, url: generatedUrl },
     });
 
     setGeneratedQRValue(generatedUrl);
@@ -429,7 +426,13 @@ export default function OwnerDashboard({
 
   useEffect(() => {
     if (!activeShopDetail) return;
-    setShopPointRateInput(String(activeShopDetail.pointsRate || 10));
+    const pointRules = getPointRules(activeShopDetail);
+    setShopPointRateInput(String(pointRules.pointsRate));
+    setShopPointRoundingModeInput(pointRules.pointRoundingMode);
+    setShopMinimumPurchaseInput(String(pointRules.minimumPurchaseForPoints));
+    setShopPointLinkExpiryDaysInput(String(pointRules.pointLinkExpiryDays));
+    setShopPointExpiryDaysInput(String(pointRules.pointExpiryDays));
+    setShopPointExpiryReminderDaysInput(String(pointRules.pointExpiryReminderDays));
     setShopNameInput(activeShopDetail.name || '');
     setShopDescriptionInput(activeShopDetail.description || '');
     setShopCategoryInput(activeShopDetail.category || '');
@@ -440,7 +443,7 @@ export default function OwnerDashboard({
     setShopShareMessageInput(activeShopDetail.shareMessageTemplate || `รับแต้มจาก {shop} จำนวน {points} แต้ม\nกดรับแต้มที่นี่: {url}`);
     setShopRichMenuContactUrlInput(activeShopDetail.richMenuContactUrl || '');
     setShopIsActiveInput(activeShopDetail.isActive !== false);
-  }, [activeShopDetail?.id, activeShopDetail?.name, activeShopDetail?.description, activeShopDetail?.category, activeShopDetail?.phone, activeShopDetail?.logo, activeShopDetail?.pointsRate, activeShopDetail?.isActive, activeShopDetail?.welcomeMessage, activeShopDetail?.contactText, activeShopDetail?.shareMessageTemplate, activeShopDetail?.richMenuContactUrl]);
+  }, [activeShopDetail?.id, activeShopDetail?.name, activeShopDetail?.description, activeShopDetail?.category, activeShopDetail?.phone, activeShopDetail?.logo, activeShopDetail?.pointsRate, activeShopDetail?.pointRoundingMode, activeShopDetail?.minimumPurchaseForPoints, activeShopDetail?.pointLinkExpiryDays, activeShopDetail?.pointExpiryDays, activeShopDetail?.pointExpiryReminderDays, activeShopDetail?.isActive, activeShopDetail?.welcomeMessage, activeShopDetail?.contactText, activeShopDetail?.shareMessageTemplate, activeShopDetail?.richMenuContactUrl]);
 
   useEffect(() => {
     if (customers.length > 0 && !customers.some((customer) => customer.id === selectedSaleCustomerId)) {
@@ -448,9 +451,11 @@ export default function OwnerDashboard({
     }
   }, [customers, selectedSaleCustomerId]);
 
-  const pointsRate = Math.max(1, activeShopDetail?.pointsRate || 10);
-  const calculatedSalePoints = Math.max(0, Math.floor((Number(saleAmount) || 0) / pointsRate));
-  const calculatedGeneratePoints = Math.max(0, Math.floor((Number(generatePurchaseAmount) || 0) / pointsRate));
+  const pointRules = getPointRules(activeShopDetail);
+  const pointRuleSummary = getPointRuleSummary(activeShopDetail);
+  const pointsRate = pointRules.pointsRate;
+  const calculatedSalePoints = calculateEarnPoints(Number(saleAmount) || 0, activeShopDetail);
+  const calculatedGeneratePoints = calculateEarnPoints(Number(generatePurchaseAmount) || 0, activeShopDetail);
 
   const getTierForLifetime = (lifetimePoints: number): Customer['tier'] => {
     if (lifetimePoints >= 1000) return 'Platinum';
@@ -801,25 +806,56 @@ export default function OwnerDashboard({
     return { value: Math.floor(parsedValue), error: '' };
   };
 
-  const getValidatedPointRate = () => {
+  const getValidatedPointRules = () => {
     const rateText = String(shopPointRateInput).trim();
-    if (!rateText) {
-      return { value: null as number | null, error: '❌ กรุณาใส่จำนวนเงินก่อนบันทึกอัตราแต้ม' };
-    }
+    const minimumText = String(shopMinimumPurchaseInput).trim();
+    const linkExpiryText = String(shopPointLinkExpiryDaysInput).trim();
+    const pointExpiryText = String(shopPointExpiryDaysInput).trim();
+    const reminderText = String(shopPointExpiryReminderDaysInput).trim();
 
+    if (!rateText) return { value: null as ReturnType<typeof getPointRules> | null, error: '❌ กรุณาใส่จำนวนเงินก่อนบันทึกอัตราแต้ม' };
     const parsedRate = Number(rateText);
-    if (!Number.isFinite(parsedRate) || parsedRate <= 0) {
-      return { value: null as number | null, error: '❌ กรุณาใส่อัตราแต้มเป็นตัวเลขที่มากกว่า 0' };
-    }
+    if (!Number.isFinite(parsedRate) || parsedRate <= 0) return { value: null, error: '❌ กรุณาใส่อัตราแต้มเป็นตัวเลขที่มากกว่า 0' };
 
-    return { value: Math.floor(parsedRate), error: '' };
+    if (!minimumText) return { value: null, error: '❌ กรุณาใส่ยอดซื้อขั้นต่ำที่จะได้แต้ม' };
+    const parsedMinimum = Number(minimumText);
+    if (!Number.isFinite(parsedMinimum) || parsedMinimum < 0) return { value: null, error: '❌ กรุณาใส่ยอดซื้อขั้นต่ำเป็นตัวเลข 0 ขึ้นไป' };
+
+    if (!linkExpiryText) return { value: null, error: '❌ กรุณาใส่จำนวนวันหมดอายุของลิงก์รับแต้ม' };
+    const parsedLinkExpiry = Number(linkExpiryText);
+    if (!Number.isFinite(parsedLinkExpiry) || parsedLinkExpiry <= 0) return { value: null, error: '❌ กรุณาใส่วันหมดอายุลิงก์เป็นตัวเลขมากกว่า 0' };
+
+    if (!pointExpiryText) return { value: null, error: '❌ กรุณาใส่จำนวนวันหมดอายุของแต้ม' };
+    const parsedPointExpiry = Number(pointExpiryText);
+    if (!Number.isFinite(parsedPointExpiry) || parsedPointExpiry <= 0) return { value: null, error: '❌ กรุณาใส่จำนวนวันหมดอายุแต้มเป็นตัวเลขมากกว่า 0' };
+
+    if (!reminderText) return { value: null, error: '❌ กรุณาใส่จำนวนวันแจ้งเตือนก่อนแต้มหมดอายุ' };
+    const parsedReminder = Number(reminderText);
+    if (!Number.isFinite(parsedReminder) || parsedReminder < 0) return { value: null, error: '❌ กรุณาใส่จำนวนวันแจ้งเตือนเป็นตัวเลข 0 ขึ้นไป' };
+
+    return {
+      value: {
+        pointsRate: Math.floor(parsedRate),
+        pointRoundingMode: shopPointRoundingModeInput,
+        minimumPurchaseForPoints: Math.floor(parsedMinimum),
+        pointLinkExpiryDays: Math.floor(parsedLinkExpiry),
+        pointExpiryDays: Math.floor(parsedPointExpiry),
+        pointExpiryReminderDays: Math.floor(parsedReminder),
+      },
+      error: '',
+    };
+  };
+
+  const getValidatedPointRate = () => {
+    const validated = getValidatedPointRules();
+    return { value: validated.value?.pointsRate ?? null, error: validated.error };
   };
 
   const handleSaveShopPointRate = (e: React.FormEvent | React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
 
-    const { value: nextRate, error } = getValidatedPointRate();
-    if (error || nextRate === null) {
+    const { value: nextPointRules, error } = getValidatedPointRules();
+    if (error || nextPointRules === null) {
       showStatus(error);
       return;
     }
@@ -833,19 +869,19 @@ export default function OwnerDashboard({
     }
 
     const updatedShops = allShops.map((shop) => (
-      shop.id === selectedShopId ? { ...shop, pointsRate: nextRate } : shop
+      shop.id === selectedShopId ? { ...shop, ...nextPointRules } : shop
     ));
 
     saveShops(updatedShops);
     recordAuditLog({
-      action: 'shop_point_rate_updated',
-      actionLabel: 'แก้อัตราแต้ม',
-      description: `บันทึกอัตราแจกแต้มใหม่: ${nextRate} บาท = 1 แต้ม`,
+      action: 'shop_point_rules_updated',
+      actionLabel: 'แก้กฎสะสมแต้ม',
+      description: `บันทึกกฎสะสมแต้มใหม่: ${nextPointRules.pointsRate} บาท = 1 แต้ม / ${nextPointRules.pointRoundingMode === 'nearest' ? 'ปัดเศษใกล้สุด' : 'ปัดเศษลง'}`,
       targetType: 'shop',
       targetId: selectedShopId,
-      metadata: { previousRate: targetShop.pointsRate, nextRate },
+      metadata: { previousRules: getPointRules(targetShop), nextRules: nextPointRules },
     });
-    showStatus(`✓ บันทึกอัตราแจกแต้มแล้ว: ${nextRate} บาท = 1 แต้ม`);
+    showStatus(`✓ บันทึกกฎสะสมแต้มแล้ว: ${nextPointRules.pointsRate} บาท = 1 แต้ม`);
     onDataChange();
     loadData();
   };
@@ -867,8 +903,8 @@ export default function OwnerDashboard({
       return;
     }
 
-    const { value: nextRate, error } = getValidatedPointRate();
-    if (error || nextRate === null) {
+    const { value: nextPointRules, error } = getValidatedPointRules();
+    if (error || nextPointRules === null) {
       showStatus(error);
       return;
     }
@@ -891,7 +927,7 @@ export default function OwnerDashboard({
             category: nextCategory,
             phone: nextPhone,
             logo: nextLogo,
-            pointsRate: nextRate,
+            ...nextPointRules,
             isActive: shopIsActiveInput,
             welcomeMessage: nextWelcome,
             contactText: nextContact,
@@ -908,7 +944,7 @@ export default function OwnerDashboard({
       description: `บันทึกข้อมูลร้าน “${nextName}” และการตั้งค่าหน้าลูกค้า`,
       targetType: 'shop',
       targetId: selectedShopId,
-      metadata: { previousName: targetShop.name, nextName, nextRate, isActive: shopIsActiveInput },
+      metadata: { previousName: targetShop.name, nextName, nextPointRules, isActive: shopIsActiveInput },
     });
     showStatus('✓ บันทึกตั้งค่าร้านค้าสำเร็จแล้ว');
     onDataChange();
@@ -1006,7 +1042,7 @@ export default function OwnerDashboard({
     }
 
     if (calculatedSalePoints <= 0) {
-      showStatus(`❌ ยอดซื้อยังไม่ถึงอัตราแจกแต้มของร้าน (${pointsRate} บาท = 1 แต้ม)`);
+      showStatus(`❌ ยอดซื้อยังไม่ถึงกฎแจกแต้มของร้าน (${pointRuleSummary.minimumText} / ${pointRuleSummary.earnText})`);
       return;
     }
 
@@ -1051,7 +1087,7 @@ export default function OwnerDashboard({
       customerId: customer.id,
       customerName: customer.name,
       points: calculatedSalePoints,
-      metadata: { saleAmount: saleAmountValue, pointsRate },
+      metadata: { saleAmount: saleAmountValue, pointRules },
     });
     showStatus(`✓ บันทึกยอดซื้อสำเร็จ: +${calculatedSalePoints} แต้มให้ ${customer.name}`);
     onDataChange();
@@ -2090,29 +2126,106 @@ export default function OwnerDashboard({
               </div>
 
               <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 space-y-4">
-                <div className="flex flex-col md:flex-row md:items-end gap-3">
-                  <div className="flex-1 space-y-1.5">
-                    <p className="text-[10px] font-black text-amber-700">อัตราแจกแต้ม</p>
-                    <label className="text-xs font-bold text-slate-700 block">ลูกค้าซื้อครบกี่บาท = 1 แต้ม</label>
+                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black text-amber-700 uppercase tracking-[0.18em]">Phase 6D</p>
+                    <h5 className="text-base font-black text-slate-950 mt-1">ตั้งค่ากฎการสะสมแต้ม</h5>
+                    <p className="text-[10px] text-slate-600 font-medium mt-1">ค่าตรงนี้บันทึกลงฐานข้อมูลจริง และถูกใช้ตอนคำนวณแต้มจากยอดซื้อ/ลิงก์รับแต้ม</p>
+                  </div>
+                  <div className="rounded-2xl bg-white border border-amber-200 px-4 py-3 text-[10px] font-bold text-amber-900 min-w-[220px]">
+                    <p className="font-black text-amber-800">กฎปัจจุบัน</p>
+                    <p className="mt-1">{pointRuleSummary.earnText}</p>
+                    <p>{pointRuleSummary.roundingText} • {pointRuleSummary.minimumText}</p>
+                    <p>{pointRuleSummary.linkExpiryText}</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-600">ยอดซื้อกี่บาท = 1 แต้ม</label>
                     <input
                       type="number"
-                      inputMode="decimal"
+                      inputMode="numeric"
                       min={1}
                       value={shopPointRateInput}
                       onChange={(e) => setShopPointRateInput(e.target.value)}
-                      placeholder="เช่น 100"
+                      placeholder="เช่น 10"
                       className="w-full bg-white border border-amber-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
                     />
-                    <p className="text-[10px] text-slate-600 font-medium">ตอนนี้ระบบคำนวณจากยอดซื้อ: ทุก {pointsRate} บาท = 1 แต้ม</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleSaveShopPointRate}
-                    className="bg-white hover:bg-amber-100 text-amber-800 border border-amber-200 font-black text-xs rounded-2xl px-4 py-3 transition active:scale-95"
-                  >
-                    บันทึกเฉพาะอัตราแต้ม
-                  </button>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-600">ปัดเศษแต้มแบบไหน</label>
+                    <select
+                      value={shopPointRoundingModeInput}
+                      onChange={(e) => setShopPointRoundingModeInput(e.target.value as PointRoundingMode)}
+                      className="w-full bg-white border border-amber-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
+                    >
+                      <option value="floor">ปัดเศษลง</option>
+                      <option value="nearest">ปัดเศษใกล้สุด</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-600">ยอดซื้อขั้นต่ำที่จะได้แต้ม</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={shopMinimumPurchaseInput}
+                      onChange={(e) => setShopMinimumPurchaseInput(e.target.value)}
+                      placeholder="เช่น 1"
+                      className="w-full bg-white border border-amber-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-600">ลิงก์รับแต้มหมดอายุกี่วัน</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      value={shopPointLinkExpiryDaysInput}
+                      onChange={(e) => setShopPointLinkExpiryDaysInput(e.target.value)}
+                      placeholder="เช่น 7"
+                      className="w-full bg-white border border-amber-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-600">แต้มมีอายุกี่วัน</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      value={shopPointExpiryDaysInput}
+                      onChange={(e) => setShopPointExpiryDaysInput(e.target.value)}
+                      placeholder="เช่น 365"
+                      className="w-full bg-white border border-amber-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-600">แจ้งเตือนแต้มใกล้หมดอายุก่อนกี่วัน</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={shopPointExpiryReminderDaysInput}
+                      onChange={(e) => setShopPointExpiryReminderDaysInput(e.target.value)}
+                      placeholder="เช่น 30"
+                      className="w-full bg-white border border-amber-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
+                    />
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveShopPointRate}
+                  className="w-full bg-white hover:bg-amber-100 text-amber-800 border border-amber-200 font-black text-xs rounded-2xl px-4 py-3 transition active:scale-95"
+                >
+                  บันทึกเฉพาะกฎสะสมแต้ม
+                </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2690,7 +2803,7 @@ export default function OwnerDashboard({
                 />
               </div>
               <div className="lg:col-span-2 flex flex-col justify-end gap-1">
-                <span className="text-[10px] text-slate-500 font-bold text-center">คำนวณ: {pointsRate} บาท = 1 แต้ม</span>
+                <span className="text-[10px] text-slate-500 font-bold text-center">คำนวณ: {pointRuleSummary.earnText} / {pointRuleSummary.roundingText}</span>
                 <button
                   type="submit"
                   disabled={customers.length === 0}
@@ -3272,7 +3385,7 @@ export default function OwnerDashboard({
                     placeholder="เช่น 500"
                     className="w-full bg-neutral-900 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 outline-none font-sans"
                   />
-                  <p className="text-[9.5px] text-neutral-400 font-medium">คำนวณจากอัตราร้าน: {pointsRate} บาท = 1 แต้ม → ลูกค้าจะได้รับ +{calculatedGeneratePoints} แต้ม</p>
+                  <p className="text-[9.5px] text-neutral-400 font-medium">คำนวณจากกฎร้าน: {pointRuleSummary.earnText} / {pointRuleSummary.roundingText} → ลูกค้าจะได้รับ +{calculatedGeneratePoints} แต้ม</p>
                 </div>
 
                 <div className="space-y-1 font-sans">
@@ -3287,24 +3400,10 @@ export default function OwnerDashboard({
                   />
                 </div>
 
-                {/* Expiry minute input bounded 1 to 60 */}
-                <div className="space-y-1 font-sans">
-                  <label className="text-[10px] text-slate-600 block font-sans font-medium">
-                    กำหนดเวลาหมดอายุของลิงก์แอปพลิเคชัน (1 - 60 นาที):
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input 
-                      type="number"
-                      inputMode="numeric"
-                      min={1}
-                      max={60}
-                      value={expiryMinutes}
-                      onChange={(e) => setExpiryMinutes(e.target.value)}
-                      className="w-24 bg-neutral-900 border border-neutral-850 text-xs text-white px-3 py-2 rounded-lg outline-none text-center font-mono focus:border-yellow-500 transition duration-150"
-                    />
-                    <span className="text-xs text-neutral-300 font-sans">นาที (นับจากเวลาที่สถิติกำหนดไว้)</span>
-                  </div>
-                  <p className="text-[9px] text-neutral-500 italic block mt-1 font-sans">ลิงก์นี้ใช้ได้ครั้งเดียวและมีวันหมดอายุ เพื่อป้องกันการรับแต้มซ้ำ</p>
+                <div className="space-y-1 font-sans rounded-xl border border-neutral-800 bg-neutral-900/70 p-3">
+                  <p className="text-[10px] text-yellow-400 font-black">กฎลิงก์รับแต้มจากหน้าตั้งค่าร้าน</p>
+                  <p className="text-xs text-neutral-300 font-bold">หมดอายุใน {pointRules.pointLinkExpiryDays.toLocaleString('th-TH')} วัน หลังสร้างลิงก์</p>
+                  <p className="text-[9px] text-neutral-500 italic block mt-1 font-sans">ลิงก์นี้ยังเป็นแบบใช้ครั้งเดียวต่อคูปองในช่วง Pilot ถ้าต้องการเปลี่ยนจำนวนวัน ให้ไปที่เมนูตั้งค่า → ตั้งค่ากฎการสะสมแต้ม</p>
                 </div>
 
                 <div className="bg-neutral-900/60 rounded-xl p-3 text-[10px] text-slate-600 space-y-2 border border-neutral-800/40">

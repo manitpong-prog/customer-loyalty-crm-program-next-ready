@@ -14,18 +14,19 @@ Customer Loyalty / CRM web app for LINE LIFF pilot. Current pilot shop: `im-stic
 
 ## Latest completed phase in this package
 
-Phase 6C.5 — Pilot Checklist with Database
+Phase 6D — Point Rules Schema and UI
 
-## New in Phase 6C.5
+## New in Phase 6D
 
-- Added `ShopOnboardingChecklist` type
-- Added `shop_onboarding_checklists` Neon table
-- Added migration file `neon/migrations/002_phase_6c5_pilot_checklist.sql`
-- Added `onboardingChecklists` entity to local cache + Neon sync
-- Added Pilot Checklist card in Merchant Settings
-- Added auto checklist from existing shop/reward/transaction/coupon data
-- Added manual checklist persisted to Neon
-- Updated README and docs
+- Added point rule fields to `Shop`
+- Added `src/lib/pointRules.ts` as the central helper for earning-point calculation
+- Added Neon migration `neon/migrations/003_phase_6d_point_rules.sql`
+- Added point rule columns to `shops`
+- Updated Neon snapshot/sync mapping for new shop fields
+- Added “ตั้งค่ากฎการสะสมแต้ม” card in Merchant Settings
+- Updated point-link generation to use `point_link_expiry_days`
+- Updated purchase/manual earning calculation to use `calculateEarnPoints()`
+- Added docs in `docs/POINT_RULES_PHASE6D_TH.md`
 
 ## Important routes
 
@@ -35,11 +36,13 @@ Phase 6C.5 — Pilot Checklist with Database
 
 ## Next recommended phases
 
-1. Phase 6D — Point Rules Schema and UI
-2. Phase 6E — Membership Tiers table and tier calculation from DB
-3. Phase 6F — Point Expiry foundation
-4. Phase 6G — Real image storage
+1. Phase 6E — Membership Tiers table and tier calculation from DB
+2. Phase 6F — Point Expiry foundation
+3. Phase 6G — Real image storage
 
 ## Deployment rule
 
 For DB phases, run SQL migration in Neon first, then deploy code.
+
+
+Phase 6D cleanup: removed duplicate-claim-per-link setting. Coupons are intentionally one-use only. If the earlier 6D migration was already run, use neon/migrations/004_phase_6d_remove_duplicate_claim_setting.sql to drop the old column.
