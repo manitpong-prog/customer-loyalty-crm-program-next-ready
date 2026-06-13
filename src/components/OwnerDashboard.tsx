@@ -9,7 +9,8 @@ import { Shop, Customer, Reward, Transaction, PromoBanner } from '../types';
 import { 
   getShops, saveShops, getCustomers, saveCustomers, 
   getRewards, saveRewards, getTransactions, saveTransactions,
-  getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons
+  getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons,
+  upsertRewardToNeon, deleteRewardFromNeon
 } from '../data/mockData';
 import { shopIdToSlug } from '../lib/shopSlug';
 import {
@@ -743,26 +744,34 @@ export default function OwnerDashboard({
     loadData();
   };
 
-  const handleToggleRewardAvailability = (rewardId: string) => {
+  const handleToggleRewardAvailability = async (rewardId: string) => {
     const allRewards = getRewards();
     const reward = allRewards.find((item) => item.id === rewardId && item.shopId === selectedShopId);
     if (!reward) return;
 
+    const updatedReward: Reward = { ...reward, isAvailable: !reward.isAvailable };
     const updatedRewards = allRewards.map((item) => {
       if (item.id === rewardId && item.shopId === selectedShopId) {
-        return { ...item, isAvailable: !item.isAvailable };
+        return updatedReward;
       }
       return item;
     });
 
     saveRewards(updatedRewards);
-    showStatus(reward.isAvailable ? '✓ ปิดการแสดงของรางวัลนี้แล้ว' : '✓ เปิดให้ลูกค้าเห็นของรางวัลนี้แล้ว');
     onDataChange();
     loadData();
+
+    try {
+      await upsertRewardToNeon(updatedReward);
+      showStatus(reward.isAvailable ? '✓ ปิดการแสดงของรางวัลนี้แล้ว' : '✓ เปิดให้ลูกค้าเห็นของรางวัลนี้แล้ว');
+    } catch (error) {
+      console.error(error);
+      showStatus('❌ บันทึกสถานะของรางวัลไปฐานข้อมูลไม่สำเร็จ กรุณาลองกดอีกครั้ง');
+    }
   };
 
   // 1. APPROVE CUSTOMER REWARD CLAIM
-  const handleApproveRedeem = (txId: string) => {
+  const handleApproveRedeem = async (txId: string) => {
     const allTxs = getTransactions();
     const tx = allTxs.find(t => t.id === txId && t.shopId === selectedShopId);
 
@@ -799,10 +808,12 @@ export default function OwnerDashboard({
 หลังอนุมัติ ระบบจะลดสต็อกของรางวัล 1 ชิ้น`);
     if (!confirmed) return;
 
+    let updatedRewardForSync: Reward | null = null;
     if (matchedReward) {
       const updatedRewards = allRewards.map(r => {
         if (r.id === tx.rewardId && r.shopId === selectedShopId) {
-          return { ...r, stock: Math.max(0, r.stock - 1) };
+          updatedRewardForSync = { ...r, stock: Math.max(0, r.stock - 1) };
+          return updatedRewardForSync;
         }
         return r;
       });
@@ -816,10 +827,18 @@ export default function OwnerDashboard({
       return t;
     });
     saveTransactions(updatedTxs);
-
-    showStatus(`✓ อนุมัติให้ของรางวัล “${rewardName}” กับ ${tx.userName} แล้ว`);
     onDataChange();
     loadData();
+
+    try {
+      if (updatedRewardForSync) {
+        await upsertRewardToNeon(updatedRewardForSync);
+      }
+      showStatus(`✓ อนุมัติให้ของรางวัล “${rewardName}” กับ ${tx.userName} แล้ว`);
+    } catch (error) {
+      console.error(error);
+      showStatus('⚠️ อนุมัติรายการแล้ว แต่บันทึกสต็อกของรางวัลไปฐานข้อมูลไม่สำเร็จ กรุณารีเฟรชและตรวจสอบอีกครั้ง');
+    }
   };
 
   // 2. REJECT CUSTOMER REWARD CLAIM (refunds points)
@@ -994,7 +1013,7 @@ export default function OwnerDashboard({
     setShowRewardModal(true);
   };
 
-  const saveRewardForm = (e: React.FormEvent) => {
+  const saveRewardForm = async (e: React.FormEvent) => {
     e.preventDefault();
     const allRewards = getRewards();
 
@@ -1020,26 +1039,26 @@ export default function OwnerDashboard({
     const rewardStockValue = parsedRewardStock.value;
     const rewardDescription = newRewDesc.trim() || 'ไม่มีเงื่อนไขเพิ่มเติม';
 
+    let rewardToPersist: Reward;
+    let successMessage = '✓ บันทึกเปิดตัวสินค้าของรางวัลใหม่สำเร็จ';
+
     if (editingReward) {
       // Edit
-      const updated = allRewards.map(r => {
-        if (r.id === editingReward.id) {
-          return {
-            ...r,
-            name: trimmedRewardName,
-            pointsCost: rewardPointsValue,
-            stock: rewardStockValue,
-            description: rewardDescription,
-            image: newRewImage || defaultRewardImage
-          };
-        }
-        return r;
-      });
+      rewardToPersist = {
+        ...editingReward,
+        name: trimmedRewardName,
+        pointsCost: rewardPointsValue,
+        stock: rewardStockValue,
+        description: rewardDescription,
+        image: newRewImage || defaultRewardImage,
+        shopId: editingReward.shopId || selectedShopId,
+      };
+      const updated = allRewards.map(r => (r.id === editingReward.id ? rewardToPersist : r));
       saveRewards(updated);
-      showStatus('✓ อัปเดตรายการสินค้าของรางวัลสำเร็จ');
+      successMessage = '✓ อัปเดตรายการสินค้าของรางวัลสำเร็จ';
     } else {
       // Add
-      const newRew: Reward = {
+      rewardToPersist = {
         id: `rew_${Date.now()}`,
         name: trimmedRewardName,
         pointsCost: rewardPointsValue,
@@ -1049,23 +1068,45 @@ export default function OwnerDashboard({
         isAvailable: true,
         shopId: selectedShopId
       };
-      saveRewards([...allRewards, newRew]);
-      showStatus('✓ บันทึกเปิดตัวสินค้าของรางวัลใหม่สำเร็จ');
+      saveRewards([...allRewards, rewardToPersist]);
     }
 
     setShowRewardModal(false);
     setActiveTab('rewards');
     onDataChange();
     loadData();
+    showStatus('กำลังบันทึกของรางวัลไปฐานข้อมูล...');
+
+    try {
+      await upsertRewardToNeon(rewardToPersist);
+      showStatus(successMessage);
+    } catch (error) {
+      console.error(error);
+      showStatus('❌ บันทึกของรางวัลไปฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้งก่อนรีเฟรชหน้า');
+    }
   };
 
-  const handleDeleteReward = (rewId: string) => {
-    if (confirm('คุณต้องการยกเลิกและลบบาร์นี้ถาวรจากฐานสตรีมมิ่งเลยใช่หรือไม่?')) {
+  const handleDeleteReward = async (rewId: string) => {
+    const targetReward = getRewards().find(r => r.id === rewId && r.shopId === selectedShopId);
+    if (!targetReward) {
+      showStatus('❌ ไม่พบของรางวัลนี้ในร้านปัจจุบัน');
+      return;
+    }
+
+    if (confirm('คุณต้องการยกเลิกและลบของรางวัลนี้ถาวรใช่หรือไม่?')) {
       const filtered = getRewards().filter(r => r.id !== rewId);
       saveRewards(filtered);
-      showStatus('✓ ลบสินค้าของรางวัลเรียบร้อยแล้ว');
       onDataChange();
       loadData();
+      showStatus('กำลังลบของรางวัลจากฐานข้อมูล...');
+
+      try {
+        await deleteRewardFromNeon(rewId, selectedShopId);
+        showStatus('✓ ลบสินค้าของรางวัลเรียบร้อยแล้ว');
+      } catch (error) {
+        console.error(error);
+        showStatus('❌ ลบของรางวัลจากฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+      }
     }
   };
 

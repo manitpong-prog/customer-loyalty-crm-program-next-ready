@@ -343,6 +343,41 @@ async function syncRewards(rows: Reward[]) {
   `;
 }
 
+export async function upsertRewardRow(reward: Reward) {
+  await ensureCrmSchema();
+  const sql = requireSql();
+
+  await sql`
+    insert into rewards (id, name, image, description, points_cost, stock, is_available, shop_id, updated_at)
+    values (
+      ${reward.id},
+      ${reward.name},
+      ${reward.image || ''},
+      ${reward.description || ''},
+      ${Math.max(1, Number(reward.pointsCost) || 1)},
+      ${Math.max(0, Number(reward.stock) || 0)},
+      ${reward.isAvailable !== false},
+      ${reward.shopId},
+      now()
+    )
+    on conflict (id) do update set
+      name = excluded.name,
+      image = excluded.image,
+      description = excluded.description,
+      points_cost = excluded.points_cost,
+      stock = excluded.stock,
+      is_available = excluded.is_available,
+      shop_id = excluded.shop_id,
+      updated_at = now()
+  `;
+}
+
+export async function deleteRewardRow(rewardId: string, shopId: string) {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  await sql`delete from rewards where id = ${rewardId} and shop_id = ${shopId}`;
+}
+
 async function syncBanners(rows: PromoBanner[]) {
   const sql = requireSql();
   const payload = JSON.stringify(rows);
