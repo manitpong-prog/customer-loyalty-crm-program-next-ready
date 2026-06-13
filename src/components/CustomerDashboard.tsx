@@ -1744,21 +1744,24 @@ export default function CustomerDashboard({
                               {getMerchantRedeemUrl(t)}
                             </p>
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-[9.5px] font-bold text-amber-700 leading-relaxed">
+                          ลูกค้าสามารถคัดลอกลิงก์นี้ส่งให้ร้านค้าอีกครั้งได้ตลอดจนกว่าร้านค้าจะอนุมัติหรือปฏิเสธรายการ
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
                             <button
                               type="button"
                               onClick={() => handleShareRedeemLink(t)}
-                              className="rounded-xl bg-[#06C755] px-3 py-2 text-[10px] font-black text-white active:scale-95 transition flex items-center justify-center gap-1.5"
+                              className="rounded-xl bg-[#06C755] px-3 py-2.5 text-[10px] font-black text-white active:scale-95 transition flex items-center justify-center gap-1.5"
                             >
                               <Share2 className="w-3.5 h-3.5" /> แชร์ LINE
                             </button>
                             <button
                               type="button"
                               onClick={() => handleCopyRedeemLink(t)}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-700 active:scale-95 transition flex items-center justify-center gap-1.5"
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[10px] font-black text-slate-700 active:scale-95 transition flex items-center justify-center gap-1.5 shadow-xs"
                             >
                               {copiedRedeemLinkId === t.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                              {copiedRedeemLinkId === t.id ? "คัดลอกแล้ว" : "คัดลอก"}
+                              {copiedRedeemLinkId === t.id ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}
                             </button>
                           </div>
                         </div>
