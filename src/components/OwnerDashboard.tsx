@@ -70,6 +70,7 @@ export default function OwnerDashboard({
   // Custom QR / Link generator states
   const [generatePurchaseAmount, setGeneratePurchaseAmount] = useState('500');
   const [generateDesc, setGenerateDesc] = useState('ยอดซื้อหน้าร้าน');
+  const [generateLinkExpiryMinutes, setGenerateLinkExpiryMinutes] = useState('10');
   const [generatedQRValue, setGeneratedQRValue] = useState('');
   const [activeCoupon, setActiveCoupon] = useState<any | null>(null);
   const [generatedCouponsList, setGeneratedCouponsList] = useState<any[]>([]);
@@ -77,7 +78,6 @@ export default function OwnerDashboard({
   const [shopPointRateInput, setShopPointRateInput] = useState('10');
   const [shopPointRoundingModeInput, setShopPointRoundingModeInput] = useState<PointRoundingMode>('floor');
   const [shopMinimumPurchaseInput, setShopMinimumPurchaseInput] = useState('1');
-  const [shopPointLinkExpiryDaysInput, setShopPointLinkExpiryDaysInput] = useState('7');
   const [shopPointExpiryDaysInput, setShopPointExpiryDaysInput] = useState('365');
   const [shopPointExpiryReminderDaysInput, setShopPointExpiryReminderDaysInput] = useState('30');
   const [shopNameInput, setShopNameInput] = useState('');
@@ -257,9 +257,22 @@ export default function OwnerDashboard({
     const randomHex = Math.random().toString(36).substring(2, 7).toUpperCase();
     const uniqueCode = `CPN-${shopAbbr}-${couponPoints}-${randomHex}`;
 
+    const linkExpiryMinutesText = String(generateLinkExpiryMinutes).trim();
+    if (!linkExpiryMinutesText) {
+      showStatus('❌ กรุณาใส่จำนวนนาทีหมดอายุของลิงก์รับแต้ม');
+      return;
+    }
+
+    const linkExpiryMinutes = Number(linkExpiryMinutesText);
+    if (!Number.isFinite(linkExpiryMinutes) || linkExpiryMinutes <= 0) {
+      showStatus('❌ กรุณาใส่นาทีหมดอายุลิงก์เป็นตัวเลขที่มากกว่า 0');
+      return;
+    }
+
+    const safeLinkExpiryMinutes = Math.floor(linkExpiryMinutes);
     const coupons = getGeneratedCoupons();
 
-    const expiresAt = new Date(Date.now() + activePointRules.pointLinkExpiryDays * 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + safeLinkExpiryMinutes * 60 * 1000).toISOString();
 
     const newCoupon = {
       code: uniqueCode,
@@ -271,7 +284,7 @@ export default function OwnerDashboard({
       pointsRate: currentPointsRate,
       pointRoundingMode: activePointRules.pointRoundingMode,
       minimumPurchaseForPoints: activePointRules.minimumPurchaseForPoints,
-      pointLinkExpiryDays: activePointRules.pointLinkExpiryDays,
+      pointLinkExpiryMinutes: safeLinkExpiryMinutes,
       createdAt: new Date().toISOString(),
       expiresAt: expiresAt,
       isUsed: false
@@ -290,7 +303,7 @@ export default function OwnerDashboard({
       targetType: 'coupon',
       targetId: uniqueCode,
       points: couponPoints,
-      metadata: { purchaseAmount, ...activePointRules, expiresAt, url: generatedUrl },
+      metadata: { purchaseAmount, ...activePointRules, pointLinkExpiryMinutes: safeLinkExpiryMinutes, expiresAt, url: generatedUrl },
     });
 
     setGeneratedQRValue(generatedUrl);
@@ -430,7 +443,6 @@ export default function OwnerDashboard({
     setShopPointRateInput(String(pointRules.pointsRate));
     setShopPointRoundingModeInput(pointRules.pointRoundingMode);
     setShopMinimumPurchaseInput(String(pointRules.minimumPurchaseForPoints));
-    setShopPointLinkExpiryDaysInput(String(pointRules.pointLinkExpiryDays));
     setShopPointExpiryDaysInput(String(pointRules.pointExpiryDays));
     setShopPointExpiryReminderDaysInput(String(pointRules.pointExpiryReminderDays));
     setShopNameInput(activeShopDetail.name || '');
@@ -443,7 +455,7 @@ export default function OwnerDashboard({
     setShopShareMessageInput(activeShopDetail.shareMessageTemplate || `รับแต้มจาก {shop} จำนวน {points} แต้ม\nกดรับแต้มที่นี่: {url}`);
     setShopRichMenuContactUrlInput(activeShopDetail.richMenuContactUrl || '');
     setShopIsActiveInput(activeShopDetail.isActive !== false);
-  }, [activeShopDetail?.id, activeShopDetail?.name, activeShopDetail?.description, activeShopDetail?.category, activeShopDetail?.phone, activeShopDetail?.logo, activeShopDetail?.pointsRate, activeShopDetail?.pointRoundingMode, activeShopDetail?.minimumPurchaseForPoints, activeShopDetail?.pointLinkExpiryDays, activeShopDetail?.pointExpiryDays, activeShopDetail?.pointExpiryReminderDays, activeShopDetail?.isActive, activeShopDetail?.welcomeMessage, activeShopDetail?.contactText, activeShopDetail?.shareMessageTemplate, activeShopDetail?.richMenuContactUrl]);
+  }, [activeShopDetail?.id, activeShopDetail?.name, activeShopDetail?.description, activeShopDetail?.category, activeShopDetail?.phone, activeShopDetail?.logo, activeShopDetail?.pointsRate, activeShopDetail?.pointRoundingMode, activeShopDetail?.minimumPurchaseForPoints, activeShopDetail?.pointExpiryDays, activeShopDetail?.pointExpiryReminderDays, activeShopDetail?.isActive, activeShopDetail?.welcomeMessage, activeShopDetail?.contactText, activeShopDetail?.shareMessageTemplate, activeShopDetail?.richMenuContactUrl]);
 
   useEffect(() => {
     if (customers.length > 0 && !customers.some((customer) => customer.id === selectedSaleCustomerId)) {
@@ -809,7 +821,6 @@ export default function OwnerDashboard({
   const getValidatedPointRules = () => {
     const rateText = String(shopPointRateInput).trim();
     const minimumText = String(shopMinimumPurchaseInput).trim();
-    const linkExpiryText = String(shopPointLinkExpiryDaysInput).trim();
     const pointExpiryText = String(shopPointExpiryDaysInput).trim();
     const reminderText = String(shopPointExpiryReminderDaysInput).trim();
 
@@ -820,10 +831,6 @@ export default function OwnerDashboard({
     if (!minimumText) return { value: null, error: '❌ กรุณาใส่ยอดซื้อขั้นต่ำที่จะได้แต้ม' };
     const parsedMinimum = Number(minimumText);
     if (!Number.isFinite(parsedMinimum) || parsedMinimum < 0) return { value: null, error: '❌ กรุณาใส่ยอดซื้อขั้นต่ำเป็นตัวเลข 0 ขึ้นไป' };
-
-    if (!linkExpiryText) return { value: null, error: '❌ กรุณาใส่จำนวนวันหมดอายุของลิงก์รับแต้ม' };
-    const parsedLinkExpiry = Number(linkExpiryText);
-    if (!Number.isFinite(parsedLinkExpiry) || parsedLinkExpiry <= 0) return { value: null, error: '❌ กรุณาใส่วันหมดอายุลิงก์เป็นตัวเลขมากกว่า 0' };
 
     if (!pointExpiryText) return { value: null, error: '❌ กรุณาใส่จำนวนวันหมดอายุของแต้ม' };
     const parsedPointExpiry = Number(pointExpiryText);
@@ -838,7 +845,6 @@ export default function OwnerDashboard({
         pointsRate: Math.floor(parsedRate),
         pointRoundingMode: shopPointRoundingModeInput,
         minimumPurchaseForPoints: Math.floor(parsedMinimum),
-        pointLinkExpiryDays: Math.floor(parsedLinkExpiry),
         pointExpiryDays: Math.floor(parsedPointExpiry),
         pointExpiryReminderDays: Math.floor(parsedReminder),
       },
@@ -2180,19 +2186,6 @@ export default function OwnerDashboard({
                   </div>
 
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-600">ลิงก์รับแต้มหมดอายุกี่วัน</label>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={1}
-                      value={shopPointLinkExpiryDaysInput}
-                      onChange={(e) => setShopPointLinkExpiryDaysInput(e.target.value)}
-                      placeholder="เช่น 7"
-                      className="w-full bg-white border border-amber-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
                     <label className="text-[10px] font-black text-slate-600">แต้มมีอายุกี่วัน</label>
                     <input
                       type="number"
@@ -3400,10 +3393,18 @@ export default function OwnerDashboard({
                   />
                 </div>
 
-                <div className="space-y-1 font-sans rounded-xl border border-neutral-800 bg-neutral-900/70 p-3">
-                  <p className="text-[10px] text-yellow-400 font-black">กฎลิงก์รับแต้มจากหน้าตั้งค่าร้าน</p>
-                  <p className="text-xs text-neutral-300 font-bold">หมดอายุใน {pointRules.pointLinkExpiryDays.toLocaleString('th-TH')} วัน หลังสร้างลิงก์</p>
-                  <p className="text-[9px] text-neutral-500 italic block mt-1 font-sans">ลิงก์นี้ยังเป็นแบบใช้ครั้งเดียวต่อคูปองในช่วง Pilot ถ้าต้องการเปลี่ยนจำนวนวัน ให้ไปที่เมนูตั้งค่า → ตั้งค่ากฎการสะสมแต้ม</p>
+                <div className="space-y-1 font-sans">
+                  <label className="text-[10px] text-slate-600 block font-sans">ลิงก์รับแต้มหมดอายุในกี่นาที</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    value={generateLinkExpiryMinutes}
+                    onChange={(e) => setGenerateLinkExpiryMinutes(e.target.value)}
+                    placeholder="เช่น 10"
+                    className="w-full bg-neutral-900 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 outline-none font-sans"
+                  />
+                  <p className="text-[9px] text-neutral-500 italic block mt-1 font-sans">ค่าเริ่มต้น 10 นาที และลิงก์นี้ใช้ได้ครั้งเดียวต่อคูปอง</p>
                 </div>
 
                 <div className="bg-neutral-900/60 rounded-xl p-3 text-[10px] text-slate-600 space-y-2 border border-neutral-800/40">

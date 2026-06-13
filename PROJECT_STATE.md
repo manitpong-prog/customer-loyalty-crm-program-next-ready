@@ -24,7 +24,7 @@ Phase 6D — Point Rules Schema and UI
 - Added point rule columns to `shops`
 - Updated Neon snapshot/sync mapping for new shop fields
 - Added “ตั้งค่ากฎการสะสมแต้ม” card in Merchant Settings
-- Updated point-link generation to use `point_link_expiry_days`
+- Point-link generation now uses per-link expiry minutes in the “รับแต้ม” tab, default 10 minutes
 - Updated purchase/manual earning calculation to use `calculateEarnPoints()`
 - Added docs in `docs/POINT_RULES_PHASE6D_TH.md`
 
@@ -46,3 +46,5 @@ For DB phases, run SQL migration in Neon first, then deploy code.
 
 
 Phase 6D cleanup: removed duplicate-claim-per-link setting. Coupons are intentionally one-use only. If the earlier 6D migration was already run, use neon/migrations/004_phase_6d_remove_duplicate_claim_setting.sql to drop the old column.
+
+Phase 6D small correction: point-link expiry is no longer configured in Merchant Settings. It is configured per generated point link in the “รับแต้ม” tab as minutes, default 10 minutes.
