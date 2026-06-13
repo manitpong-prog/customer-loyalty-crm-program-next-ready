@@ -75,6 +75,21 @@ export interface StoreSession {
   ownerName: string;
 }
 
+export interface ShopOnboardingChecklist {
+  id: string;
+  shopId: string;
+  richMenuConfigured: boolean;
+  testedInLineBrowser: boolean;
+  testedCustomerClaim: boolean;
+  testedRewardRedeem: boolean;
+  testDataCleaned: boolean;
+  reviewedCustomerMessages: boolean;
+  readyForPilot: boolean;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 
 export type AuditActorType = 'owner' | 'customer' | 'system';
 export type AuditStatusType = 'info' | 'success' | 'warning' | 'danger';

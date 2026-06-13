@@ -5,12 +5,12 @@ import {
   ShoppingBag, Award, PlusCircle, MinusCircle, Search, 
   Image, HelpCircle, Calendar, RefreshCw, AlertCircle, FileText, Copy, UserPlus, ReceiptText, Share2
 } from 'lucide-react';
-import { Shop, Customer, Reward, Transaction, PromoBanner, AuditLog } from '../types';
+import { Shop, Customer, Reward, Transaction, PromoBanner, AuditLog, ShopOnboardingChecklist } from '../types';
 import { 
   getShops, saveShops, getCustomers, saveCustomers, 
   getRewards, saveRewards, getTransactions, saveTransactions,
   getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons,
-  getAuditLogs, addAuditLog
+  getAuditLogs, addAuditLog, getOrCreateOnboardingChecklist, upsertOnboardingChecklist
 } from '../data/mockData';
 import { shopIdToSlug } from '../lib/shopSlug';
 import {
@@ -53,6 +53,7 @@ export default function OwnerDashboard({
   const [banners, setBanners] = useState<PromoBanner[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [onboardingChecklist, setOnboardingChecklist] = useState<ShopOnboardingChecklist | null>(null);
 
   // Search Filter / Inputs
   const [searchTerm, setSearchTerm] = useState('');
@@ -411,6 +412,7 @@ export default function OwnerDashboard({
     setBanners(filterBannersByShop(getBanners(), selectedShopId, false));
     setTransactions(filterTransactionsByShop(allTransactions, selectedShopId));
     setAuditLogs(getAuditLogs().filter((log) => log.shopId === selectedShopId));
+    setOnboardingChecklist(getOrCreateOnboardingChecklist(selectedShopId));
 
     try {
       const shopCoupons = filterCouponsByShop(getGeneratedCoupons(), selectedShopId);
@@ -502,6 +504,73 @@ export default function OwnerDashboard({
     });
     setAuditLogs((prev) => [log, ...prev].slice(0, 1000));
     return log;
+  };
+
+  const updateOnboardingChecklist = (patch: Partial<ShopOnboardingChecklist>, successMessage?: string) => {
+    const base = onboardingChecklist || getOrCreateOnboardingChecklist(selectedShopId);
+    const nextChecklist = upsertOnboardingChecklist({
+      ...base,
+      ...patch,
+      shopId: selectedShopId,
+      id: base.id || `onboarding_${selectedShopId}`,
+    });
+
+    setOnboardingChecklist(nextChecklist);
+    recordAuditLog({
+      action: 'pilot_checklist_updated',
+      actionLabel: 'อัปเดต Pilot Checklist',
+      description: 'บันทึกสถานะความพร้อมก่อนเปิดร้านจริง',
+      targetType: 'shop_onboarding_checklist',
+      targetId: nextChecklist.id,
+      metadata: patch as Record<string, unknown>,
+    });
+    if (successMessage) showStatus(successMessage);
+  };
+
+  const getPilotChecklistData = () => {
+    const shop = activeShopDetail;
+    const hasShopName = Boolean(shop?.name?.trim());
+    const hasShopLogo = Boolean(shop?.logo?.trim());
+    const hasContact = Boolean(shop?.phone?.trim() || shop?.contactText?.trim() || shop?.richMenuContactUrl?.trim());
+    const hasPointRate = Math.max(1, Number(shop?.pointsRate || 0)) > 0;
+    const hasReward = rewards.length > 0;
+    const hasActiveReward = rewards.some((reward) => reward.isAvailable && reward.stock > 0);
+    const hasRichMenuLinks = Boolean(shop?.richMenuContactUrl?.trim()) || true;
+    const hasPointLink = generatedCouponsList.length > 0;
+    const hasEarnTransaction = transactions.some((tx) => tx.type === 'earn' && tx.status === 'completed');
+    const hasRedeemTransaction = transactions.some((tx) => tx.type === 'redeem');
+
+    const autoItems = [
+      { key: 'shopName', label: 'ตั้งชื่อร้านแล้ว', done: hasShopName, hint: 'ใส่ชื่อร้านในข้อมูลร้านค้า' },
+      { key: 'shopLogo', label: 'อัปโหลดโลโก้ร้านแล้ว', done: hasShopLogo, hint: 'เพิ่มโลโก้ร้านเพื่อให้หน้าลูกค้าดูน่าเชื่อถือ' },
+      { key: 'contact', label: 'ใส่ช่องทางติดต่อร้านแล้ว', done: hasContact, hint: 'ใส่เบอร์โทร ข้อความติดต่อ หรือ LINE OA contact link' },
+      { key: 'pointRate', label: 'ตั้งอัตราแจกแต้มแล้ว', done: hasPointRate, hint: 'กำหนดว่าซื้อกี่บาท = 1 แต้ม' },
+      { key: 'reward', label: 'เพิ่มของรางวัลอย่างน้อย 1 รายการแล้ว', done: hasReward, hint: 'เพิ่มของรางวัลเพื่อให้ลูกค้ามีเป้าหมายสะสมแต้ม' },
+      { key: 'activeReward', label: 'มีของรางวัลที่เปิดใช้งานและมีสต็อกแล้ว', done: hasActiveReward, hint: 'เปิดใช้งานของรางวัลและใส่สต็อกมากกว่า 0' },
+      { key: 'richMenuLinks', label: 'ลิงก์ลูกค้า/Rich Menu พร้อมใช้งานแล้ว', done: hasRichMenuLinks, hint: 'ระบบสร้างลิงก์หลักให้แล้ว ตรวจสอบก่อนนำไปใส่ LINE OA' },
+      { key: 'pointLink', label: 'เคยสร้างลิงก์รับแต้มทดสอบแล้ว', done: hasPointLink, hint: 'ไปที่เมนูแจกแต้ม แล้วสร้างลิงก์รับแต้มอย่างน้อย 1 ครั้ง' },
+      { key: 'earnTx', label: 'เคยทดสอบรับแต้มแล้ว', done: hasEarnTransaction, hint: 'ให้ลูกค้าทดสอบกดรับแต้มจากลิงก์จริง' },
+      { key: 'redeemTx', label: 'เคยทดสอบแลกรางวัลแล้ว', done: hasRedeemTransaction, hint: 'ลองให้ลูกค้ากดแลกรางวัลเพื่อเช็ก flow ก่อนเปิดจริง' },
+    ];
+
+    const manual = onboardingChecklist || getOrCreateOnboardingChecklist(selectedShopId);
+    const manualItems: Array<{ key: keyof Pick<ShopOnboardingChecklist, 'richMenuConfigured' | 'testedInLineBrowser' | 'testedCustomerClaim' | 'testedRewardRedeem' | 'testDataCleaned' | 'reviewedCustomerMessages' | 'readyForPilot'>; label: string; hint: string }> = [
+      { key: 'richMenuConfigured', label: 'ตั้งค่า Rich Menu ใน LINE OA แล้ว', hint: 'นำลิงก์จากกล่อง Rich Menu ไปตั้งค่าใน LINE Official Account แล้ว' },
+      { key: 'testedInLineBrowser', label: 'ทดสอบเปิดจากมือถือใน LINE แล้ว', hint: 'เปิดผ่าน LIFF/LINE app จริง ไม่ใช่เฉพาะ browser บนคอม' },
+      { key: 'testedCustomerClaim', label: 'ทดสอบรับแต้มจากลิงก์จริงแล้ว', hint: 'ทดลอง flow ลูกค้ากดรับแต้มด้วยบัญชี LINE จริง' },
+      { key: 'testedRewardRedeem', label: 'ทดสอบแลกรางวัลจริงแล้ว', hint: 'ทดลอง flow ลูกค้าแลกของรางวัลและร้านอนุมัติ/ตรวจสอบแล้ว' },
+      { key: 'reviewedCustomerMessages', label: 'ตรวจข้อความแนะนำลูกค้าแล้ว', hint: 'ตรวจข้อความต้อนรับ ติดต่อร้าน และข้อความแชร์รับแต้มแล้ว' },
+      { key: 'testDataCleaned', label: 'ล้างข้อมูลทดสอบก่อนเปิดจริงแล้ว', hint: 'ทำเฉพาะตอนจะเปิดจริง เพื่อไม่ให้ข้อมูลทดลองปนกับลูกค้าจริง' },
+      { key: 'readyForPilot', label: 'เจ้าของร้านยืนยันว่าพร้อมเปิด Pilot', hint: 'ติ๊กเมื่อทุกอย่างพร้อมให้ลูกค้าจริงเริ่มใช้งาน' },
+    ];
+
+    const autoDone = autoItems.filter((item) => item.done).length;
+    const manualDone = manualItems.filter((item) => Boolean(manual[item.key])).length;
+    const total = autoItems.length + manualItems.length;
+    const done = autoDone + manualDone;
+    const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+
+    return { autoItems, manualItems, manual, autoDone, manualDone, total, done, percent };
   };
 
 
@@ -1536,6 +1605,7 @@ export default function OwnerDashboard({
     { label: 'ประวัติ', value: buildCustomerTabLiffUrl('history'), note: 'ใช้กับปุ่มประวัติ' },
     ...(shopRichMenuContactUrlInput.trim() ? [{ label: 'ติดต่อร้าน', value: shopRichMenuContactUrlInput.trim(), note: 'ใช้กับปุ่มติดต่อร้าน' }] : []),
   ];
+  const pilotChecklist = getPilotChecklistData();
 
 
   const reportDownloadCards = [
@@ -1814,6 +1884,90 @@ export default function OwnerDashboard({
 
         {activeTab === 'settings' && (
           <div className="space-y-5 animate-fade-in">
+            <div className="rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-white p-5 shadow-sm space-y-5">
+              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black text-emerald-700 uppercase tracking-[0.22em]">Phase 6C.5</p>
+                  <h4 className="text-xl font-black text-slate-950 mt-1">Pilot Checklist ก่อนเปิดร้านจริง</h4>
+                  <p className="text-xs text-slate-600 font-medium mt-1">ตรวจความพร้อมจากข้อมูลจริงในระบบ + สถานะที่เจ้าของร้านยืนยันเอง ข้อมูลส่วนที่ติ๊กจะบันทึกลง Neon ผ่านตาราง shop_onboarding_checklists</p>
+                </div>
+                <div className="rounded-3xl bg-white border border-emerald-200 px-5 py-4 shadow-sm min-w-[180px]">
+                  <p className="text-[10px] font-black text-slate-500">ความพร้อมรวม</p>
+                  <div className="flex items-end gap-2 mt-1">
+                    <p className="text-3xl font-black text-emerald-700 font-mono">{pilotChecklist.percent}%</p>
+                    <p className="text-xs font-black text-slate-500 pb-1">{pilotChecklist.done}/{pilotChecklist.total}</p>
+                  </div>
+                  <div className="mt-3 h-2 rounded-full bg-slate-100 overflow-hidden">
+                    <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pilotChecklist.percent}%` }} />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="rounded-3xl border border-slate-200 bg-white p-4 space-y-3">
+                  <div>
+                    <p className="text-sm font-black text-slate-950">ระบบตรวจให้อัตโนมัติ</p>
+                    <p className="text-[10px] text-slate-500 font-bold mt-0.5">พร้อมแล้ว {pilotChecklist.autoDone}/{pilotChecklist.autoItems.length} รายการ จากข้อมูลในร้านนี้</p>
+                  </div>
+                  <div className="space-y-2">
+                    {pilotChecklist.autoItems.map((item) => (
+                      <div key={item.key} className={`rounded-2xl border p-3 ${item.done ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                        <div className="flex items-start gap-2.5">
+                          <span className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-black ${item.done ? 'bg-emerald-600 text-white' : 'bg-amber-500 text-white'}`}>{item.done ? '✓' : '!'}</span>
+                          <div>
+                            <p className="text-xs font-black text-slate-900">{item.label}</p>
+                            {!item.done && <p className="text-[10px] font-medium text-amber-800 mt-0.5">{item.hint}</p>}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-3xl border border-slate-200 bg-white p-4 space-y-3">
+                  <div>
+                    <p className="text-sm font-black text-slate-950">เจ้าของร้านยืนยันเอง</p>
+                    <p className="text-[10px] text-slate-500 font-bold mt-0.5">ติ๊กแล้ว {pilotChecklist.manualDone}/{pilotChecklist.manualItems.length} รายการ ระบบจะบันทึกอัตโนมัติ</p>
+                  </div>
+                  <div className="space-y-2">
+                    {pilotChecklist.manualItems.map((item) => (
+                      <label key={item.key} className={`block cursor-pointer rounded-2xl border p-3 transition ${pilotChecklist.manual[item.key] ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(pilotChecklist.manual[item.key])}
+                            onChange={(event) => updateOnboardingChecklist({ [item.key]: event.target.checked } as Partial<ShopOnboardingChecklist>, event.target.checked ? `✓ บันทึกแล้ว: ${item.label}` : `✓ ยกเลิกแล้ว: ${item.label}`)}
+                            className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-400"
+                          />
+                          <div>
+                            <p className="text-xs font-black text-slate-900">{item.label}</p>
+                            <p className="text-[10px] font-medium text-slate-500 mt-0.5">{item.hint}</p>
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="space-y-2 pt-1">
+                    <label className="text-[10px] font-black text-slate-600">หมายเหตุ Pilot / สิ่งที่ต้องตรวจเพิ่ม</label>
+                    <textarea
+                      value={pilotChecklist.manual.notes || ''}
+                      onChange={(event) => setOnboardingChecklist({ ...pilotChecklist.manual, notes: event.target.value })}
+                      rows={3}
+                      placeholder="เช่น รอตรวจ Rich Menu บน LINE OA, รอล้างข้อมูลทดสอบก่อนเปิดจริง"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-medium text-slate-950 outline-none focus:ring-2 focus:ring-emerald-300 resize-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => updateOnboardingChecklist({ notes: onboardingChecklist?.notes || '' }, '✓ บันทึกหมายเหตุ Pilot Checklist แล้ว')}
+                      className="w-full rounded-2xl bg-slate-950 px-4 py-3 text-xs font-black text-white transition hover:bg-slate-800 active:scale-95"
+                    >
+                      บันทึกหมายเหตุ Checklist
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <form onSubmit={handleSaveShopSettings} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-5">
               <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                 <div>

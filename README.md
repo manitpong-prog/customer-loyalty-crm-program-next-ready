@@ -255,3 +255,15 @@ Mapping หลัก:
 ## Phase 6B.2 - Merchant Navigation & Dashboard Cleanup
 
 ปรับหน้า `/merchant/im-sticker` ให้เหมาะกับการใช้งานจริงบนมือถือมากขึ้น โดยเพิ่มหน้าแดชบอร์ด, ปุ่มเมนูแบบขยาย, แถบเมนูล่าง และหน้า setting เบื้องต้นสำหรับร้านค้า รายละเอียดอยู่ใน `docs/MERCHANT_NAV_DASHBOARD_PHASE6B2_TH.md`.
+
+## Phase 6C.5 - Pilot Checklist with Database
+
+เพิ่มกล่อง “Pilot Checklist ก่อนเปิดร้านจริง” ในหน้า Merchant Settings พร้อม table ใหม่ `shop_onboarding_checklists` สำหรับบันทึกสถานะที่เจ้าของร้านยืนยันเอง เช่น ตั้งค่า Rich Menu ใน LINE OA แล้ว, ทดสอบเปิดจากมือถือใน LINE แล้ว, ล้างข้อมูลทดสอบแล้ว และพร้อมเปิด Pilot แล้ว
+
+Migration ที่ต้องรันก่อน deploy code:
+
+```text
+neon/migrations/002_phase_6c5_pilot_checklist.sql
+```
+
+รายละเอียดอยู่ใน `docs/PILOT_CHECKLIST_PHASE6C5_TH.md`.

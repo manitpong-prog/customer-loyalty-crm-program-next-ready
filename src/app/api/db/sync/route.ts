@@ -4,7 +4,7 @@ import { CrmEntity, isDatabaseConfigured, syncEntity } from '../../../../lib/ser
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const allowedEntities = new Set<CrmEntity>(['shops', 'customers', 'rewards', 'banners', 'transactions', 'coupons', 'auditLogs']);
+const allowedEntities = new Set<CrmEntity>(['shops', 'customers', 'rewards', 'banners', 'transactions', 'coupons', 'auditLogs', 'onboardingChecklists']);
 
 export async function POST(request: NextRequest) {
   if (!isDatabaseConfigured()) {

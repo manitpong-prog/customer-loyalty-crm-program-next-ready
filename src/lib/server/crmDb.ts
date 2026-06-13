@@ -1,5 +1,5 @@
 import { neon } from '@neondatabase/serverless';
-import type { AuditLog, Customer, PromoBanner, Reward, Shop, Transaction } from '../../types';
+import type { AuditLog, Customer, PromoBanner, Reward, Shop, ShopOnboardingChecklist, Transaction } from '../../types';
 import {
   INITIAL_BANNERS,
   INITIAL_CUSTOMERS,
@@ -15,7 +15,7 @@ import {
   PILOT_TRANSACTIONS,
 } from '../../data/productionSeed';
 
-export type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons' | 'auditLogs';
+export type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons' | 'auditLogs' | 'onboardingChecklists';
 
 export type GeneratedCoupon = {
   code: string;
@@ -53,6 +53,7 @@ export type CrmSnapshot = {
   transactions: Transaction[];
   coupons: GeneratedCoupon[];
   auditLogs: AuditLog[];
+  onboardingChecklists: ShopOnboardingChecklist[];
 };
 
 const connectionString = process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED || '';
@@ -77,6 +78,7 @@ export const initialSnapshot: CrmSnapshot = {
   transactions: INITIAL_TRANSACTIONS,
   coupons: [],
   auditLogs: [],
+  onboardingChecklists: [],
 };
 
 export async function ensureCrmSchema() {
@@ -209,6 +211,22 @@ export async function ensureCrmSchema() {
     primary key (shop_id, line_user_id)
   )`;
 
+  await sql`create table if not exists shop_onboarding_checklists (
+    id text primary key,
+    shop_id text not null references shops(id) on delete cascade,
+    rich_menu_configured boolean not null default false,
+    tested_in_line_browser boolean not null default false,
+    tested_customer_claim boolean not null default false,
+    tested_reward_redeem boolean not null default false,
+    test_data_cleaned boolean not null default false,
+    reviewed_customer_messages boolean not null default false,
+    ready_for_pilot boolean not null default false,
+    notes text not null default '',
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint shop_onboarding_checklists_shop_unique unique (shop_id)
+  )`;
+
   await sql`create index if not exists idx_rewards_shop_id on rewards(shop_id)`;
   await sql`create index if not exists idx_banners_shop_id on promo_banners(shop_id)`;
   await sql`create index if not exists idx_transactions_user_id on transactions(user_id)`;
@@ -218,7 +236,9 @@ export async function ensureCrmSchema() {
   await sql`create index if not exists idx_audit_logs_created_at on audit_logs(created_at desc)`;
   await sql`create index if not exists idx_customers_line_id on customers(line_id)`;
   await sql`create index if not exists idx_merchant_line_users_line_user_id on merchant_line_users(line_user_id)`;
+  await sql`create index if not exists idx_shop_onboarding_checklists_shop_id on shop_onboarding_checklists(shop_id)`;
 }
+
 
 export type AutoSeedMode = 'pilot' | 'demo' | 'none';
 
@@ -263,7 +283,7 @@ export async function seedInitialDataIfEmpty() {
 export async function getCrmSnapshot(): Promise<CrmSnapshot> {
   const sql = requireSql();
 
-  const [shops, customers, rewards, banners, transactions, coupons, auditLogs] = await Promise.all([
+  const [shops, customers, rewards, banners, transactions, coupons, auditLogs, onboardingChecklists] = await Promise.all([
     sql`select id, name, description, logo, category, points_rate as "pointsRate", is_active as "isActive", registration_status as "registrationStatus", phone, created_at as "createdAt" from shops order by created_at asc`,
     sql`select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds" from customers order by created_at asc`,
     sql`select id, name, image, description, points_cost as "pointsCost", stock, is_available as "isAvailable", shop_id as "shopId" from rewards order by created_at asc`,
@@ -271,6 +291,7 @@ export async function getCrmSnapshot(): Promise<CrmSnapshot> {
     sql`select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", created_at as "createdAt" from transactions order by created_at desc`,
     sql`select code, points, shop_id as "shopId", shop_name as "shopName", description, created_at as "createdAt", expires_at as "expiresAt", is_used as "isUsed", used_by_customer_id as "usedByCustomerId", used_at as "usedAt" from point_coupons order by created_at desc`,
     sql`select id, shop_id as "shopId", shop_name as "shopName", actor_type as "actorType", actor_name as "actorName", actor_id as "actorId", action, action_label as "actionLabel", description, target_type as "targetType", target_id as "targetId", customer_id as "customerId", customer_name as "customerName", points, status, metadata, created_at as "createdAt" from audit_logs order by created_at desc`,
+    sql`select id, shop_id as "shopId", rich_menu_configured as "richMenuConfigured", tested_in_line_browser as "testedInLineBrowser", tested_customer_claim as "testedCustomerClaim", tested_reward_redeem as "testedRewardRedeem", test_data_cleaned as "testDataCleaned", reviewed_customer_messages as "reviewedCustomerMessages", ready_for_pilot as "readyForPilot", notes, created_at as "createdAt", updated_at as "updatedAt" from shop_onboarding_checklists order by created_at asc`,
   ]);
 
   return {
@@ -281,6 +302,7 @@ export async function getCrmSnapshot(): Promise<CrmSnapshot> {
     transactions: transactions as unknown as Transaction[],
     coupons: coupons as unknown as GeneratedCoupon[],
     auditLogs: auditLogs as unknown as AuditLog[],
+    onboardingChecklists: onboardingChecklists as unknown as ShopOnboardingChecklist[],
   };
 }
 
@@ -294,6 +316,7 @@ export async function syncEntity(entity: CrmEntity, rows: unknown[]) {
   if (entity === 'transactions') return syncTransactions(rows as Transaction[]);
   if (entity === 'coupons') return syncCoupons(rows as GeneratedCoupon[]);
   if (entity === 'auditLogs') return syncAuditLogs(rows as AuditLog[]);
+  if (entity === 'onboardingChecklists') return syncOnboardingChecklists(rows as ShopOnboardingChecklist[]);
 
   throw new Error(`Unsupported CRM entity: ${entity}`);
 }
@@ -506,6 +529,69 @@ async function syncAuditLogs(rows: AuditLog[]) {
       status = excluded.status,
       metadata = excluded.metadata,
       created_at = excluded.created_at
+  `;
+}
+
+
+async function syncOnboardingChecklists(rows: ShopOnboardingChecklist[]) {
+  const sql = requireSql();
+  const payload = JSON.stringify(rows);
+
+  await sql`delete from shop_onboarding_checklists where id not in (select id from jsonb_to_recordset(${payload}::jsonb) as x(id text))`;
+  if (!rows.length) return;
+
+  await sql`
+    insert into shop_onboarding_checklists (
+      id,
+      shop_id,
+      rich_menu_configured,
+      tested_in_line_browser,
+      tested_customer_claim,
+      tested_reward_redeem,
+      test_data_cleaned,
+      reviewed_customer_messages,
+      ready_for_pilot,
+      notes,
+      created_at,
+      updated_at
+    )
+    select
+      id,
+      "shopId",
+      coalesce("richMenuConfigured", false),
+      coalesce("testedInLineBrowser", false),
+      coalesce("testedCustomerClaim", false),
+      coalesce("testedRewardRedeem", false),
+      coalesce("testDataCleaned", false),
+      coalesce("reviewedCustomerMessages", false),
+      coalesce("readyForPilot", false),
+      coalesce(notes, ''),
+      coalesce("createdAt"::timestamptz, now()),
+      now()
+    from jsonb_to_recordset(${payload}::jsonb) as x(
+      id text,
+      "shopId" text,
+      "richMenuConfigured" boolean,
+      "testedInLineBrowser" boolean,
+      "testedCustomerClaim" boolean,
+      "testedRewardRedeem" boolean,
+      "testDataCleaned" boolean,
+      "reviewedCustomerMessages" boolean,
+      "readyForPilot" boolean,
+      notes text,
+      "createdAt" text,
+      "updatedAt" text
+    )
+    on conflict (shop_id) do update set
+      rich_menu_configured = excluded.rich_menu_configured,
+      tested_in_line_browser = excluded.tested_in_line_browser,
+      tested_customer_claim = excluded.tested_customer_claim,
+      tested_reward_redeem = excluded.tested_reward_redeem,
+      test_data_cleaned = excluded.test_data_cleaned,
+      reviewed_customer_messages = excluded.reviewed_customer_messages,
+      ready_for_pilot = excluded.ready_for_pilot,
+      notes = excluded.notes,
+      updated_at = now()
   `;
 }
 

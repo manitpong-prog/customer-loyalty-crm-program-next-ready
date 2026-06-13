@@ -1,4 +1,4 @@
-import { Shop, Customer, Reward, PromoBanner, Transaction, AuditLog } from '../types';
+import { Shop, Customer, Reward, PromoBanner, Transaction, AuditLog, ShopOnboardingChecklist } from '../types';
 
 export const INITIAL_SHOPS: Shop[] = [
   {
@@ -362,10 +362,11 @@ const KEYS = {
   TRANSACTIONS: 'crm_platform_transactions',
   COUPONS: 'crm_platform_generated_coupons',
   AUDIT_LOGS: 'crm_platform_audit_logs',
+  ONBOARDING_CHECKLISTS: 'crm_platform_onboarding_checklists',
 } as const;
 
 type SyncableKey = (typeof KEYS)[keyof typeof KEYS];
-type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons' | 'auditLogs';
+type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons' | 'auditLogs' | 'onboardingChecklists';
 
 export type DatabaseBootstrapResult = {
   source: 'neon' | 'local-fallback' | 'error-fallback';
@@ -393,6 +394,7 @@ const KEY_TO_ENTITY: Partial<Record<SyncableKey, CrmEntity>> = {
   [KEYS.TRANSACTIONS]: 'transactions',
   [KEYS.COUPONS]: 'coupons',
   [KEYS.AUDIT_LOGS]: 'auditLogs',
+  [KEYS.ONBOARDING_CHECKLISTS]: 'onboardingChecklists',
 };
 
 function canUseStorage() {
@@ -470,6 +472,9 @@ function seedLocalStorageIfEmpty() {
   if (!window.localStorage.getItem(KEYS.AUDIT_LOGS)) {
     saveStoredData(KEYS.AUDIT_LOGS, [], { sync: false });
   }
+  if (!window.localStorage.getItem(KEYS.ONBOARDING_CHECKLISTS)) {
+    saveStoredData(KEYS.ONBOARDING_CHECKLISTS, [], { sync: false });
+  }
 }
 
 function replaceLocalCacheFromSnapshot(snapshot: {
@@ -480,6 +485,7 @@ function replaceLocalCacheFromSnapshot(snapshot: {
   transactions?: Transaction[];
   coupons?: GeneratedCoupon[];
   auditLogs?: AuditLog[];
+  onboardingChecklists?: ShopOnboardingChecklist[];
 }) {
   saveStoredData(KEYS.SHOPS, snapshot.shops || INITIAL_SHOPS, { sync: false });
   saveStoredData(KEYS.CUSTOMERS, snapshot.customers || INITIAL_CUSTOMERS, { sync: false });
@@ -488,6 +494,7 @@ function replaceLocalCacheFromSnapshot(snapshot: {
   saveStoredData(KEYS.TRANSACTIONS, snapshot.transactions || INITIAL_TRANSACTIONS, { sync: false });
   saveStoredData(KEYS.COUPONS, snapshot.coupons || [], { sync: false });
   saveStoredData(KEYS.AUDIT_LOGS, snapshot.auditLogs || [], { sync: false });
+  saveStoredData(KEYS.ONBOARDING_CHECKLISTS, snapshot.onboardingChecklists || [], { sync: false });
 }
 
 export async function initializeDatabase(): Promise<DatabaseBootstrapResult> {
@@ -583,4 +590,46 @@ export function addAuditLog(log: Omit<AuditLog, 'id' | 'createdAt'> & Partial<Pi
   const logs = getAuditLogs();
   saveAuditLogs([nextLog, ...logs].slice(0, 1000));
   return nextLog;
+}
+
+export function getOnboardingChecklists(): ShopOnboardingChecklist[] {
+  return getStoredData(KEYS.ONBOARDING_CHECKLISTS, [] as ShopOnboardingChecklist[]);
+}
+
+export function saveOnboardingChecklists(checklists: ShopOnboardingChecklist[]) {
+  saveStoredData(KEYS.ONBOARDING_CHECKLISTS, checklists);
+}
+
+export function getOrCreateOnboardingChecklist(shopId: string): ShopOnboardingChecklist {
+  const now = new Date().toISOString();
+  const existing = getOnboardingChecklists().find((item) => item.shopId === shopId);
+  if (existing) return existing;
+
+  return {
+    id: `onboarding_${shopId}`,
+    shopId,
+    richMenuConfigured: false,
+    testedInLineBrowser: false,
+    testedCustomerClaim: false,
+    testedRewardRedeem: false,
+    testDataCleaned: false,
+    reviewedCustomerMessages: false,
+    readyForPilot: false,
+    notes: '',
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function upsertOnboardingChecklist(checklist: ShopOnboardingChecklist) {
+  const now = new Date().toISOString();
+  const checklists = getOnboardingChecklists();
+  const nextChecklist = { ...checklist, updatedAt: now };
+  const exists = checklists.some((item) => item.shopId === checklist.shopId);
+  const next = exists
+    ? checklists.map((item) => (item.shopId === checklist.shopId ? { ...item, ...nextChecklist } : item))
+    : [{ ...nextChecklist, createdAt: checklist.createdAt || now }, ...checklists];
+
+  saveOnboardingChecklists(next);
+  return nextChecklist;
 }
