@@ -20,6 +20,8 @@ import {
   Store,
   ChevronRight,
   Compass,
+  Bell,
+  Home,
 } from "lucide-react";
 import {
   Customer,
@@ -540,6 +542,13 @@ export default function CustomerDashboard({
   const activeShopPointRate = Math.max(1, activeShop?.pointsRate || 10);
   const activeShopWelcomeMessage = activeShop?.welcomeMessage || activeShop?.description || "สะสมแต้ม แลกของรางวัล และรับสิทธิพิเศษจากร้านค้า";
   const activeShopContactText = activeShop?.contactText || activeShop?.phone || "ติดต่อร้านค้าเพื่อสอบถามรายละเอียดเพิ่มเติม";
+  const displayedCustomerName = customer.name || customer.lineName || "สมาชิก";
+  const maskedMemberId = `${(customer.lineId || customer.id).substring(0, 12).toUpperCase()}***`;
+  const expiringPoints = 0;
+  const featuredRewards = rewards.slice(0, 3);
+  const recentTransactions = [...transactions]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 2);
 
   const pendingCouponState = validateCouponForCurrentShop(pendingCoupon);
   const pendingCouponExpiryLabel = pendingCoupon
@@ -991,47 +1000,51 @@ export default function CustomerDashboard({
     <div
       className={
         isProductionView
-          ? "relative min-h-[100dvh] bg-slate-50 font-sans text-slate-800 flex flex-col w-full max-w-md mx-auto overflow-hidden"
-          : "relative min-h-[720px] bg-slate-50 font-sans text-slate-800 flex flex-col max-w-[420px] mx-auto sm:border-[8px] sm:border-slate-800 rounded-[40px] overflow-hidden shadow-[0_25px_60px_-15px_rgba(0,0,0,0.12)] border border-slate-200"
+          ? "relative min-h-[100dvh] bg-[#fbfaf6] font-sans text-[#24120b] flex flex-col w-full max-w-md mx-auto overflow-hidden"
+          : "relative min-h-[720px] bg-[#fbfaf6] font-sans text-[#24120b] flex flex-col max-w-[420px] mx-auto sm:border-[8px] sm:border-[#1f1712] rounded-[40px] overflow-hidden shadow-[0_25px_60px_-15px_rgba(55,36,18,0.18)] border border-[#e7ded2]"
       }
     >
-      {/* LINE OA Browser Frame Header */}
-      <div className="bg-[#06C755] text-white px-4 py-3 flex items-center justify-between select-none shadow-xs border-b border-[#05b04b]">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <div className="w-2.5 h-2.5 rounded-full bg-emerald-200 animate-pulse flex-shrink-0" />
-          <span className="font-bold text-xs tracking-wide truncate">
-            {activeShop?.name || "iM Sticker"}
-          </span>
-        </div>
-        <div className="flex items-center gap-3">
-          {/* Shop Switcher inside customer view to test multi-shops */}
-          {!isProductionView && (
-            <div className="relative">
-              <select
-                value={selectedShopId}
-                onChange={(e) => setSelectedShopId(e.target.value)}
-                className="bg-[#05b04b] text-[10px] text-emerald-50 border-none rounded-lg px-2 py-1 pr-5 appearance-none outline-none focus:ring-1 focus:ring-emerald-300 font-bold cursor-pointer"
-              >
-                {shops.map((s) => (
-                  <option
-                    key={s.id}
-                    value={s.id}
-                    className="bg-white text-slate-800 text-xs"
-                  >
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-              <div className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-100 text-[8px] font-black">
-                ▼
-              </div>
+      {/* Premium customer header */}
+      <div className="bg-[#fbfaf6]/95 px-5 pt-5 pb-3 select-none border-b border-[#eadfce]/70">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-[30px] leading-none font-black tracking-tight text-[#2a140a]">
+                {activeShop?.name || "iM Sticker"}
+              </h1>
+              <Sparkles className="h-5 w-5 text-[#c9942f]" />
             </div>
-          )}
-          {!isProductionView && (
-            <span className="text-white hover:opacity-85 text-xs cursor-pointer font-bold select-none px-1">
-              ✕
-            </span>
-          )}
+            <div className="mt-1 flex items-center gap-2 text-[11px] font-extrabold tracking-wide text-[#6f5b43]">
+              <span className="h-1.5 w-1.5 rotate-45 bg-[#d7a63d]" />
+              <span>สมาชิกสะสมแต้ม</span>
+              <span className="h-1.5 w-1.5 rotate-45 bg-[#d7a63d]" />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {!isProductionView && (
+              <div className="relative">
+                <select
+                  value={selectedShopId}
+                  onChange={(e) => setSelectedShopId(e.target.value)}
+                  className="rounded-2xl border border-[#d6c7b3] bg-white px-3 py-2 pr-7 text-[10px] font-extrabold text-[#3a2116] outline-none shadow-sm appearance-none cursor-pointer"
+                >
+                  {shops.map((s) => (
+                    <option key={s.id} value={s.id} className="bg-white text-slate-800 text-xs">
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-[#9b7651] text-[8px] font-black">
+                  ▼
+                </div>
+              </div>
+            )}
+            <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl border border-[#e6d8c6] bg-white text-[#2a140a] shadow-sm">
+              <Bell className="h-5 w-5" />
+              <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-[#d7a63d] ring-2 ring-white" />
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1071,235 +1084,218 @@ export default function CustomerDashboard({
       </AnimatePresence>
 
       {/* Active Area / Body with flex grow */}
-      <div className="flex-1 overflow-y-auto px-4 pb-20 pt-4 scrollbar-none bg-slate-55">
+      <div className="flex-1 overflow-y-auto px-4 pb-28 pt-4 scrollbar-none bg-[#fbfaf6]">
         {/* TAB 1: HOME */}
         {activeTab === "home" && (
-          <div className="space-y-4">
-            {/* 🏅 Premium Gold/Platinum สมาชิก Card Card */}
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 0.4 }}
-              className="relative p-5 rounded-[24px] overflow-hidden shadow-[0_15px_30px_-5px_rgba(184,129,30,0.25)] border border-amber-500/20 text-stone-900"
-              style={{
-                background:
-                  "linear-gradient(135deg, #FFE8A3 0%, #F5CE62 30%, #DFAC4C 65%, #B8811E 100%)",
-              }}
-            >
-              {/* Metallic Card Shimmer Glow Overlay */}
-              <div className="absolute inset-0 gold-shimmer opacity-85 pointer-events-none" />
+          <div className="space-y-5">
+            {/* Member greeting */}
+            <section className="rounded-[28px] border border-[#eadfce] bg-white/80 p-4 shadow-[0_18px_38px_-26px_rgba(60,32,12,0.45)]">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="relative shrink-0">
+                    <div className="h-20 w-20 overflow-hidden rounded-full border-[3px] border-[#e7bf69] bg-white shadow-[0_10px_30px_-18px_rgba(55,36,18,0.55)]">
+                      <img
+                        src={customer.avatar}
+                        alt={displayedCustomerName}
+                        className="h-full w-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#06C755] text-[8px] font-black text-white shadow-md">
+                      LINE
+                    </div>
+                  </div>
 
-              {/* Card Hologram Icon */}
-              <div className="absolute top-4 right-4 bg-stone-900/10 border border-stone-900/10 p-1.5 rounded-lg text-amber-950">
-                <Sparkles className="w-5 h-5 animate-pulse" />
-              </div>
-
-              {/* Card Title */}
-              <div className="flex flex-col">
-                <span className="text-[9px] tracking-wider uppercase opacity-75 text-amber-950 font-bold font-mono">
-                  บัตรสมาชิก iM Sticker
-                </span>
-                <span className="text-base font-black tracking-tight text-amber-950 italic">
-                  {customer.tier === "Platinum"
-                    ? "⭐️ สมาชิก PLATINUM"
-                    : "👑 สมาชิก GOLD"}
-                </span>
-              </div>
-
-              {/* Card Details / QR Button */}
-              <div className="mt-8 flex justify-between items-end">
-                <div className="space-y-0.5">
-                  <p className="text-[9px] text-amber-900/80 font-bold">
-                    ชื่อสมาชิก
-                  </p>
-                  <p className="font-extrabold text-sm text-stone-900">
-                    {customer.name}
-                  </p>
-                  <p className="text-[10px] font-mono text-amber-950/70 mt-1.5 font-bold tracking-widest">
-                    {customer.lineId.substring(0, 10).toUpperCase()}***
-                  </p>
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-bold text-[#5f5144]">สวัสดีค่ะ</p>
+                    <h2 className="mt-0.5 truncate text-[22px] font-black leading-tight tracking-tight text-[#24120b]">
+                      {displayedCustomerName}
+                    </h2>
+                    <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[#d6c7b3] bg-[#fbf7ef] px-3 py-1 text-[10px] font-black text-[#4a3626] shadow-sm">
+                      <Award className="h-3.5 w-3.5 text-[#b8872d]" />
+                      {customer.tier.toUpperCase()} MEMBER
+                    </div>
+                  </div>
                 </div>
 
                 <button
-                  onClick={() => setShowQrModal(true)}
-                  className="bg-stone-900 hover:bg-black text-amber-300 border border-stone-800 p-2.5 rounded-2xl transition duration-250 active:scale-95 flex flex-col items-center justify-center gap-1 group shadow-md"
+                  type="button"
+                  onClick={() => setActiveTab("code")}
+                  className="shrink-0 rounded-2xl border border-[#3b2b21] bg-white px-3.5 py-2.5 text-[11px] font-black text-[#2b1a12] shadow-[0_10px_28px_-24px_rgba(43,26,18,0.5)] transition active:scale-[0.98]"
                 >
-                  <QrCode className="w-5 h-5 group-hover:scale-110 text-amber-400" />
-                  <span className="text-[9px] font-black text-amber-200">
-                    สะสมแต้ม
+                  <span className="flex items-center gap-1.5">
+                    <QrCode className="h-4 w-4 text-[#9b7651]" />
+                    รับแต้ม
                   </span>
                 </button>
               </div>
+            </section>
 
-              {/* Bottom footer bar on Card */}
-              <div className="mt-4 pt-3 border-t border-amber-900/15 flex justify-between text-[11px] text-amber-950 font-bold">
-                <span>แต้มที่ใช้ได้ตอนนี้</span>
-                <span className="font-mono text-stone-950 font-extrabold text-xs">
-                  {customer.currentPoints} แต้ม
-                </span>
-              </div>
-            </motion.div>
+            {/* Platinum member card */}
+            <motion.section
+              initial={{ scale: 0.97, opacity: 0, y: 8 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              transition={{ duration: 0.35 }}
+              className="relative overflow-hidden rounded-[26px] border border-[#c9a45b] bg-[#f9f2e6] p-5 text-[#2a140a] shadow-[0_24px_44px_-28px_rgba(85,54,19,0.65)]"
+              style={{
+                background:
+                  "radial-gradient(circle at 9% 12%, rgba(232, 185, 90, 0.72), rgba(255,255,255,0) 33%), radial-gradient(circle at 92% 18%, rgba(216, 219, 221, 0.92), rgba(255,255,255,0) 36%), linear-gradient(135deg, #f8df9d 0%, #fffaf0 45%, #e7e7e7 100%)",
+              }}
+            >
+              <div className="pointer-events-none absolute -left-16 top-8 h-40 w-72 rotate-[-15deg] rounded-full border border-white/55 opacity-60" />
+              <div className="pointer-events-none absolute -right-20 top-10 h-44 w-80 rotate-[-18deg] rounded-full border border-white/70 opacity-80" />
+              <div className="pointer-events-none absolute inset-0 gold-shimmer opacity-45" />
 
-            {isProductionView && (
-              <div className="bg-white border border-slate-200/70 rounded-3xl p-4 shadow-xs flex gap-3 items-start">
-                <div className="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-700 shrink-0">
-                  <Store className="w-5 h-5" />
-                </div>
-                <div className="min-w-0 space-y-1">
-                  <p className="text-xs font-black text-slate-950">
-                    {activeShop?.name || "iM Sticker"}
-                  </p>
-                  <p className="text-[11px] leading-relaxed text-slate-600 font-medium">
-                    {activeShopWelcomeMessage}
-                  </p>
+              <div className="relative flex justify-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#d6a846]/50 bg-[#c89435] text-white shadow-lg">
+                  <Award className="h-7 w-7" />
                 </div>
               </div>
-            )}
+
+              <div className="relative mt-3 text-center">
+                <p className="text-[11px] font-black tracking-[0.16em] text-[#a8761f]">LOYALTY PRIVILEGE CLUB</p>
+                <h3 className="mt-1 text-[22px] font-black tracking-wide text-[#2a140a]">
+                  {customer.tier.toUpperCase()} VIP MEMBER
+                </h3>
+                <div className="mx-auto mt-2 h-px w-24 bg-gradient-to-r from-transparent via-[#c89a45] to-transparent" />
+              </div>
+
+              <div className="relative mt-5 grid grid-cols-[1fr_1.35fr_1fr] items-end gap-3">
+                <div className="space-y-1 border-r border-[#d8c4a2] pr-3">
+                  <p className="text-[10px] font-black uppercase tracking-wide text-[#836848]">MEMBER ID</p>
+                  <p className="break-all font-mono text-[11px] font-black text-[#2a140a]">{maskedMemberId}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-[12px] font-black text-[#4f3c2c]">แต้มคงเหลือ</p>
+                  <p className="mt-0.5 font-mono text-[46px] font-black leading-none tracking-tight text-[#24120b]">
+                    {customer.currentPoints.toLocaleString()}
+                  </p>
+                  <p className="mt-1 text-[12px] font-black text-[#4f3c2c]">คะแนน</p>
+                </div>
+                <div className="space-y-1 border-l border-[#d8c4a2] pl-3 text-right">
+                  <p className="text-[10px] font-black uppercase tracking-wide text-[#836848]">VALID THRU</p>
+                  <p className="text-[11px] font-black text-[#2a140a]">31 ธ.ค. 2568</p>
+                </div>
+              </div>
+
+              <div className="relative mt-5 flex items-center justify-between border-t border-[#d8c4a2] pt-3 text-[12px] font-black">
+                <span className="text-[#4f3c2c]">แต้มใกล้หมดอายุใน 30 วัน</span>
+                <span className="text-red-600">{expiringPoints.toLocaleString()} คะแนน</span>
+              </div>
+            </motion.section>
+
+            {/* Quick stats */}
+            <section className="grid grid-cols-3 gap-2.5">
+              {[
+                { icon: Coffee, label: "แต้มคงเหลือ", value: customer.currentPoints.toLocaleString(), suffix: "คะแนน" },
+                { icon: Sparkles, label: "แต้มสะสมทั้งหมด", value: customer.lifetimePoints.toLocaleString(), suffix: "คะแนน" },
+                { icon: Clock, label: "แต้มใกล้หมดอายุ", value: expiringPoints.toLocaleString(), suffix: "คะแนน", danger: true },
+              ].map((item) => (
+                <div key={item.label} className="rounded-2xl border border-[#eadfce] bg-white p-3 shadow-[0_14px_34px_-30px_rgba(55,36,18,0.5)]">
+                  <div className="mb-2 flex h-9 w-9 items-center justify-center rounded-full bg-[radial-gradient(circle_at_30%_30%,#8a6936,#2d2119)] text-white shadow-sm">
+                    <item.icon className="h-4 w-4" />
+                  </div>
+                  <p className="text-[9px] font-extrabold leading-tight text-[#5f5144]">{item.label}</p>
+                  <p className={`mt-1 font-mono text-[18px] font-black leading-none ${item.danger ? "text-red-600" : "text-[#24120b]"}`}>{item.value}</p>
+                  <p className="mt-0.5 text-[9px] font-bold text-[#6f6254]">{item.suffix}</p>
+                </div>
+              ))}
+            </section>
 
             {activeShop?.isActive === false && (
-              <div className="bg-rose-50 border border-rose-200 rounded-3xl p-4 text-xs text-rose-800 font-bold">
+              <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-800">
                 ร้านนี้ปิดใช้งานชั่วคราว บางฟังก์ชันอาจยังไม่เปิดให้ใช้งาน กรุณาติดต่อร้านก่อนรับแต้มหรือแลกรางวัล
               </div>
             )}
 
-            {/* Loyalty points details and Quick Stats */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-white border border-slate-200/60 rounded-2xl p-3.5 flex flex-col shadow-2xs">
-                <span className="text-[10px] text-slate-455 font-bold">
-                  แต้มใช้แลกรางวัล
-                </span>
-                <span className="text-xl font-extrabold text-amber-600 font-mono mt-0.5">
-                  {customer.currentPoints}{" "}
-                  <span className="text-xs font-semibold text-slate-400">
-                    แต้ม
-                  </span>
-                </span>
+            {/* Recommended rewards */}
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-black tracking-tight text-[#24120b]">รางวัลแนะนำ</h3>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("rewards")}
+                  className="flex items-center gap-1 text-[12px] font-black text-[#4a3626]"
+                >
+                  ดูทั้งหมด <ChevronRight className="h-4 w-4" />
+                </button>
               </div>
-              <div className="bg-white border border-slate-200/60 rounded-2xl p-3.5 flex flex-col shadow-2xs">
-                <span className="text-[10px] text-slate-455 font-bold">
-                  แต้มสะสมทั้งหมด
-                </span>
-                <span className="text-xl font-extrabold text-slate-800 font-mono mt-0.5">
-                  {customer.lifetimePoints}{" "}
-                  <span className="text-xs font-semibold text-slate-400">
-                    แต้ม
-                  </span>
-                </span>
-              </div>
-            </div>
 
-            {isProductionView ? (
-              <div className="bg-white border border-slate-200/70 rounded-2xl p-4 space-y-2.5 shadow-2xs">
-                <div className="flex justify-between items-center text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="w-4 h-4 text-amber-500" />
-                    <span className="font-extrabold text-slate-800">
-                      แต้มใกล้หมดอายุ
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-slate-500 font-medium">
-                    ภายใน 30 วัน
-                  </span>
-                </div>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <span className="text-2xl font-black font-mono text-slate-900">0</span>
-                    <span className="ml-1 text-xs font-bold text-slate-500">แต้ม</span>
-                  </div>
-                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-extrabold text-emerald-700 border border-emerald-100">
-                    ยังไม่มีแต้มใกล้หมดอายุ
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="bg-white border border-slate-200/60 rounded-2xl p-4 space-y-2.5 shadow-2xs">
-                <div className="flex justify-between items-center text-xs">
-                  <div className="flex items-center gap-1.5">
-                    <Award className="w-4 h-4 text-amber-500" />
-                    <span className="font-extrabold text-slate-800">
-                      ระดับสมาชิก
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-slate-500 font-medium">
-                    {customer.tier === "Platinum"
-                      ? "คุณอยู่ระดับ Platinum แล้ว"
-                      : `สะสมอีก ${tierInfo.target - customer.currentPoints} เพื่ออัปเกรด`}
-                  </span>
-                </div>
-
-                <div className="w-full bg-slate-100 rounded-full h-2">
-                  <div
-                    className={`bg-linear-to-r ${tierInfo.color} h-2 rounded-full`}
-                    style={{
-                      width: `${customer.tier === "Platinum" ? 100 : pointsProgress}%`,
-                    }}
-                  />
-                </div>
-
-                <div className="flex justify-between text-[9px] text-slate-400 font-mono font-bold">
-                  <span>SILVER (0)</span>
-                  <span>GOLD (300)</span>
-                  <span>PLATINUM (1000)</span>
-                </div>
-              </div>
-            )}
-
-            {/* Quick Promo Store Swiper Header */}
-            <div className="flex justify-between items-center pt-2">
-              <h3 className="text-xs font-extrabold text-slate-800 uppercase tracking-widest">
-                สิทธิพิเศษและของรางวัล
-              </h3>
-              <span
-                className="text-[10px] text-amber-600 font-bold flex items-center gap-0.5 cursor-pointer hover:underline"
-                onClick={() => setActiveTab("rewards")}
-              >
-                ดูรางวัลทั้งหมด <ChevronRight className="w-3 h-3" />
-              </span>
-            </div>
-
-            {/* Active Store Promotions slider */}
-            <div className="space-y-3">
-              {banners.map((ban) => {
-                const isVisiblePromo = ban.isAd || ban.shopId === selectedShopId;
-                if (!isVisiblePromo) return null;
-                return (
-                  <div
-                    key={ban.id}
-                    className="group bg-white border border-slate-200/60 rounded-2xl overflow-hidden hover:border-slate-350 transition shadow-xs"
+              <div className="grid grid-cols-3 gap-2.5">
+                {featuredRewards.map((rew, index) => (
+                  <button
+                    key={rew.id}
+                    type="button"
+                    onClick={() => selectRewardForRedeem(rew)}
+                    className="overflow-hidden rounded-2xl border border-[#eadfce] bg-white text-left shadow-[0_14px_32px_-30px_rgba(55,36,18,0.55)] transition active:scale-[0.98]"
                   >
-                    <div className="h-28 overflow-hidden relative">
-                      <img
-                        src={ban.image}
-                        alt={ban.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
-                        referrerPolicy="no-referrer"
-                      />
-                      <span
-                        className={`absolute top-2 right-2 text-[8px] font-black uppercase px-2.5 py-1 rounded-full text-white shadow-sm ${ban.isAd ? "bg-amber-500 text-stone-950" : "bg-[#06C755]"}`}
-                      >
-                        {ban.isAd ? "แนะนำ" : "โปรโมชัน"}
-                      </span>
+                    <div className="relative h-20 overflow-hidden bg-[#f5eee4]">
+                      <img src={rew.image} alt={rew.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                      {index === 0 && (
+                        <span className="absolute left-1.5 top-1.5 rounded-full bg-[#2a140a]/90 px-2 py-0.5 text-[8px] font-black text-[#f4c767]">
+                          ยอดนิยม
+                        </span>
+                      )}
                     </div>
-                    <div className="p-3.5 space-y-1">
-                      <h4 className="text-xs font-extrabold text-slate-900">
-                        {ban.title}
-                      </h4>
-                      <p className="text-[10.5px] text-slate-500 line-clamp-2 leading-relaxed">
-                        {ban.description}
-                      </p>
-                      <div className="flex justify-between items-center pt-1 text-[9px] text-slate-400 font-mono font-semibold">
-                        <span>หมดเขต: {ban.expirationDate}</span>
-                        {ban.isAd && (
-                          <span className="text-amber-600 underline">
-                            ดูรายละเอียดเพิ่มเติม
-                          </span>
-                        )}
+                    <div className="space-y-1 p-2.5">
+                      <p className="line-clamp-2 min-h-[28px] text-[10px] font-black leading-tight text-[#24120b]">{rew.name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#d9a72f] text-[9px] font-black text-white">P</span>
+                        <span className="font-mono text-[12px] font-black text-[#2a140a]">{rew.pointsCost.toLocaleString()}</span>
+                        <span className="text-[9px] font-bold text-[#5f5144]">คะแนน</span>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {/* Latest history */}
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-black tracking-tight text-[#24120b]">ประวัติล่าสุด</h3>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("history")}
+                  className="flex items-center gap-1 text-[12px] font-black text-[#4a3626]"
+                >
+                  ดูทั้งหมด <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="overflow-hidden rounded-3xl border border-[#eadfce] bg-white shadow-[0_14px_34px_-30px_rgba(55,36,18,0.45)]">
+                {recentTransactions.length > 0 ? (
+                  recentTransactions.map((t, index) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setActiveTab("history")}
+                      className={`flex w-full items-center justify-between gap-3 p-3 text-left ${index > 0 ? "border-t border-[#efe6d8]" : ""}`}
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f3eee7] text-[#4a2a18]">
+                          {t.type === "earn" ? <Coffee className="h-5 w-5" /> : <Gift className="h-5 w-5" />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="truncate text-[12px] font-black text-[#24120b]">{t.description}</p>
+                          <p className="mt-0.5 text-[10px] font-semibold text-[#7a6b5b]">
+                            {new Date(t.createdAt).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <span className={`font-mono text-[13px] font-black ${t.type === "earn" ? "text-[#16833a]" : "text-red-600"}`}>
+                          {t.type === "earn" ? `+${t.points}` : `-${t.points}`} คะแนน
+                        </span>
+                        <ChevronRight className="h-4 w-4 text-[#7a6b5b]" />
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="p-5 text-center text-[12px] font-bold text-[#7a6b5b]">ยังไม่มีประวัติล่าสุด</div>
+                )}
+              </div>
+            </section>
           </div>
         )}
 
@@ -1308,7 +1304,7 @@ export default function CustomerDashboard({
           <div className="space-y-4">
             <div className="space-y-1">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                <Gift className="w-4 h-4 text-amber-550" />
+                <Gift className="w-4 h-4 text-amber-600" />
                 ของรางวัลจากร้าน {activeShop?.name}
               </h3>
               <p className="text-[10px] text-slate-500 font-medium font-sans">
@@ -1317,7 +1313,7 @@ export default function CustomerDashboard({
             </div>
 
             {/* Active Shop details banner inside rewards */}
-            <div className="bg-white border border-slate-200/60 rounded-2xl p-3 flex items-center gap-3 shadow-2xs">
+            <div className="bg-white border border-slate-200/60 rounded-2xl p-3 flex items-center gap-3 shadow-sm">
               <img
                 src={activeShop?.logo}
                 className="w-10 h-10 rounded-full object-cover border border-slate-100"
@@ -1341,7 +1337,7 @@ export default function CustomerDashboard({
                   <div
                     key={rew.id}
                     onClick={() => selectRewardForRedeem(rew)}
-                    className="bg-white border border-slate-200/60 hover:border-slate-350 rounded-2xl overflow-hidden flex flex-col h-[210px] cursor-pointer transition active:scale-97 shadow-2xs"
+                    className="bg-white border border-slate-200/60 hover:border-slate-300 rounded-2xl overflow-hidden flex flex-col h-[210px] cursor-pointer transition active:scale-[0.97] shadow-sm"
                   >
                     <div className="h-24 relative overflow-hidden">
                       <img
@@ -1381,8 +1377,8 @@ export default function CustomerDashboard({
             </div>
 
             {rewards.length === 0 && (
-              <div className="p-8 text-center text-slate-400 border border-dashed border-slate-250 rounded-2xl bg-white space-y-2.5 shadow-2xs">
-                <Gift className="w-8 h-8 mx-auto stroke-1 text-slate-350" />
+              <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-white space-y-2.5 shadow-sm">
+                <Gift className="w-8 h-8 mx-auto stroke-1 text-slate-300" />
                 <p className="text-xs font-semibold">
                   ตอนนี้ยังไม่มีของรางวัลให้แลก
                 </p>
@@ -1405,7 +1401,7 @@ export default function CustomerDashboard({
             </div>
 
             {pendingCoupon && (
-              <div className={`rounded-3xl border p-4.5 shadow-xs space-y-3.5 ${pendingCouponState === "ready"
+              <div className={`rounded-3xl border p-4.5 shadow-sm space-y-3.5 ${pendingCouponState === "ready"
                 ? "bg-emerald-50 border-emerald-200"
                 : "bg-rose-50 border-rose-200"
                 }`}>
@@ -1474,7 +1470,7 @@ export default function CustomerDashboard({
             {/* Manual Promo code entry */}
             <form
               onSubmit={handlePromoSubmit}
-              className="bg-white border border-slate-200/80 p-4.5 rounded-3xl space-y-3.5 shadow-xs"
+              className="bg-white border border-slate-200/80 p-4.5 rounded-3xl space-y-3.5 shadow-sm"
             >
               <div className="space-y-1.5">
                 <label className="text-[11px] font-bold text-slate-700">
@@ -1556,7 +1552,7 @@ export default function CustomerDashboard({
 
             {/* QR Scan Simulation interface - hidden from production customer route */}
             {!isProductionView && (
-              <div className="bg-white border border-slate-200/80 p-4.5 rounded-3xl space-y-3.5 shadow-xs">
+              <div className="bg-white border border-slate-200/80 p-4.5 rounded-3xl space-y-3.5 shadow-sm">
                 <div className="flex justify-between items-center">
                   <h4 className="text-xs font-extrabold text-slate-800">
                     สแกนคิวอาร์โค้ดรับแต้มหน้าร้าน
@@ -1574,7 +1570,7 @@ export default function CustomerDashboard({
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <div className="w-12 h-12 bg-white border border-slate-200 rounded-xl flex items-center justify-center mx-auto text-amber-550 shadow-2xs">
+                      <div className="w-12 h-12 bg-white border border-slate-200 rounded-xl flex items-center justify-center mx-auto text-amber-600 shadow-sm">
                         <QrCode className="w-7 h-7" />
                       </div>
                       <p className="text-xs font-semibold text-slate-500">
@@ -1635,7 +1631,7 @@ export default function CustomerDashboard({
           <div className="space-y-4">
             <div className="space-y-1">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                <History className="w-4 h-4 text-amber-550" />
+                <History className="w-4 h-4 text-amber-600" />
                 ประวัติของคุณ
               </h3>
               <p className="text-[10px] text-slate-500 font-medium font-sans">
@@ -1648,14 +1644,14 @@ export default function CustomerDashboard({
               <button
                 type="button"
                 onClick={() => setHistorySubTab("earn")}
-                className={`flex-1 text-center py-2.5 font-bold transition duration-155 cursor-pointer ${historySubTab === "earn" ? "text-amber-600 border-b-2 border-amber-600" : "text-slate-450 hover:text-slate-750"}`}
+                className={`flex-1 text-center py-2.5 font-bold transition duration-155 cursor-pointer ${historySubTab === "earn" ? "text-amber-600 border-b-2 border-amber-600" : "text-slate-500 hover:text-slate-700"}`}
               >
                 การสะสมแต้ม
               </button>
               <button
                 type="button"
                 onClick={() => setHistorySubTab("redeem")}
-                className={`flex-1 text-center py-2.5 font-bold transition duration-155 cursor-pointer ${historySubTab === "redeem" ? "text-amber-600 border-b-2 border-amber-600" : "text-slate-450 hover:text-slate-750"}`}
+                className={`flex-1 text-center py-2.5 font-bold transition duration-155 cursor-pointer ${historySubTab === "redeem" ? "text-amber-600 border-b-2 border-amber-600" : "text-slate-500 hover:text-slate-700"}`}
               >
                 ประวัติแลกของรางวัล
               </button>
@@ -1672,7 +1668,7 @@ export default function CustomerDashboard({
                 .map((t) => (
                   <div
                     key={t.id}
-                    className="bg-white border border-slate-200/60 rounded-2xl p-3.5 space-y-2 shadow-2xs"
+                    className="bg-white border border-slate-200/60 rounded-2xl p-3.5 space-y-2 shadow-sm"
                   >
                     <div className="flex justify-between items-start text-xs">
                       <div>
@@ -1692,7 +1688,7 @@ export default function CustomerDashboard({
 
                       {/* Point numeric visual */}
                       <span
-                        className={`font-mono font-black text-sm ${t.type === "earn" ? "text-emerald-600" : "text-rose-650"}`}
+                        className={`font-mono font-black text-sm ${t.type === "earn" ? "text-emerald-600" : "text-rose-600"}`}
                       >
                         {t.type === "earn" ? `+${t.points}` : `-${t.points}`}
                       </span>
@@ -1758,7 +1754,7 @@ export default function CustomerDashboard({
                             <button
                               type="button"
                               onClick={() => handleCopyRedeemLink(t)}
-                              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[10px] font-black text-slate-700 active:scale-95 transition flex items-center justify-center gap-1.5 shadow-xs"
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[10px] font-black text-slate-700 active:scale-95 transition flex items-center justify-center gap-1.5 shadow-sm"
                             >
                               {copiedRedeemLinkId === t.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                               {copiedRedeemLinkId === t.id ? "คัดลอกแล้ว" : "คัดลอกลิงก์"}
@@ -1775,8 +1771,8 @@ export default function CustomerDashboard({
                   ? t.type === "earn"
                   : t.type === "redeem",
               ).length === 0 && (
-                  <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-white shadow-2xs space-y-1">
-                    <History className="w-8 h-8 mx-auto stroke-1 text-slate-350" />
+                  <div className="p-8 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-white shadow-sm space-y-1">
+                    <History className="w-8 h-8 mx-auto stroke-1 text-slate-300" />
                     <p className="text-xs mt-2 font-bold text-slate-500">
                       {historySubTab === "earn" ? "ยังไม่มีประวัติรับแต้ม" : "ยังไม่มีประวัติแลกรางวัล"}
                     </p>
@@ -1796,7 +1792,7 @@ export default function CustomerDashboard({
           <div className="space-y-4">
             <div className="space-y-1">
               <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                <User className="w-4 h-4 text-amber-550" />
+                <User className="w-4 h-4 text-amber-600" />
                 โปรไฟล์สมาชิก
               </h3>
               <p className="text-[10px] text-slate-500 font-medium">
@@ -1804,7 +1800,7 @@ export default function CustomerDashboard({
               </p>
             </div>
 
-            <div className="bg-white border border-slate-200/70 rounded-3xl p-4 shadow-xs space-y-3">
+            <div className="bg-white border border-slate-200/70 rounded-3xl p-4 shadow-sm space-y-3">
               <div className="flex items-center gap-3">
                 <img
                   src={customer.avatar}
@@ -1834,7 +1830,7 @@ export default function CustomerDashboard({
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200/70 rounded-3xl p-4 shadow-xs">
+            <div className="bg-white border border-slate-200/70 rounded-3xl p-4 shadow-sm">
               <p className="text-[10px] font-black text-slate-500">ติดต่อร้าน</p>
               <p className="text-xs font-bold text-slate-800 mt-1 leading-relaxed">{activeShopContactText}</p>
             </div>
@@ -1842,7 +1838,7 @@ export default function CustomerDashboard({
             {/* Profile editing form */}
             <form
               onSubmit={handleUpdateProfile}
-              className="bg-white border border-slate-200/80 p-4.5 rounded-3xl space-y-4 shadow-xs"
+              className="bg-white border border-slate-200/80 p-4.5 rounded-3xl space-y-4 shadow-sm"
             >
               <div className="flex items-center gap-3.5 pb-3.5 border-b border-slate-100">
                 <img
@@ -1857,7 +1853,7 @@ export default function CustomerDashboard({
                   <p className="text-[9px] text-slate-400 font-mono font-semibold">
                     ข้อมูลจาก LINE
                   </p>
-                  <span className="inline-block mt-1 bg-amber-500/10 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full border border-amber-500/20 shadow-2xs">
+                  <span className="inline-block mt-1 bg-amber-500/10 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full border border-amber-500/20 shadow-sm">
                     👑 ระดับ {customer.tier}
                   </span>
                 </div>
@@ -1911,7 +1907,7 @@ export default function CustomerDashboard({
             </form>
 
             {/* Level Privileges Info Card */}
-            <div className="bg-amber-50/50 border border-amber-200/65 p-4 rounded-2xl space-y-2.5 text-[10.5px] shadow-2xs">
+            <div className="bg-amber-50/50 border border-amber-200/65 p-4 rounded-2xl space-y-2.5 text-[10.5px] shadow-sm">
               <span className="text-[11px] font-extrabold text-amber-900">
                 สิทธิพิเศษประจำระดับ {customer.tier} :
               </span>
@@ -1938,54 +1934,58 @@ export default function CustomerDashboard({
         )}
       </div>
 
-      {/* FIXED FOOTER TAB MENU (Like Line LIFF Menu) */}
-      <div className="fixed bottom-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-md border-t border-slate-200/85 flex justify-around items-center select-none z-50 shadow-lg pb-[max(0px,env(safe-area-inset-bottom))] box-content">
-        <button
-          type="button"
-          onClick={() => setActiveTab("home")}
-          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "home" ? "text-amber-600 font-extrabold scale-105" : "text-slate-450 hover:text-slate-700"}`}
-        >
-          <Compass className="w-5 h-5 font-bold" />
-          <span className="text-[9px] font-bold font-sans">หน้าแรก</span>
-        </button>
+      {/* FIXED FOOTER TAB MENU (Premium customer theme) */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 px-3 pb-[max(12px,env(safe-area-inset-bottom))] pt-2 select-none">
+        <div className="relative mx-auto flex h-[74px] max-w-md items-center justify-around rounded-[28px] border border-[#e5dccf] bg-white/95 shadow-[0_18px_42px_-22px_rgba(36,18,11,0.45)] backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={() => setActiveTab("home")}
+            className={`relative flex h-full w-14 flex-col items-center justify-center gap-1 transition ${activeTab === "home" ? "text-[#24120b]" : "text-[#5f6368]"}`}
+          >
+            <Home className={`h-5 w-5 ${activeTab === "home" ? "fill-[#20314b] stroke-[#20314b]" : "stroke-[#5f6368]"}`} />
+            <span className="text-[10px] font-black">หน้าแรก</span>
+            {activeTab === "home" && <span className="absolute bottom-2 h-1 w-7 rounded-full bg-[#20314b]" />}
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("rewards")}
-          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "rewards" ? "text-amber-600 font-extrabold scale-105" : "text-slate-450 hover:text-slate-700"}`}
-        >
-          <Gift className="w-5 h-5 font-bold" />
-          <span className="text-[9px] font-bold font-sans">รางวัล</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("rewards")}
+            className={`relative flex h-full w-14 flex-col items-center justify-center gap-1 transition ${activeTab === "rewards" ? "text-[#24120b]" : "text-[#5f6368]"}`}
+          >
+            <Gift className={`h-5 w-5 ${activeTab === "rewards" ? "stroke-[#20314b]" : "stroke-[#5f6368]"}`} />
+            <span className="text-[10px] font-black">รางวัล</span>
+            {activeTab === "rewards" && <span className="absolute bottom-2 h-1 w-7 rounded-full bg-[#20314b]" />}
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("code")}
-          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "code" ? "text-amber-600 font-extrabold scale-105" : "text-slate-450 hover:text-slate-700"}`}
-        >
-          <QrCode className="w-5 h-5 scale-110 text-emerald-600" />
-          <span className="text-[9px] font-bold font-sans text-emerald-600">
-            รับแต้ม
-          </span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("code")}
+            className="-mt-9 flex h-[74px] w-[74px] flex-col items-center justify-center gap-1 rounded-full border-[3px] border-[#f6e1a7] bg-[radial-gradient(circle_at_35%_20%,#30496c,#111a29)] text-white shadow-[0_16px_32px_-14px_rgba(17,26,41,0.85)] transition active:scale-[0.97]"
+          >
+            <QrCode className="h-6 w-6" />
+            <span className="text-[10px] font-black leading-none">รับแต้ม</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("history")}
-          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "history" ? "text-amber-600 font-extrabold scale-105" : "text-slate-450 hover:text-slate-700"}`}
-        >
-          <History className="w-5 h-5 font-bold" />
-          <span className="text-[9px] font-bold font-sans">ประวัติ</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("history")}
+            className={`relative flex h-full w-14 flex-col items-center justify-center gap-1 transition ${activeTab === "history" ? "text-[#24120b]" : "text-[#5f6368]"}`}
+          >
+            <History className={`h-5 w-5 ${activeTab === "history" ? "stroke-[#20314b]" : "stroke-[#5f6368]"}`} />
+            <span className="text-[10px] font-black">ประวัติ</span>
+            {activeTab === "history" && <span className="absolute bottom-2 h-1 w-7 rounded-full bg-[#20314b]" />}
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveTab("profile")}
-          className={`flex flex-col items-center justify-center gap-1 w-14 h-full cursor-pointer transition duration-150 ${activeTab === "profile" ? "text-amber-600 font-extrabold scale-105" : "text-slate-450 hover:text-slate-700"}`}
-        >
-          <User className="w-5 h-5 font-bold" />
-          <span className="text-[9px] font-bold font-sans">โปรไฟล์</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("profile")}
+            className={`relative flex h-full w-14 flex-col items-center justify-center gap-1 transition ${activeTab === "profile" ? "text-[#24120b]" : "text-[#5f6368]"}`}
+          >
+            <User className={`h-5 w-5 ${activeTab === "profile" ? "stroke-[#20314b]" : "stroke-[#5f6368]"}`} />
+            <span className="text-[10px] font-black">โปรไฟล์</span>
+            {activeTab === "profile" && <span className="absolute bottom-2 h-1 w-7 rounded-full bg-[#20314b]" />}
+          </button>
+        </div>
       </div>
 
       {/* POPUP 1: Card Details QR Modal */}
@@ -2132,14 +2132,14 @@ export default function CustomerDashboard({
                         type="button"
                         onClick={handleConfirmRedeem}
                         disabled={isRedeeming}
-                        className="w-full bg-amber-550 hover:bg-amber-600 text-white font-extrabold text-xs py-3 rounded-xl transition duration-150 active:scale-95 text-center block cursor-pointer shadow-md"
+                        className="w-full bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-3 rounded-xl transition duration-150 active:scale-95 text-center block cursor-pointer shadow-md"
                       >
                         {isRedeeming
                           ? "กำลังส่งคำขอ..."
                           : "ยืนยันแลกรางวัล"}
                       </button>
                     ) : (
-                      <div className="text-center p-3 bg-rose-50 border border-rose-100 rounded-xl text-[10px] text-rose-650 font-bold">
+                      <div className="text-center p-3 bg-rose-50 border border-rose-100 rounded-xl text-[10px] text-rose-600 font-bold">
                         แต้มของคุณยังไม่พอสำหรับรางวัลนี้
                       </div>
                     )}
@@ -2157,7 +2157,7 @@ export default function CustomerDashboard({
                     </div>
 
                     {latestRedeemTransaction && (
-                      <div className="rounded-2xl bg-white border border-emerald-100 p-3 text-left space-y-2 shadow-xs">
+                      <div className="rounded-2xl bg-white border border-emerald-100 p-3 text-left space-y-2 shadow-sm">
                         <p className="text-[9px] font-black text-emerald-700 uppercase tracking-wider">
                           ลิงก์สำหรับส่งให้ร้านค้า
                         </p>
@@ -2284,7 +2284,7 @@ export default function CustomerDashboard({
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="bg-white border border-slate-250 rounded-[32px] p-5 w-full max-w-sm text-center space-y-4 shadow-2xl relative"
+              className="bg-white border border-slate-200 rounded-[32px] p-5 w-full max-w-sm text-center space-y-4 shadow-2xl relative"
             >
               <div className="absolute -top-10 left-12 right-12 mx-auto w-16 h-16 rounded-full bg-emerald-50 border-4 border-white flex items-center justify-center text-emerald-500 shadow-md">
                 <Sparkles className="w-8 h-8 animate-pulse text-emerald-500" />
