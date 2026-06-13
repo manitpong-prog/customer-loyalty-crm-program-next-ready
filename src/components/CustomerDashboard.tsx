@@ -393,7 +393,7 @@ export default function CustomerDashboard({
 
   if (!customer)
     return (
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-[100dvh] bg-slate-50">
         <div className="bg-[#06C755] px-4 py-4 text-white shadow-sm">
           <div className="flex items-center gap-2 text-sm font-black">
             <span className="h-2.5 w-2.5 rounded-full bg-white/50" />
@@ -909,7 +909,7 @@ export default function CustomerDashboard({
     <div
       className={
         isProductionView
-          ? "relative min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col w-full max-w-md mx-auto overflow-hidden"
+          ? "relative min-h-[100dvh] bg-slate-50 font-sans text-slate-800 flex flex-col w-full max-w-md mx-auto overflow-hidden"
           : "relative min-h-[720px] bg-slate-50 font-sans text-slate-800 flex flex-col max-w-[420px] mx-auto sm:border-[8px] sm:border-slate-800 rounded-[40px] overflow-hidden shadow-[0_25px_60px_-15px_rgba(0,0,0,0.12)] border border-slate-200"
       }
     >
@@ -1824,7 +1824,7 @@ export default function CustomerDashboard({
       </div>
 
       {/* FIXED FOOTER TAB MENU (Like Line LIFF Menu) */}
-      <div className="absolute bottom-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-md border-t border-slate-200/85 flex justify-around items-center select-none z-10 shadow-lg">
+      <div className="fixed bottom-0 left-0 right-0 h-16 bg-white/95 backdrop-blur-md border-t border-slate-200/85 flex justify-around items-center select-none z-50 shadow-lg pb-[max(0px,env(safe-area-inset-bottom))] box-content">
         <button
           type="button"
           onClick={() => setActiveTab("home")}
