@@ -46,6 +46,13 @@ export default function OwnerDashboard({
   const [menuOpen, setMenuOpen] = useState(false);
   const [approvalsSubTab, setApprovalsSubTab] = useState<'queue' | 'history'>('queue');
   const [highlightedRedeemId, setHighlightedRedeemId] = useState('');
+  const [approvalLinkInput, setApprovalLinkInput] = useState('');
+  const [approvalLookupResult, setApprovalLookupResult] = useState<{
+    state: 'idle' | 'found' | 'processed' | 'invalid' | 'not_found' | 'wrong_shop' | 'wrong_type';
+    title: string;
+    message: string;
+    txId?: string;
+  } | null>(null);
   
   // Database States
   const [shops, setShops] = useState<Shop[]>([]);
@@ -92,6 +99,13 @@ export default function OwnerDashboard({
     if (lineLiffId) return `https://liff.line.me/${lineLiffId}?code=${encodedCode}`;
     if (typeof window !== 'undefined') return `${window.location.origin}/customer/${shopIdToSlug(selectedShopId)}?code=${encodedCode}`;
     return `/customer/${shopIdToSlug(selectedShopId)}?code=${encodedCode}`;
+  };
+
+  const buildMerchantRedeemApprovalUrl = (redeemId: string) => {
+    const encodedRedeemId = encodeURIComponent(redeemId);
+    const slug = shopIdToSlug(selectedShopId);
+    if (typeof window !== 'undefined') return `${window.location.origin}/merchant/${slug}?merchantTab=approvals&redeem=${encodedRedeemId}`;
+    return `/merchant/${slug}?merchantTab=approvals&redeem=${encodedRedeemId}`;
   };
 
   const defaultRewardImage = 'https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=400&auto=format&fit=crop&q=80';
@@ -601,6 +615,142 @@ export default function OwnerDashboard({
     } catch {
       showStatus(`❌ คัดลอก${label}ไม่สำเร็จ กรุณาคัดลอกเองอีกครั้ง`);
     }
+  };
+
+  const extractRedeemIdFromApprovalLink = (rawValue: string) => {
+    const value = rawValue.trim();
+    if (!value) return '';
+
+    try {
+      const baseUrl = typeof window !== 'undefined' ? window.location.origin : 'https://im-crm-two.vercel.app';
+      const parsedUrl = new URL(value, baseUrl);
+      const redeemFromQuery = parsedUrl.searchParams.get('redeem')
+        || parsedUrl.searchParams.get('redeemId')
+        || parsedUrl.searchParams.get('transaction')
+        || parsedUrl.searchParams.get('tx');
+      if (redeemFromQuery) return decodeURIComponent(redeemFromQuery).trim();
+    } catch {
+      // Not a URL. Continue with simple text patterns below.
+    }
+
+    const patternMatch = value.match(/(?:redeem|redeemId|transaction|tx)[:=\/\s]+([A-Za-z0-9_-]+)/i);
+    if (patternMatch?.[1]) return patternMatch[1].trim();
+
+    if (!value.includes(' ') && /^[A-Za-z0-9_-]{6,}$/.test(value)) {
+      return value;
+    }
+
+    return '';
+  };
+
+  const scrollToRedeemCard = (redeemId: string) => {
+    window.setTimeout(() => {
+      const element = document.getElementById(`redeem-${redeemId}`);
+      element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 180);
+  };
+
+  const handlePasteApprovalLinkFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setApprovalLinkInput(text);
+      setApprovalLookupResult(null);
+      showStatus('✓ วางลิงก์จากคลิปบอร์ดแล้ว กดตรวจสอบลิงก์ได้เลย');
+    } catch {
+      showStatus('❌ อ่านคลิปบอร์ดไม่ได้ กรุณากดวางลิงก์เองในช่องนี้');
+    }
+  };
+
+  const handleVerifyApprovalLink = () => {
+    const rawLink = approvalLinkInput.trim();
+    const redeemId = extractRedeemIdFromApprovalLink(rawLink);
+
+    if (!rawLink) {
+      setApprovalLookupResult({
+        state: 'invalid',
+        title: 'ยังไม่ได้วางลิงก์',
+        message: 'กรุณาวางลิงก์ที่ลูกค้าส่งมา หรือวางรหัสรายการแลกรางวัลก่อนตรวจสอบ',
+      });
+      showStatus('❌ กรุณาวางลิงก์จากลูกค้าก่อนตรวจสอบ');
+      return;
+    }
+
+    if (!redeemId) {
+      setApprovalLookupResult({
+        state: 'invalid',
+        title: 'รูปแบบลิงก์ไม่ถูกต้อง',
+        message: 'ลิงก์ควรมีคำว่า redeem=... เช่น /merchant/im-sticker?merchantTab=approvals&redeem=tx_... ให้ลูกค้ากดคัดลอกลิงก์จากหน้าประวัติแล้วส่งใหม่อีกครั้ง',
+      });
+      showStatus('❌ รูปแบบลิงก์ไม่ถูกต้อง');
+      return;
+    }
+
+    const tx = getTransactions().find((item) => item.id === redeemId);
+
+    if (!tx) {
+      setApprovalLookupResult({
+        state: 'not_found',
+        title: 'ไม่พบรายการจากลิงก์นี้',
+        message: 'อาจคัดลอกลิงก์มาไม่ครบ รายการถูกล้างไปแล้ว หรือข้อมูลจากลูกค้ายังไม่ sync ให้ลองให้ลูกค้ากดคัดลอกลิงก์จากประวัติแล้วส่งใหม่',
+      });
+      showStatus('❌ ไม่พบรายการแลกรางวัลจากลิงก์นี้');
+      return;
+    }
+
+    if (tx.shopId !== selectedShopId) {
+      setApprovalLookupResult({
+        state: 'wrong_shop',
+        title: 'ลิงก์นี้ไม่ใช่ของร้านนี้',
+        message: `รายการนี้เป็นของร้าน ${tx.shopName || tx.shopId} จึงไม่สามารถอนุมัติจากร้านปัจจุบันได้`,
+        txId: tx.id,
+      });
+      showStatus('❌ ลิงก์นี้เป็นของร้านอื่น');
+      return;
+    }
+
+    if (tx.type !== 'redeem') {
+      setApprovalLookupResult({
+        state: 'wrong_type',
+        title: 'ลิงก์นี้ไม่ใช่รายการแลกรางวัล',
+        message: 'ลิงก์ที่วางมาไม่ใช่รายการแลกของรางวัล กรุณาให้ลูกค้าส่งลิงก์จากประวัติแลกรางวัลเท่านั้น',
+        txId: tx.id,
+      });
+      showStatus('❌ ลิงก์นี้ไม่ใช่รายการแลกรางวัล');
+      return;
+    }
+
+    setHighlightedRedeemId(tx.id);
+
+    if (tx.status === 'pending') {
+      setApprovalsSubTab('queue');
+      setApprovalLookupResult({
+        state: 'found',
+        title: 'พบรายการแลกรางวัล พร้อมตรวจสอบ',
+        message: 'ระบบพบรายการนี้ในคิวรออนุมัติแล้ว ตรวจของรางวัลกับลูกค้า จากนั้นกดอนุมัติหรือปฏิเสธได้เลย',
+        txId: tx.id,
+      });
+      showStatus('✓ พบรายการแลกรางวัลที่รออนุมัติแล้ว');
+      scrollToRedeemCard(tx.id);
+      return;
+    }
+
+    setApprovalsSubTab('history');
+    setApprovalLookupResult({
+      state: 'processed',
+      title: tx.status === 'completed' ? 'รายการนี้อนุมัติไปแล้ว' : 'รายการนี้ถูกปฏิเสธแล้ว',
+      message: tx.status === 'completed'
+        ? 'ไม่ต้องอนุมัติซ้ำ ระบบพบว่าร้านเคยอนุมัติและส่งมอบของรางวัลรายการนี้แล้ว'
+        : 'ระบบพบว่ารายการนี้ถูกปฏิเสธและคืนแต้มให้ลูกค้าแล้ว',
+      txId: tx.id,
+    });
+    showStatus(tx.status === 'completed' ? '✓ รายการนี้อนุมัติไปแล้ว' : 'ℹ️ รายการนี้ถูกปฏิเสธไปแล้ว');
+    scrollToRedeemCard(tx.id);
+  };
+
+  const clearApprovalLookup = () => {
+    setApprovalLinkInput('');
+    setApprovalLookupResult(null);
+    setHighlightedRedeemId('');
   };
 
   const handlePilotDataReset = () => {
@@ -1233,6 +1383,19 @@ export default function OwnerDashboard({
   const totalRewardStock = rewards.reduce((sum, reward) => sum + Math.max(0, reward.stock || 0), 0);
   const activeRewardCount = availableRewards.length;
   const needsAttentionCount = pendingRedeems.length + lowStockRewards.length;
+  const approvalLookupTransaction = approvalLookupResult?.txId
+    ? rewardRedeems.find((item) => item.id === approvalLookupResult.txId)
+    : null;
+  const approvalLookupReward = approvalLookupTransaction?.rewardId
+    ? rewards.find((item) => item.id === approvalLookupTransaction.rewardId)
+    : null;
+  const approvalLookupCustomer = approvalLookupTransaction?.userId
+    ? customers.find((item) => item.id === approvalLookupTransaction.userId)
+    : null;
+  const approvalLookupRewardName = approvalLookupReward?.name
+    || approvalLookupTransaction?.description.replace('ขอแลกรางวัล: ', '').replace(' (ร้านปฏิเสธ - คืนแต้มแล้ว)', '')
+    || '';
+  const approvalLookupStockDanger = Boolean(approvalLookupReward && approvalLookupReward.stock <= 0);
 
   const merchantPages: Array<{ id: MerchantTab; label: string; shortLabel: string; icon: string; count?: number; description: string }> = [
     { id: 'dashboard', label: 'แดชบอร์ด', shortLabel: 'หน้าแรก', icon: '🏠', description: 'ภาพรวมของร้านวันนี้' },
@@ -2025,6 +2188,190 @@ export default function OwnerDashboard({
               </div>
             </div>
 
+            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Customer link check</p>
+                  <h4 className="text-base font-black text-slate-950 mt-1">ตรวจลิงก์แลกรางวัลจากลูกค้า</h4>
+                  <p className="text-xs text-slate-500 font-medium mt-1">
+                    วางลิงก์ที่ลูกค้าส่งมา ระบบจะตรวจว่าเป็นรายการของร้านนี้หรือไม่ และพาไปยังรายการที่ต้องอนุมัติทันที
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 px-3 py-2 text-[10px] text-slate-600 font-bold">
+                  รูปแบบที่ถูกต้อง: <span className="font-mono text-slate-900">?merchantTab=approvals&redeem=...</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-2">
+                <div className="relative">
+                  <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    value={approvalLinkInput}
+                    onChange={(event) => {
+                      setApprovalLinkInput(event.target.value);
+                      setApprovalLookupResult(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') handleVerifyApprovalLink();
+                    }}
+                    placeholder="วางลิงก์จากลูกค้า เช่น https://im-crm-two.vercel.app/merchant/im-sticker?merchantTab=approvals&redeem=tx_..."
+                    className="w-full rounded-2xl border border-slate-200 bg-slate-50 pl-10 pr-3 py-3 text-xs font-semibold text-slate-900 outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-100"
+                  />
+                </div>
+                <div className="grid grid-cols-3 lg:flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handlePasteApprovalLinkFromClipboard}
+                    className="rounded-2xl bg-white border border-slate-200 px-3 py-3 text-xs font-black text-slate-700 hover:bg-slate-50 active:scale-95 transition"
+                  >
+                    วาง
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleVerifyApprovalLink}
+                    className="rounded-2xl bg-slate-950 px-3 py-3 text-xs font-black text-white hover:bg-slate-800 active:scale-95 transition"
+                  >
+                    ตรวจสอบ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearApprovalLookup}
+                    className="rounded-2xl bg-slate-100 px-3 py-3 text-xs font-black text-slate-600 hover:bg-slate-200 active:scale-95 transition"
+                  >
+                    ล้าง
+                  </button>
+                </div>
+              </div>
+
+              {approvalLookupResult && (
+                <div className={`rounded-3xl border p-4 space-y-3 ${
+                  approvalLookupResult.state === 'found'
+                    ? 'bg-emerald-50 border-emerald-200'
+                    : approvalLookupResult.state === 'processed'
+                      ? 'bg-sky-50 border-sky-200'
+                      : 'bg-rose-50 border-rose-200'
+                }`}>
+                  <div className="flex items-start gap-3">
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                      approvalLookupResult.state === 'found'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : approvalLookupResult.state === 'processed'
+                          ? 'bg-sky-100 text-sky-700'
+                          : 'bg-rose-100 text-rose-700'
+                    }`}>
+                      {approvalLookupResult.state === 'found' ? <Check className="w-5 h-5" /> : approvalLookupResult.state === 'processed' ? <FileText className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h5 className="font-black text-slate-950">{approvalLookupResult.title}</h5>
+                      <p className="text-xs text-slate-700 font-medium mt-1 leading-relaxed">{approvalLookupResult.message}</p>
+                    </div>
+                  </div>
+
+                  {approvalLookupTransaction && (
+                    <div className="rounded-2xl bg-white/80 border border-white p-3 space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-xs">
+                        <div className="rounded-2xl bg-white border border-slate-200 p-3">
+                          <p className="text-[10px] font-black text-slate-500">ลูกค้า</p>
+                          <p className="font-black text-slate-950 mt-1 truncate">{approvalLookupTransaction.userName}</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">{approvalLookupTransaction.userPhone || '-'}</p>
+                        </div>
+                        <div className="rounded-2xl bg-white border border-slate-200 p-3">
+                          <p className="text-[10px] font-black text-slate-500">ของรางวัล</p>
+                          <p className="font-black text-slate-950 mt-1 truncate">{approvalLookupRewardName}</p>
+                          <p className={`text-[11px] font-bold mt-0.5 ${approvalLookupStockDanger ? 'text-rose-700' : 'text-slate-500'}`}>
+                            สต็อก: {approvalLookupReward ? `${approvalLookupReward.stock} ชิ้น` : 'ไม่พบ'}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl bg-white border border-slate-200 p-3">
+                          <p className="text-[10px] font-black text-slate-500">แต้มที่ใช้</p>
+                          <p className="font-black text-rose-700 mt-1">-{approvalLookupTransaction.points.toLocaleString('th-TH')} แต้ม</p>
+                          {approvalLookupCustomer && <p className="text-[11px] text-slate-500 mt-0.5">คงเหลือ {approvalLookupCustomer.currentPoints.toLocaleString('th-TH')}</p>}
+                        </div>
+                        <div className="rounded-2xl bg-white border border-slate-200 p-3">
+                          <p className="text-[10px] font-black text-slate-500">สถานะ</p>
+                          <p className="font-black text-slate-950 mt-1">
+                            {approvalLookupTransaction.status === 'pending' ? 'รออนุมัติ' : approvalLookupTransaction.status === 'completed' ? 'อนุมัติแล้ว' : 'ปฏิเสธแล้ว'}
+                          </p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">{formatCompactDateTime(approvalLookupTransaction.createdAt)}</p>
+                        </div>
+                      </div>
+
+                      {approvalLookupStockDanger && approvalLookupTransaction.status === 'pending' && (
+                        <div className="rounded-2xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700">
+                          พบรายการแล้ว แต่ของรางวัลหมดสต็อก ต้องเพิ่มสต็อกก่อนจึงจะอนุมัติได้
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {approvalLookupTransaction.status === 'pending' ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleApproveRedeem(approvalLookupTransaction.id)}
+                              disabled={approvalLookupStockDanger}
+                              className="rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 px-3 py-2.5 text-xs font-black text-white transition disabled:cursor-not-allowed"
+                            >
+                              อนุมัติรายการนี้
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRejectRedeem(approvalLookupTransaction.id)}
+                              className="rounded-2xl bg-white border border-rose-200 px-3 py-2.5 text-xs font-black text-rose-700 hover:bg-rose-50 transition"
+                            >
+                              ปฏิเสธและคืนแต้ม
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setApprovalsSubTab('history');
+                              scrollToRedeemCard(approvalLookupTransaction.id);
+                            }}
+                            className="rounded-2xl bg-white border border-slate-200 px-3 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 transition"
+                          >
+                            ดูในประวัติ
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setApprovalsSubTab(approvalLookupTransaction.status === 'pending' ? 'queue' : 'history');
+                            scrollToRedeemCard(approvalLookupTransaction.id);
+                          }}
+                          className="rounded-2xl bg-white border border-slate-200 px-3 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 transition"
+                        >
+                          เลื่อนไปยังรายการ
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyText(buildMerchantRedeemApprovalUrl(approvalLookupTransaction.id), 'ลิงก์รายการแลกรางวัล')}
+                          className="rounded-2xl bg-white border border-slate-200 px-3 py-2.5 text-xs font-black text-slate-700 hover:bg-slate-50 transition inline-flex items-center justify-center gap-1.5"
+                        >
+                          <Copy className="w-3.5 h-3.5" /> คัดลอกลิงก์
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[11px] text-slate-600">
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3">
+                  <p className="font-black text-slate-900">1. ลูกค้าส่งลิงก์</p>
+                  <p className="mt-1">ให้ลูกค้ากดคัดลอกลิงก์จากหน้าประวัติแลกรางวัล</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3">
+                  <p className="font-black text-slate-900">2. ร้านตรวจลิงก์</p>
+                  <p className="mt-1">ระบบจะเช็คว่าเป็นรายการของร้านนี้และยังรออนุมัติอยู่หรือไม่</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3">
+                  <p className="font-black text-slate-900">3. อนุมัติหลังส่งของ</p>
+                  <p className="mt-1">กดอนุมัติเมื่อส่งมอบของแล้ว หรือปฏิเสธเพื่อคืนแต้ม</p>
+                </div>
+              </div>
+            </div>
+
             {/* Sub-Tabs Switches */}
             <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 gap-1.5 self-start w-fit max-w-full overflow-x-auto">
               <button
@@ -2103,6 +2450,20 @@ export default function OwnerDashboard({
                             </div>
                           )}
 
+                          <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-black text-slate-500">ลิงก์รายการนี้</p>
+                              <p className="text-[10px] font-mono text-slate-500 truncate mt-1">{buildMerchantRedeemApprovalUrl(t.id)}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyText(buildMerchantRedeemApprovalUrl(t.id), 'ลิงก์รายการแลกรางวัล')}
+                              className="shrink-0 rounded-xl bg-white border border-slate-200 px-3 py-2 text-[10px] font-black text-slate-700 hover:bg-slate-50 transition inline-flex items-center justify-center gap-1.5"
+                            >
+                              <Copy className="w-3.5 h-3.5" /> คัดลอกลิงก์
+                            </button>
+                          </div>
+
                           <div className="grid grid-cols-2 gap-2">
                             <button 
                               type="button"
@@ -2159,7 +2520,11 @@ export default function OwnerDashboard({
                             ? <span className="px-2 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">อนุมัติแล้ว</span>
                             : <span className="px-2 py-1 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200">ปฏิเสธ / คืนแต้มแล้ว</span>;
                         return (
-                          <tr key={t.id} className="hover:bg-amber-50/40">
+                          <tr
+                            id={`redeem-${t.id}`}
+                            key={t.id}
+                            className={`hover:bg-amber-50/40 ${highlightedRedeemId === t.id ? 'bg-emerald-50 outline outline-2 outline-emerald-300' : ''}`}
+                          >
                             <td className="py-3.5 pl-4">
                               <div className="font-black text-slate-950">{t.userName}</div>
                               <div className="text-[10px] text-slate-500 font-mono">{t.userPhone || '-'}</div>
@@ -2174,20 +2539,32 @@ export default function OwnerDashboard({
                             <td className="py-3.5">{statusBadge}</td>
                             <td className="py-3.5 text-right pr-4">
                               {t.status === 'pending' ? (
-                                <div className="inline-flex gap-1.5">
+                                <div className="inline-flex flex-wrap justify-end gap-1.5">
                                   <button type="button" onClick={() => handleApproveRedeem(t.id)} className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-2 py-1 text-[10px] font-black">อนุมัติ</button>
                                   <button type="button" onClick={() => handleRejectRedeem(t.id)} className="bg-rose-600 hover:bg-rose-700 text-white rounded-lg px-2 py-1 text-[10px] font-black">ปฏิเสธ</button>
+                                  <button type="button" onClick={() => handleCopyText(buildMerchantRedeemApprovalUrl(t.id), 'ลิงก์รายการแลกรางวัล')} className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg px-2 py-1 text-[10px] font-black inline-flex items-center gap-1"><Copy className="w-3 h-3" /> ลิงก์</button>
                                 </div>
                               ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteTransactionPermanently(t.id)}
-                                  className="p-1 px-2 border border-red-500/20 bg-red-500/10 hover:bg-rose-600 text-rose-600 hover:text-white rounded-lg transition duration-150 text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
-                                  title="ลบถาวร"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  ลบถาวร
-                                </button>
+                                <div className="inline-flex flex-wrap justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyText(buildMerchantRedeemApprovalUrl(t.id), 'ลิงก์รายการแลกรางวัล')}
+                                    className="p-1 px-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg transition duration-150 text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
+                                    title="คัดลอกลิงก์"
+                                  >
+                                    <Copy className="w-3.5 h-3.5" />
+                                    ลิงก์
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteTransactionPermanently(t.id)}
+                                    className="p-1 px-2 border border-red-500/20 bg-red-500/10 hover:bg-rose-600 text-rose-600 hover:text-white rounded-lg transition duration-150 text-[10px] font-bold cursor-pointer inline-flex items-center gap-1"
+                                    title="ลบถาวร"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    ลบถาวร
+                                  </button>
+                                </div>
                               )}
                             </td>
                           </tr>
