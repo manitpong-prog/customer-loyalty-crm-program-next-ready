@@ -1168,6 +1168,48 @@ export default function OwnerDashboard({
   const availableRewards = rewards.filter(reward => reward.isAvailable);
   const usableCoupons = generatedCouponsList.filter((coupon: any) => !coupon.isUsed && new Date(coupon.expiresAt) > new Date());
   const latestActivities = [...transactions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
+  const dashboardNow = new Date();
+  const dashboardTodayStart = new Date(dashboardNow);
+  dashboardTodayStart.setHours(0, 0, 0, 0);
+  const isToday = (value?: string) => {
+    if (!value) return false;
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) && date >= dashboardTodayStart;
+  };
+  const formatCompactDateTime = (value?: string) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '-';
+    return date.toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' });
+  };
+  const formatCompactDate = (value?: string) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '-';
+    return date.toLocaleDateString('th-TH', { day: '2-digit', month: 'short' });
+  };
+  const newCustomersToday = customers.filter(customer => isToday(customer.createdAt));
+  const earnTodayTransactions = earnTransactions.filter(tx => isToday(tx.createdAt));
+  const pointsIssuedToday = earnTodayTransactions.reduce((sum, tx) => sum + tx.points, 0);
+  const redeemsToday = rewardRedeems.filter(tx => isToday(tx.createdAt));
+  const pendingApprovalPreview = pendingRedeems.slice(0, 4);
+  const latestCustomers = [...customers]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 5);
+  const lowStockRewards = rewards
+    .filter(reward => reward.isAvailable && reward.stock <= 3)
+    .sort((a, b) => a.stock - b.stock)
+    .slice(0, 5);
+  const inactiveRewards = rewards.filter(reward => !reward.isAvailable);
+  const usedCouponsCount = generatedCouponsList.filter((coupon: any) => coupon.isUsed).length;
+  const expiredCouponsCount = generatedCouponsList.filter((coupon: any) => {
+    const expiresAt = coupon?.expiresAt ? new Date(coupon.expiresAt) : null;
+    return !coupon?.isUsed && expiresAt && Number.isFinite(expiresAt.getTime()) && expiresAt <= dashboardNow;
+  }).length;
+  const totalMemberPoints = customers.reduce((sum, customer) => sum + customer.currentPoints, 0);
+  const totalRewardStock = rewards.reduce((sum, reward) => sum + Math.max(0, reward.stock || 0), 0);
+  const activeRewardCount = availableRewards.length;
+  const needsAttentionCount = pendingRedeems.length + lowStockRewards.length;
 
   const merchantPages: Array<{ id: MerchantTab; label: string; shortLabel: string; icon: string; count?: number; description: string }> = [
     { id: 'dashboard', label: 'แดชบอร์ด', shortLabel: 'หน้าแรก', icon: '🏠', description: 'ภาพรวมของร้านวันนี้' },
@@ -1336,102 +1378,257 @@ export default function OwnerDashboard({
       <div className="mt-4">
         {activeTab === 'dashboard' && (
           <div className="space-y-5 animate-fade-in">
+            <div className="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-amber-950 p-5 md:p-6 text-white shadow-sm overflow-hidden relative">
+              <div className="absolute -right-10 -top-10 w-40 h-40 rounded-full bg-amber-400/20 blur-3xl" />
+              <div className="absolute -left-12 bottom-0 w-48 h-48 rounded-full bg-sky-400/10 blur-3xl" />
+              <div className="relative flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
+                <div className="max-w-2xl">
+                  <p className="text-[10px] font-black text-amber-300 tracking-[0.22em] uppercase">Pilot dashboard</p>
+                  <h3 className="text-2xl md:text-3xl font-black mt-2">ภาพรวมร้าน {activeShopDetail?.name || 'ร้านค้า'}</h3>
+                  <p className="text-sm text-slate-300 font-medium mt-2 leading-6">ดูสถานะวันนี้ รายการที่ต้องจัดการ และทางลัดสำคัญสำหรับการเปิด Pilot จริง</p>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4 gap-2.5 min-w-0 lg:min-w-[430px]">
+                  <button type="button" onClick={() => goToTab('generator')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-3 text-left transition active:scale-[0.98]">
+                    <span className="block text-lg">🔗</span>
+                    <span className="block text-xs font-black mt-1">แจกแต้ม</span>
+                    <span className="block text-[9px] text-slate-300 mt-0.5">สร้างลิงก์</span>
+                  </button>
+                  <button type="button" onClick={() => goToTab('approvals')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-3 text-left transition active:scale-[0.98]">
+                    <span className="block text-lg">✅</span>
+                    <span className="block text-xs font-black mt-1">อนุมัติ</span>
+                    <span className="block text-[9px] text-slate-300 mt-0.5">รอ {pendingRedeems.length}</span>
+                  </button>
+                  <button type="button" onClick={() => goToTab('rewards')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-3 text-left transition active:scale-[0.98]">
+                    <span className="block text-lg">🎁</span>
+                    <span className="block text-xs font-black mt-1">รางวัล</span>
+                    <span className="block text-[9px] text-slate-300 mt-0.5">จัดการ</span>
+                  </button>
+                  <button type="button" onClick={() => goToTab('customers')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-3 py-3 text-left transition active:scale-[0.98]">
+                    <span className="block text-lg">👥</span>
+                    <span className="block text-xs font-black mt-1">สมาชิก</span>
+                    <span className="block text-[9px] text-slate-300 mt-0.5">ดูรายชื่อ</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
               <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-                <p className="text-[11px] font-black text-amber-800">รางวัลที่รอยืนยัน</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-black text-amber-800">รางวัลรออนุมัติ</p>
+                  {pendingRedeems.length > 0 && <span className="min-w-6 h-6 rounded-full bg-amber-600 text-white text-[10px] font-black flex items-center justify-center">!</span>}
+                </div>
                 <p className="mt-1 text-3xl font-black text-amber-700 font-mono">{pendingRedeems.length}</p>
-                <p className="text-[10px] text-amber-700/75 font-bold">ควรตรวจรายการก่อนส่งมอบ</p>
+                <p className="text-[10px] text-amber-700/75 font-bold">แต้มในคิว {pendingRedeemPoints.toLocaleString('th-TH')} แต้ม</p>
               </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
                 <p className="text-[11px] font-black text-slate-600">สมาชิกทั้งหมด</p>
                 <p className="mt-1 text-3xl font-black text-slate-950 font-mono">{customers.length}</p>
-                <p className="text-[10px] text-slate-500 font-bold">ลูกค้าของร้านนี้</p>
+                <p className="text-[10px] text-slate-500 font-bold">ใหม่วันนี้ {newCustomersToday.length.toLocaleString('th-TH')} ราย</p>
               </div>
               <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-                <p className="text-[11px] font-black text-emerald-800">แต้มที่แจกแล้ว</p>
-                <p className="mt-1 text-3xl font-black text-emerald-700 font-mono">{totalPointsIssued}</p>
-                <p className="text-[10px] text-emerald-700/75 font-bold">รวมจากรายการที่บันทึกสำเร็จ</p>
+                <p className="text-[11px] font-black text-emerald-800">แต้มที่แจกวันนี้</p>
+                <p className="mt-1 text-3xl font-black text-emerald-700 font-mono">{pointsIssuedToday.toLocaleString('th-TH')}</p>
+                <p className="text-[10px] text-emerald-700/75 font-bold">ทั้งหมด {totalPointsIssued.toLocaleString('th-TH')} แต้ม</p>
               </div>
-              <div className="rounded-3xl border border-sky-200 bg-sky-50 p-4 shadow-sm">
-                <p className="text-[11px] font-black text-sky-800">ลิงก์รับแต้มพร้อมใช้</p>
-                <p className="mt-1 text-3xl font-black text-sky-700 font-mono">{usableCoupons.length}</p>
-                <p className="text-[10px] text-sky-700/75 font-bold">ยังไม่หมดอายุและยังไม่ถูกใช้</p>
+              <div className={`rounded-3xl border p-4 shadow-sm ${needsAttentionCount > 0 ? 'border-rose-200 bg-rose-50' : 'border-sky-200 bg-sky-50'}`}>
+                <p className={`text-[11px] font-black ${needsAttentionCount > 0 ? 'text-rose-800' : 'text-sky-800'}`}>สิ่งที่ต้องดูแล</p>
+                <p className={`mt-1 text-3xl font-black font-mono ${needsAttentionCount > 0 ? 'text-rose-700' : 'text-sky-700'}`}>{needsAttentionCount}</p>
+                <p className={`text-[10px] font-bold ${needsAttentionCount > 0 ? 'text-rose-700/75' : 'text-sky-700/75'}`}>รออนุมัติ + ของใกล้หมด</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-2 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h4 className="text-base font-black text-slate-950">ภาพรวมร้านวันนี้</h4>
-                    <p className="text-xs text-slate-500 font-medium mt-1">สรุปข้อมูลสำคัญสำหรับเจ้าของร้าน ก่อนเข้าไปจัดการแต่ละเมนู</p>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+              <div className="xl:col-span-2 space-y-4">
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                    <div>
+                      <h4 className="text-base font-black text-slate-950">ภาพรวมการใช้งาน</h4>
+                      <p className="text-xs text-slate-500 font-medium mt-1">ตัวเลขหลักที่เจ้าของร้านควรรู้ก่อนเริ่มขายหรือแจกแต้มวันนี้</p>
+                    </div>
+                    <button type="button" onClick={loadData} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-black text-slate-700 hover:bg-white transition active:scale-95 w-fit">
+                      <RefreshCw className="w-3.5 h-3.5" /> โหลดข้อมูลล่าสุด
+                    </button>
                   </div>
-                  <button type="button" onClick={() => goToTab('approvals')} className="text-xs font-black text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1.5">
-                    ดูรายการรออนุมัติ
-                  </button>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                      <p className="text-[10px] font-black text-slate-500">แต้มคงเหลือลูกค้ารวม</p>
+                      <p className="text-2xl font-black text-slate-950 font-mono mt-1">{totalMemberPoints.toLocaleString('th-TH')}</p>
+                      <p className="text-[10px] text-slate-500 font-medium">แต้มที่ลูกค้ายังถืออยู่</p>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                      <p className="text-[10px] font-black text-slate-500">ของรางวัลเปิดให้แลก</p>
+                      <p className="text-2xl font-black text-slate-950 font-mono mt-1">{activeRewardCount}</p>
+                      <p className="text-[10px] text-slate-500 font-medium">จากทั้งหมด {rewards.length} รายการ</p>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                      <p className="text-[10px] font-black text-slate-500">สต็อกของรางวัลรวม</p>
+                      <p className="text-2xl font-black text-slate-950 font-mono mt-1">{totalRewardStock.toLocaleString('th-TH')}</p>
+                      <p className="text-[10px] text-slate-500 font-medium">ชิ้นที่เหลือในระบบ</p>
+                    </div>
+                    <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
+                      <p className="text-[10px] font-black text-slate-500">ลิงก์รับแต้มพร้อมใช้</p>
+                      <p className="text-2xl font-black text-slate-950 font-mono mt-1">{usableCoupons.length}</p>
+                      <p className="text-[10px] text-slate-500 font-medium">ใช้แล้ว {usedCouponsCount} / หมดอายุ {expiredCouponsCount}</p>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                    <p className="text-[10px] font-black text-slate-500">ของรางวัลที่เปิดให้แลก</p>
-                    <p className="text-2xl font-black text-slate-950 font-mono mt-1">{availableRewards.length}</p>
-                    <p className="text-[10px] text-slate-500 font-medium">จากทั้งหมด {rewards.length} รายการ</p>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-black text-slate-900">รายการรออนุมัติ</h4>
+                        <p className="text-[10px] text-slate-500 font-bold mt-0.5">คำขอแลกรางวัลจากลูกค้า</p>
+                      </div>
+                      <button type="button" onClick={() => goToTab('approvals')} className="rounded-full bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1.5 text-[10px] font-black">ดูทั้งหมด</button>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {pendingApprovalPreview.map((tx) => (
+                        <div key={tx.id} className="px-5 py-3 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-xs font-black text-slate-900 truncate">{tx.userName}</p>
+                            <p className="text-[10px] text-slate-500 truncate">{tx.description.replace('ขอแลกรางวัล: ', '')}</p>
+                            <p className="text-[9px] text-slate-400 font-bold mt-0.5">{formatCompactDateTime(tx.createdAt)}</p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-xs font-black text-rose-600 font-mono">-{tx.points}</p>
+                            <p className="text-[9px] text-slate-500 font-bold">แต้ม</p>
+                          </div>
+                        </div>
+                      ))}
+                      {pendingApprovalPreview.length === 0 && (
+                        <div className="px-5 py-9 text-center">
+                          <Check className="w-8 h-8 mx-auto text-emerald-500 mb-2" />
+                          <p className="text-xs font-black text-slate-700">ไม่มีรายการรออนุมัติ</p>
+                          <p className="text-[10px] text-slate-500 mt-1">ตอนนี้คิวรางวัลว่างอยู่</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                    <p className="text-[10px] font-black text-slate-500">รายการแลกสำเร็จ</p>
-                    <p className="text-2xl font-black text-slate-950 font-mono mt-1">{completedRedeems.length}</p>
-                    <p className="text-[10px] text-slate-500 font-medium">รายการที่ร้านอนุมัติแล้ว</p>
-                  </div>
-                  <div className="rounded-2xl bg-slate-50 border border-slate-200 p-4">
-                    <p className="text-[10px] font-black text-slate-500">โปรโมชันที่แสดงอยู่</p>
-                    <p className="text-2xl font-black text-slate-950 font-mono mt-1">{banners.length}</p>
-                    <p className="text-[10px] text-slate-500 font-medium">แสดงในหน้าลูกค้า</p>
+
+                  <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-sm font-black text-slate-900">ของรางวัลใกล้หมด</h4>
+                        <p className="text-[10px] text-slate-500 font-bold mt-0.5">สต็อก 0-3 ชิ้น ควรตรวจสอบ</p>
+                      </div>
+                      <button type="button" onClick={() => goToTab('rewards')} className="rounded-full bg-slate-900 text-white px-3 py-1.5 text-[10px] font-black">จัดการ</button>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {lowStockRewards.map((reward) => (
+                        <div key={reward.id} className="px-5 py-3 flex items-center gap-3">
+                          <div className="w-11 h-11 rounded-2xl bg-slate-100 overflow-hidden border border-slate-200 shrink-0">
+                            {reward.image ? <img src={reward.image} alt={reward.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" /> : <Award className="w-5 h-5 m-3 text-slate-400" />}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-black text-slate-900 truncate">{reward.name}</p>
+                            <p className="text-[10px] text-slate-500 font-bold">ใช้ {reward.pointsCost.toLocaleString('th-TH')} แต้ม</p>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${reward.stock <= 0 ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
+                            เหลือ {reward.stock}
+                          </span>
+                        </div>
+                      ))}
+                      {lowStockRewards.length === 0 && (
+                        <div className="px-5 py-9 text-center">
+                          <Award className="w-8 h-8 mx-auto text-emerald-500 mb-2" />
+                          <p className="text-xs font-black text-slate-700">สต็อกยังดูดี</p>
+                          <p className="text-[10px] text-slate-500 mt-1">ยังไม่มีของรางวัลที่ใกล้หมด</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-slate-200 overflow-hidden">
-                  <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                    <span className="text-xs font-black text-slate-800">รายการล่าสุด</span>
-                    <span className="text-[10px] text-slate-500 font-bold">แสดง 5 รายการล่าสุด</span>
+                <div className="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                  <div className="px-5 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900">ประวัติล่าสุด</h4>
+                      <p className="text-[10px] text-slate-500 font-bold mt-0.5">แต้มเข้า-ออก และรายการแลกรางวัลล่าสุด</p>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-black">5 รายการล่าสุด</span>
                   </div>
                   <div className="divide-y divide-slate-100">
                     {latestActivities.map((tx) => (
-                      <div key={tx.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                      <div key={tx.id} className="px-5 py-3 flex items-center justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-900 truncate">{tx.userName}</p>
-                          <p className="text-[10px] text-slate-500 truncate">{tx.description}</p>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <p className="text-xs font-black text-slate-900 truncate">{tx.userName}</p>
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black ${tx.status === 'pending' ? 'bg-amber-50 text-amber-700 border border-amber-200' : tx.status === 'rejected' ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                              {tx.status === 'pending' ? 'รออนุมัติ' : tx.status === 'rejected' ? 'ปฏิเสธ' : 'สำเร็จ'}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 truncate mt-0.5">{tx.description}</p>
+                          <p className="text-[9px] text-slate-400 font-bold mt-0.5">{formatCompactDateTime(tx.createdAt)}</p>
                         </div>
                         <div className="text-right shrink-0">
-                          <p className={`text-xs font-black font-mono ${tx.type === 'earn' ? 'text-emerald-700' : 'text-rose-600'}`}>{tx.type === 'earn' ? '+' : '-'}{tx.points}</p>
-                          <p className="text-[9px] text-slate-500">{new Date(tx.createdAt).toLocaleDateString('th-TH')}</p>
+                          <p className={`text-xs font-black font-mono ${tx.type === 'earn' ? 'text-emerald-700' : 'text-rose-600'}`}>{tx.type === 'earn' ? '+' : '-'}{tx.points.toLocaleString('th-TH')}</p>
+                          <p className="text-[9px] text-slate-500 font-bold">แต้ม</p>
                         </div>
                       </div>
                     ))}
                     {latestActivities.length === 0 && (
-                      <div className="px-4 py-8 text-center text-xs text-slate-500 font-medium">ยังไม่มีรายการในร้านนี้</div>
+                      <div className="px-5 py-10 text-center text-xs text-slate-500 font-medium">ยังไม่มีประวัติในร้านนี้</div>
                     )}
                   </div>
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-slate-200 bg-slate-950 text-white p-5 shadow-sm space-y-4">
-                <div>
-                  <p className="text-[10px] font-black text-amber-300 tracking-[0.18em] uppercase">ทางลัด</p>
-                  <h4 className="text-lg font-black mt-1">ทำรายการที่ใช้บ่อย</h4>
+              <div className="space-y-4">
+                <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-black text-slate-900">สมาชิกใหม่ล่าสุด</h4>
+                      <p className="text-[10px] text-slate-500 font-bold mt-0.5">ลูกค้าที่เข้าระบบล่าสุด</p>
+                    </div>
+                    <button type="button" onClick={() => goToTab('customers')} className="rounded-full bg-slate-50 border border-slate-200 px-3 py-1.5 text-[10px] font-black text-slate-700">ดูสมาชิก</button>
+                  </div>
+                  <div className="space-y-2.5">
+                    {latestCustomers.map((customer) => (
+                      <div key={customer.id} className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50/70 p-2.5">
+                        <img src={customer.avatar} alt={customer.name} className="w-10 h-10 rounded-2xl object-cover border border-slate-200 bg-white" referrerPolicy="no-referrer" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-black text-slate-900 truncate">{customer.name}</p>
+                          <p className="text-[10px] text-slate-500 font-bold truncate">{customer.currentPoints.toLocaleString('th-TH')} แต้ม · {formatCompactDate(customer.createdAt)}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {latestCustomers.length === 0 && (
+                      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 py-8 text-center">
+                        <Users className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                        <p className="text-xs font-black text-slate-600">ยังไม่มีสมาชิก</p>
+                        <p className="text-[10px] text-slate-500 mt-1">ลองสร้างลิงก์รับแต้มแล้วส่งให้ลูกค้า</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <div className="grid gap-2.5">
-                  <button type="button" onClick={() => goToTab('generator')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-4 py-3 text-left transition">
-                    <span className="block text-sm font-black">สร้างลิงก์รับแต้ม</span>
-                    <span className="block text-[10px] text-slate-300 mt-0.5">ส่งให้ลูกค้าทาง LINE หรือทำ QR หน้าร้าน</span>
-                  </button>
-                  <button type="button" onClick={() => goToTab('rewards')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-4 py-3 text-left transition">
-                    <span className="block text-sm font-black">จัดการของรางวัล</span>
-                    <span className="block text-[10px] text-slate-300 mt-0.5">เพิ่ม ปิด เปิด หรือแก้ไขของรางวัล</span>
-                  </button>
-                  <button type="button" onClick={() => goToTab('customers')} className="rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 px-4 py-3 text-left transition">
-                    <span className="block text-sm font-black">ดูสมาชิก</span>
-                    <span className="block text-[10px] text-slate-300 mt-0.5">ค้นหาลูกค้าและปรับแต้มเมื่อจำเป็น</span>
-                  </button>
+
+                <div className="rounded-3xl border border-slate-200 bg-slate-950 text-white p-5 shadow-sm space-y-4">
+                  <div>
+                    <p className="text-[10px] font-black text-amber-300 tracking-[0.18em] uppercase">Pilot checklist</p>
+                    <h4 className="text-lg font-black mt-1">เช็คความพร้อมร้าน</h4>
+                  </div>
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-3 rounded-2xl bg-white/10 border border-white/10 px-3 py-2.5">
+                      <span className="text-xs font-bold text-slate-100">มีของรางวัลให้แลก</span>
+                      <span className={`text-[10px] font-black rounded-full px-2 py-1 ${activeRewardCount > 0 ? 'bg-emerald-400/20 text-emerald-200' : 'bg-rose-400/20 text-rose-200'}`}>{activeRewardCount > 0 ? 'พร้อม' : 'ยังไม่มี'}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-2xl bg-white/10 border border-white/10 px-3 py-2.5">
+                      <span className="text-xs font-bold text-slate-100">อัตราแต้มตั้งแล้ว</span>
+                      <span className="text-[10px] font-black rounded-full px-2 py-1 bg-emerald-400/20 text-emerald-200">{pointsRate} บาท = 1 แต้ม</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-2xl bg-white/10 border border-white/10 px-3 py-2.5">
+                      <span className="text-xs font-bold text-slate-100">รายการรออนุมัติ</span>
+                      <span className={`text-[10px] font-black rounded-full px-2 py-1 ${pendingRedeems.length > 0 ? 'bg-amber-400/20 text-amber-200' : 'bg-emerald-400/20 text-emerald-200'}`}>{pendingRedeems.length > 0 ? `${pendingRedeems.length} รายการ` : 'ไม่มีค้าง'}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 rounded-2xl bg-white/10 border border-white/10 px-3 py-2.5">
+                      <span className="text-xs font-bold text-slate-100">ของรางวัลปิดอยู่</span>
+                      <span className={`text-[10px] font-black rounded-full px-2 py-1 ${inactiveRewards.length > 0 ? 'bg-slate-400/20 text-slate-200' : 'bg-emerald-400/20 text-emerald-200'}`}>{inactiveRewards.length.toLocaleString('th-TH')} รายการ</span>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => goToTab('settings')} className="w-full rounded-2xl bg-amber-400 text-slate-950 py-3 text-xs font-black hover:bg-amber-300 transition active:scale-95">ไปตั้งค่าร้านค้า</button>
                 </div>
               </div>
             </div>
