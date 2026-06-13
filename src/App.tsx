@@ -359,6 +359,7 @@ export default function App({
               clearInitialCouponCode={() => setInitialCouponCode("")}
               initialTab={initialCustomerTab}
               displayMode={isDemoMode ? "demo" : "production"}
+              dataVersion={dataVersion}
               lineIdentity={lineIdentity}
               onLineIdentityChange={handleLineIdentityChange}
             />
