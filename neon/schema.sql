@@ -7,6 +7,8 @@ create table if not exists shops (
   name text not null,
   description text not null default '',
   logo text not null default '',
+  logo_url text,
+  logo_storage_key text,
   category text not null default 'General',
   points_rate integer not null default 10 check (points_rate > 0),
   point_rounding_mode text not null default 'floor' check (point_rounding_mode in ('floor', 'nearest')),
@@ -40,6 +42,8 @@ create table if not exists rewards (
   id text primary key,
   name text not null,
   image text not null default '',
+  image_url text,
+  image_storage_key text,
   description text not null default '',
   points_cost integer not null default 1 check (points_cost > 0),
   stock integer not null default 0 check (stock >= 0),
@@ -53,6 +57,8 @@ create table if not exists promo_banners (
   id text primary key,
   title text not null,
   image text not null default '',
+  image_url text,
+  image_storage_key text,
   description text not null default '',
   is_ad boolean not null default false,
   shop_id text references shops(id) on delete cascade,
@@ -154,3 +160,12 @@ create index if not exists idx_membership_tiers_shop_id on membership_tiers(shop
 
 -- ล้างข้อมูลธุรกิจทั้งหมด แต่คงโครงสร้างตารางไว้
 -- truncate table membership_tiers, shop_onboarding_checklists, merchant_line_users, line_users, point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade;
+
+
+-- Phase 6G: Real image storage fields. Legacy logo/image columns remain for backwards compatibility.
+alter table shops add column if not exists logo_url text;
+alter table shops add column if not exists logo_storage_key text;
+alter table rewards add column if not exists image_url text;
+alter table rewards add column if not exists image_storage_key text;
+alter table promo_banners add column if not exists image_url text;
+alter table promo_banners add column if not exists image_storage_key text;

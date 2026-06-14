@@ -92,6 +92,7 @@ export default function OwnerDashboard({
   const [shopCategoryInput, setShopCategoryInput] = useState('');
   const [shopPhoneInput, setShopPhoneInput] = useState('');
   const [shopLogoInput, setShopLogoInput] = useState('');
+  const [shopLogoStorageKeyInput, setShopLogoStorageKeyInput] = useState('');
   const [shopWelcomeInput, setShopWelcomeInput] = useState('');
   const [shopContactInput, setShopContactInput] = useState('');
   const [shopShareMessageInput, setShopShareMessageInput] = useState('');
@@ -112,126 +113,116 @@ export default function OwnerDashboard({
   const shopLogoImageMaxBytes = 2 * 1024 * 1024;
   const shopLogoImageAllowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
-  const handleShopLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) return;
+  type MerchantImageKind = 'shop-logo' | 'reward-image' | 'promo-banner';
 
-    if (!shopLogoImageAllowedTypes.includes(file.type)) {
-      showStatus('❌ รองรับเฉพาะไฟล์ JPG, PNG หรือ WEBP เท่านั้น');
-      input.value = '';
-      return;
-    }
-
-    if (file.size > shopLogoImageMaxBytes) {
-      showStatus('❌ ไฟล์โลโก้ใหญ่เกินไป กรุณาใช้ไฟล์ไม่เกิน 2 MB');
-      input.value = '';
-      return;
-    }
-
-    const reader = new FileReader();
-
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : '';
-      if (!result) {
-        showStatus('❌ อ่านไฟล์โลโก้ไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง');
-        input.value = '';
+  const validateImageDimensions = (file: File, options: { minWidth: number; minHeight: number; squareRecommended?: boolean }) => new Promise<{ width: number; height: number }>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const previewImage = new window.Image();
+    previewImage.onload = () => {
+      const width = previewImage.naturalWidth;
+      const height = previewImage.naturalHeight;
+      URL.revokeObjectURL(objectUrl);
+      if (width < options.minWidth || height < options.minHeight) {
+        reject(new Error(`รูปค่อนข้างเล็ก (${width}×${height}px) ขั้นต่ำที่แนะนำคือ ${options.minWidth}×${options.minHeight}px`));
         return;
       }
-
-      const previewImage = new window.Image();
-      previewImage.onload = () => {
-        const width = previewImage.naturalWidth;
-        const height = previewImage.naturalHeight;
-        setShopLogoInput(result);
-
-        if (width < 300 || height < 300) {
-          showStatus(`⚠️ อัปโหลดโลโก้แล้ว แต่รูปค่อนข้างเล็ก (${width}×${height}px) แนะนำ 512×512px`);
-          return;
-        }
-
+      if (options.squareRecommended) {
         const ratio = width / height;
         if (ratio < 0.85 || ratio > 1.15) {
-          showStatus(`⚠️ อัปโหลดโลโก้แล้ว (${width}×${height}px) แนะนำให้ใช้รูปสี่เหลี่ยมจัตุรัส 512×512px`);
-          return;
+          showStatus(`⚠️ รูปไม่ใช่สี่เหลี่ยมจัตุรัส (${width}×${height}px) แต่ยังอัปโหลดได้`);
         }
-
-        showStatus(`✓ อัปโหลดโลโก้ร้านแล้ว (${width}×${height}px)`);
-      };
-      previewImage.onerror = () => {
-        setShopLogoInput(result);
-        showStatus('✓ อัปโหลดโลโก้ร้านแล้ว');
-      };
-      previewImage.src = result;
+      }
+      resolve({ width, height });
     };
-
-    reader.onerror = () => {
-      showStatus('❌ อ่านไฟล์โลโก้ไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง');
-      input.value = '';
+    previewImage.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('ตรวจสอบขนาดรูปไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง'));
     };
+    previewImage.src = objectUrl;
+  });
 
-    reader.readAsDataURL(file);
-  };
-
-  const handleRewardImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) return;
-
+  const uploadMerchantImage = async (file: File, kind: MerchantImageKind, options: { minWidth: number; minHeight: number; squareRecommended?: boolean }) => {
     if (!rewardImageAllowedTypes.includes(file.type)) {
-      showStatus('❌ รองรับเฉพาะไฟล์ JPG, PNG หรือ WEBP เท่านั้น');
-      input.value = '';
-      return;
+      throw new Error('รองรับเฉพาะไฟล์ JPG, PNG หรือ WEBP เท่านั้น');
     }
 
     if (file.size > rewardImageMaxBytes) {
-      showStatus('❌ ไฟล์รูปใหญ่เกินไป กรุณาใช้ไฟล์ไม่เกิน 2 MB');
-      input.value = '';
-      return;
+      throw new Error('ไฟล์รูปใหญ่เกินไป กรุณาใช้ไฟล์ไม่เกิน 2 MB');
     }
 
-    const reader = new FileReader();
+    const dimensions = await validateImageDimensions(file, options);
+    const formData = new FormData();
+    formData.set('file', file);
+    formData.set('shopId', selectedShopId);
+    formData.set('kind', kind);
 
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : '';
-      if (!result) {
-        showStatus('❌ อ่านไฟล์รูปไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง');
-        input.value = '';
-        return;
-      }
+    const response = await fetch('/api/storage/upload', {
+      method: 'POST',
+      body: formData,
+    });
+    const payload = await response.json().catch(() => ({}));
 
-      const previewImage = new window.Image();
-      previewImage.onload = () => {
-        const width = previewImage.naturalWidth;
-        const height = previewImage.naturalHeight;
-        setNewRewImage(result);
+    if (!response.ok || !payload?.ok || !payload?.url) {
+      throw new Error(payload?.message || 'อัปโหลดรูปไม่สำเร็จ');
+    }
 
-        if (width < 600 || height < 600) {
-          showStatus(`⚠️ อัปโหลดรูปแล้ว แต่รูปค่อนข้างเล็ก (${width}×${height}px) แนะนำ 800×800px`);
-          return;
-        }
-
-        const ratio = width / height;
-        if (ratio < 0.85 || ratio > 1.15) {
-          showStatus(`⚠️ อัปโหลดรูปแล้ว (${width}×${height}px) แนะนำให้ใช้รูปสี่เหลี่ยมจัตุรัส 800×800px`);
-          return;
-        }
-
-        showStatus(`✓ อัปโหลดรูปของรางวัลแล้ว (${width}×${height}px)`);
-      };
-      previewImage.onerror = () => {
-        setNewRewImage(result);
-        showStatus('✓ อัปโหลดรูปของรางวัลแล้ว');
-      };
-      previewImage.src = result;
+    return {
+      url: String(payload.url),
+      storageKey: String(payload.storageKey || ''),
+      width: dimensions.width,
+      height: dimensions.height,
     };
+  };
 
-    reader.onerror = () => {
-      showStatus('❌ อ่านไฟล์รูปไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง');
+  const handleShopLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    try {
+      showStatus('กำลังอัปโหลดโลโก้ร้านไป Vercel Blob...');
+      const uploaded = await uploadMerchantImage(file, 'shop-logo', { minWidth: 300, minHeight: 300, squareRecommended: true });
+      setShopLogoInput(uploaded.url);
+      setShopLogoStorageKeyInput(uploaded.storageKey);
+      showStatus(`✓ อัปโหลดโลโก้ร้านไป Vercel Blob แล้ว (${uploaded.width}×${uploaded.height}px) อย่าลืมกดบันทึกตั้งค่าร้านค้า`);
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'อัปโหลดโลโก้ร้านไม่สำเร็จ'}`);
       input.value = '';
-    };
+    }
+  };
 
-    reader.readAsDataURL(file);
+  const handleRewardImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    try {
+      showStatus('กำลังอัปโหลดรูปของรางวัลไป Vercel Blob...');
+      const uploaded = await uploadMerchantImage(file, 'reward-image', { minWidth: 600, minHeight: 600, squareRecommended: true });
+      setNewRewImage(uploaded.url);
+      setNewRewStorageKey(uploaded.storageKey);
+      showStatus(`✓ อัปโหลดรูปของรางวัลไป Vercel Blob แล้ว (${uploaded.width}×${uploaded.height}px)`);
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'อัปโหลดรูปของรางวัลไม่สำเร็จ'}`);
+      input.value = '';
+    }
+  };
+
+  const handleBannerImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    try {
+      showStatus('กำลังอัปโหลดรูปโปรโมชันไป Vercel Blob...');
+      const uploaded = await uploadMerchantImage(file, 'promo-banner', { minWidth: 600, minHeight: 300 });
+      setNewBannerImage(uploaded.url);
+      setNewBannerStorageKey(uploaded.storageKey);
+      showStatus(`✓ อัปโหลดรูปโปรโมชันไป Vercel Blob แล้ว (${uploaded.width}×${uploaded.height}px)`);
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'อัปโหลดรูปโปรโมชันไม่สำเร็จ'}`);
+      input.value = '';
+    }
   };
 
   const generateNewCouponAndLink = () => {
@@ -395,6 +386,7 @@ export default function OwnerDashboard({
   const [newRewStock, setNewRewStock] = useState('20');
   const [newRewDesc, setNewRewDesc] = useState('');
   const [newRewImage, setNewRewImage] = useState('');
+  const [newRewStorageKey, setNewRewStorageKey] = useState('');
 
   // Manual point adjusting modal states
   const [statusMsg, setStatusMsg] = useState('');
@@ -417,6 +409,7 @@ export default function OwnerDashboard({
   const [newBannerTitle, setNewBannerTitle] = useState('');
   const [newBannerDesc, setNewBannerDesc] = useState('');
   const [newBannerImage, setNewBannerImage] = useState('');
+  const [newBannerStorageKey, setNewBannerStorageKey] = useState('');
   const [newBannerExp, setNewBannerExp] = useState('2026-06-30');
 
   // Load latest data on focus or change
@@ -472,13 +465,14 @@ export default function OwnerDashboard({
     setShopDescriptionInput(activeShopDetail.description || '');
     setShopCategoryInput(activeShopDetail.category || '');
     setShopPhoneInput(activeShopDetail.phone || '');
-    setShopLogoInput(activeShopDetail.logo || '');
+    setShopLogoInput(activeShopDetail.logoUrl || activeShopDetail.logo || '');
+    setShopLogoStorageKeyInput(activeShopDetail.logoStorageKey || '');
     setShopWelcomeInput(activeShopDetail.welcomeMessage || `ยินดีต้อนรับสู่ ${activeShopDetail.name || 'ร้านค้า'} สะสมแต้มและแลกของรางวัลได้จากหน้านี้`);
     setShopContactInput(activeShopDetail.contactText || activeShopDetail.phone || '');
     setShopShareMessageInput(activeShopDetail.shareMessageTemplate || `รับแต้มจาก {shop} จำนวน {points} แต้ม\nกดรับแต้มที่นี่: {url}`);
     setShopRichMenuContactUrlInput(activeShopDetail.richMenuContactUrl || '');
     setShopIsActiveInput(activeShopDetail.isActive !== false);
-  }, [activeShopDetail?.id, activeShopDetail?.name, activeShopDetail?.description, activeShopDetail?.category, activeShopDetail?.phone, activeShopDetail?.logo, activeShopDetail?.pointsRate, activeShopDetail?.pointRoundingMode, activeShopDetail?.minimumPurchaseForPoints, activeShopDetail?.pointExpiryDays, activeShopDetail?.pointExpiryReminderDays, activeShopDetail?.isActive, activeShopDetail?.welcomeMessage, activeShopDetail?.contactText, activeShopDetail?.shareMessageTemplate, activeShopDetail?.richMenuContactUrl]);
+  }, [activeShopDetail?.id, activeShopDetail?.name, activeShopDetail?.description, activeShopDetail?.category, activeShopDetail?.phone, activeShopDetail?.logo, activeShopDetail?.logoUrl, activeShopDetail?.logoStorageKey, activeShopDetail?.pointsRate, activeShopDetail?.pointRoundingMode, activeShopDetail?.minimumPurchaseForPoints, activeShopDetail?.pointExpiryDays, activeShopDetail?.pointExpiryReminderDays, activeShopDetail?.isActive, activeShopDetail?.welcomeMessage, activeShopDetail?.contactText, activeShopDetail?.shareMessageTemplate, activeShopDetail?.richMenuContactUrl]);
 
   useEffect(() => {
     const nextInputs: Record<string, { minLifetimePoints: string; benefitText: string; isActive: boolean }> = {};
@@ -636,7 +630,7 @@ export default function OwnerDashboard({
   const getPilotChecklistData = () => {
     const shop = activeShopDetail;
     const hasShopName = Boolean(shop?.name?.trim());
-    const hasShopLogo = Boolean(shop?.logo?.trim());
+    const hasShopLogo = Boolean((shop?.logoUrl || shop?.logo || '').trim());
     const hasContact = Boolean(shop?.phone?.trim() || shop?.contactText?.trim() || shop?.richMenuContactUrl?.trim());
     const hasPointRate = Math.max(1, Number(shop?.pointsRate || 0)) > 0;
     const hasReward = rewards.length > 0;
@@ -812,7 +806,7 @@ export default function OwnerDashboard({
     'แต้มที่ใช้': reward.pointsCost,
     'สต็อกคงเหลือ': reward.stock,
     'สถานะการแสดงผล': reward.isAvailable ? 'เปิดให้แลก' : 'ซ่อนอยู่',
-    'ลิงก์รูปภาพ': reward.image,
+    'ลิงก์รูปภาพ': reward.imageUrl || reward.image,
   }));
 
   const buildPromoReportRows = () => banners.map((banner, index) => ({
@@ -823,7 +817,7 @@ export default function OwnerDashboard({
     'ประเภท': banner.isAd ? 'โฆษณาแพลตฟอร์ม' : 'โปรโมชันร้านค้า',
     'หมดอายุ': formatReportDate(banner.expirationDate),
     'ลิงก์': banner.url || '',
-    'ลิงก์รูปภาพ': banner.image,
+    'ลิงก์รูปภาพ': banner.imageUrl || banner.image,
   }));
 
   const buildAuditReportRows = () => [...auditLogs]
@@ -1099,6 +1093,8 @@ export default function OwnerDashboard({
             category: nextCategory,
             phone: nextPhone,
             logo: nextLogo,
+            logoUrl: nextLogo.startsWith('http') ? nextLogo : undefined,
+            logoStorageKey: shopLogoStorageKeyInput || undefined,
             ...nextPointRules,
             isActive: shopIsActiveInput,
             welcomeMessage: nextWelcome,
@@ -1647,6 +1643,7 @@ export default function OwnerDashboard({
     setNewRewStock('20');
     setNewRewDesc('');
     setNewRewImage('');
+    setNewRewStorageKey('');
     setShowRewardModal(true);
   };
 
@@ -1656,7 +1653,8 @@ export default function OwnerDashboard({
     setNewRewPoints(String(reward.pointsCost));
     setNewRewStock(String(reward.stock));
     setNewRewDesc(reward.description);
-    setNewRewImage(reward.image);
+    setNewRewImage(reward.imageUrl || reward.image);
+    setNewRewStorageKey(reward.imageStorageKey || '');
     setShowRewardModal(true);
   };
 
@@ -1696,7 +1694,9 @@ export default function OwnerDashboard({
             pointsCost: rewardPointsValue,
             stock: rewardStockValue,
             description: rewardDescription,
-            image: newRewImage || defaultRewardImage
+            image: newRewImage || defaultRewardImage,
+            imageUrl: newRewImage && newRewImage.startsWith('http') ? newRewImage : undefined,
+            imageStorageKey: newRewStorageKey || undefined
           };
         }
         return r;
@@ -1720,6 +1720,8 @@ export default function OwnerDashboard({
         stock: rewardStockValue,
         description: rewardDescription,
         image: newRewImage || defaultRewardImage,
+        imageUrl: newRewImage && newRewImage.startsWith('http') ? newRewImage : undefined,
+        imageStorageKey: newRewStorageKey || undefined,
         isAvailable: true,
         shopId: selectedShopId
       };
@@ -1809,6 +1811,8 @@ export default function OwnerDashboard({
       title: newBannerTitle,
       description: newBannerDesc || 'โปรโมชันพิเศษสำหรับสมาชิก',
       image: newBannerImage || 'https://images.unsplash.com/photo-1517142089942-ba376ce32a2e?w=400',
+      imageUrl: newBannerImage && newBannerImage.startsWith('http') ? newBannerImage : undefined,
+      imageStorageKey: newBannerStorageKey || undefined,
       expirationDate: new Date(newBannerExp || '2026-06-30').toISOString(),
       shopId: selectedShopId,
       isAd: false
@@ -1829,6 +1833,7 @@ export default function OwnerDashboard({
     setNewBannerTitle('');
     setNewBannerDesc('');
     setNewBannerImage('');
+    setNewBannerStorageKey('');
     setNewBannerExp('2026-06-30');
 
     onDataChange();
@@ -2381,6 +2386,7 @@ export default function OwnerDashboard({
                             type="button"
                             onClick={() => {
                               setShopLogoInput('');
+                              setShopLogoStorageKeyInput('');
                               showStatus('✓ ล้างรูปโลโก้ร้านแล้ว อย่าลืมกดบันทึกตั้งค่าร้านค้า');
                             }}
                             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-700 transition hover:bg-slate-100 active:scale-95"
@@ -3417,7 +3423,7 @@ export default function OwnerDashboard({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {rewards.map(rew => (
                 <div key={rew.id} className="bg-white border border-slate-200 p-3.5 rounded-2xl flex gap-3 shadow-sm">
-                  <img src={rew.image} alt={rew.name} className="w-20 h-20 rounded-xl object-cover flex-shrink-0" referrerPolicy="no-referrer" />
+                  <img src={rew.imageUrl || rew.image} alt={rew.name} className="w-20 h-20 rounded-xl object-cover flex-shrink-0" referrerPolicy="no-referrer" />
                   <div className="flex-1 flex flex-col justify-between min-w-0">
                     <div className="space-y-0.5">
                       <h4 className="text-xs font-bold text-slate-900 truncate">{rew.name}</h4>
@@ -3555,7 +3561,7 @@ export default function OwnerDashboard({
                         {newRewImage && (
                           <button
                             type="button"
-                            onClick={() => setNewRewImage('')}
+                            onClick={() => { setNewRewImage(''); setNewRewStorageKey(''); }}
                             className="text-[10px] font-bold text-neutral-400 hover:text-rose-300 underline underline-offset-2"
                           >
                             ล้างรูปนี้แล้วเลือกรูปใหม่
@@ -3616,7 +3622,7 @@ export default function OwnerDashboard({
             <div className="space-y-3.5">
               {banners.map((ban, idx) => (
                 <div key={idx} className="bg-neutral-950 border border-neutral-850 p-4 rounded-2xl flex flex-col md:flex-row gap-4 items-start md:items-center">
-                  <img src={ban.image} alt={ban.title} className="w-full md:w-36 h-20 object-cover rounded-xl border border-neutral-800" referrerPolicy="no-referrer" />
+                  <img src={ban.imageUrl || ban.image} alt={ban.title} className="w-full md:w-36 h-20 object-cover rounded-xl border border-neutral-800" referrerPolicy="no-referrer" />
                   <div className="flex-grow space-y-1">
                     <div className="flex justify-between items-start">
                       <h4 className="text-xs font-bold text-neutral-100">{ban.title}</h4>
@@ -3668,16 +3674,38 @@ export default function OwnerDashboard({
                       />
                     </div>
 
-                    <div className="space-y-1">
-                      <label className="text-[10.5px] text-neutral-400 block font-sans">ลิงก์รูปภาพโปรโมชัน</label>
-                      <input 
-                        type="url"
-                        value={newBannerImage}
-                        onChange={(e) => setNewBannerImage(e.target.value)}
-                        placeholder="https://images.unsplash.com/..."
-                        className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg outline-none font-sans"
-                        required
-                      />
+                    <div className="space-y-2">
+                      <label className="text-[10.5px] text-neutral-400 block font-sans">รูปภาพโปรโมชัน</label>
+                      <div className="rounded-2xl border border-dashed border-neutral-700 bg-neutral-950/70 p-3 space-y-3">
+                        {newBannerImage && (
+                          <img
+                            src={newBannerImage}
+                            alt="ตัวอย่างรูปโปรโมชัน"
+                            className="w-full h-28 object-cover rounded-xl border border-neutral-800"
+                            referrerPolicy="no-referrer"
+                          />
+                        )}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={handleBannerImageUpload}
+                          className="block w-full text-[10px] text-neutral-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-500 file:px-3 file:py-2 file:text-[10px] file:font-black file:text-neutral-950 hover:file:bg-yellow-400"
+                        />
+                        <input 
+                          type="url"
+                          value={newBannerImage}
+                          onChange={(e) => {
+                            setNewBannerImage(e.target.value);
+                            setNewBannerStorageKey('');
+                          }}
+                          placeholder="หรือวาง URL รูปภาพ เช่น https://..."
+                          className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg outline-none font-sans"
+                          required
+                        />
+                        <p className="text-[9px] text-neutral-500 leading-relaxed">
+                          แนะนำ JPG/PNG/WEBP ไม่เกิน 2 MB ระบบจะอัปโหลดไฟล์ไป Vercel Blob และเก็บเป็น URL จริง
+                        </p>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3">

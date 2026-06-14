@@ -5,6 +5,8 @@ export interface Shop {
   name: string;
   description: string;
   logo: string;
+  logoUrl?: string;
+  logoStorageKey?: string;
   category: string;
   pointsRate: number; // e.g. 10 Baht = 1 Point
   pointRoundingMode?: PointRoundingMode;
@@ -44,6 +46,8 @@ export interface Reward {
   id: string;
   name: string;
   image: string;
+  imageUrl?: string;
+  imageStorageKey?: string;
   description: string;
   pointsCost: number;
   stock: number;
@@ -55,6 +59,8 @@ export interface PromoBanner {
   id: string;
   title: string;
   image: string;
+  imageUrl?: string;
+  imageStorageKey?: string;
   description: string;
   isAd: boolean; // true = Platform Ad, false = Store Promotion
   shopId?: string; // Empty if it's a platform ad

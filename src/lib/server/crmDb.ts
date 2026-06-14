@@ -114,6 +114,8 @@ export async function ensureCrmSchema() {
     name text not null,
     description text not null default '',
     logo text not null default '',
+    logo_url text,
+    logo_storage_key text,
     category text not null default 'General',
     points_rate integer not null default 10 check (points_rate > 0),
     point_rounding_mode text not null default 'floor' check (point_rounding_mode in ('floor', 'nearest')),
@@ -128,6 +130,8 @@ export async function ensureCrmSchema() {
     updated_at timestamptz not null default now()
   )`;
 
+  await sql`alter table shops add column if not exists logo_url text`;
+  await sql`alter table shops add column if not exists logo_storage_key text`;
   await sql`alter table shops add column if not exists point_rounding_mode text not null default 'floor'`;
   await sql`alter table shops add column if not exists minimum_purchase_for_points integer not null default 1`;
   await sql`alter table shops add column if not exists point_link_expiry_days integer not null default 7`;
@@ -209,6 +213,8 @@ export async function ensureCrmSchema() {
     id text primary key,
     name text not null,
     image text not null default '',
+    image_url text,
+    image_storage_key text,
     description text not null default '',
     points_cost integer not null default 1 check (points_cost > 0),
     stock integer not null default 0 check (stock >= 0),
@@ -222,6 +228,8 @@ export async function ensureCrmSchema() {
     id text primary key,
     title text not null,
     image text not null default '',
+    image_url text,
+    image_storage_key text,
     description text not null default '',
     is_ad boolean not null default false,
     shop_id text references shops(id) on delete cascade,
@@ -327,6 +335,11 @@ export async function ensureCrmSchema() {
     constraint membership_tiers_shop_name_unique unique (shop_id, name)
   )`;
 
+  await sql`alter table rewards add column if not exists image_url text`;
+  await sql`alter table rewards add column if not exists image_storage_key text`;
+  await sql`alter table promo_banners add column if not exists image_url text`;
+  await sql`alter table promo_banners add column if not exists image_storage_key text`;
+
   await sql`create index if not exists idx_rewards_shop_id on rewards(shop_id)`;
   await sql`create index if not exists idx_banners_shop_id on promo_banners(shop_id)`;
   await sql`create index if not exists idx_transactions_user_id on transactions(user_id)`;
@@ -402,10 +415,10 @@ export async function getCrmSnapshot(): Promise<CrmSnapshot> {
     onboardingChecklists,
     membershipTiers,
   ] = await Promise.all([
-    sql`select id, name, description, logo, category, points_rate as "pointsRate", point_rounding_mode as "pointRoundingMode", minimum_purchase_for_points as "minimumPurchaseForPoints", point_link_expiry_days as "pointLinkExpiryDays", point_expiry_days as "pointExpiryDays", point_expiry_reminder_days as "pointExpiryReminderDays", is_active as "isActive", registration_status as "registrationStatus", phone, created_at as "createdAt" from shops order by created_at asc`,
+    sql`select id, name, description, logo, logo_url as "logoUrl", logo_storage_key as "logoStorageKey", category, points_rate as "pointsRate", point_rounding_mode as "pointRoundingMode", minimum_purchase_for_points as "minimumPurchaseForPoints", point_link_expiry_days as "pointLinkExpiryDays", point_expiry_days as "pointExpiryDays", point_expiry_reminder_days as "pointExpiryReminderDays", is_active as "isActive", registration_status as "registrationStatus", phone, created_at as "createdAt" from shops order by created_at asc`,
     sql`select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds" from customers order by created_at asc`,
-    sql`select id, name, image, description, points_cost as "pointsCost", stock, is_available as "isAvailable", shop_id as "shopId" from rewards order by created_at asc`,
-    sql`select id, title, image, description, is_ad as "isAd", shop_id as "shopId", url, expiration_date as "expirationDate" from promo_banners order by created_at asc`,
+    sql`select id, name, image, image_url as "imageUrl", image_storage_key as "imageStorageKey", description, points_cost as "pointsCost", stock, is_available as "isAvailable", shop_id as "shopId" from rewards order by created_at asc`,
+    sql`select id, title, image, image_url as "imageUrl", image_storage_key as "imageStorageKey", description, is_ad as "isAd", shop_id as "shopId", url, expiration_date as "expirationDate" from promo_banners order by created_at asc`,
     sql`select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", points_expires_at as "pointsExpiresAt", created_at as "createdAt" from transactions order by created_at desc`,
     sql`select code, points, shop_id as "shopId", shop_name as "shopName", description, created_at as "createdAt", expires_at as "expiresAt", is_used as "isUsed", used_by_customer_id as "usedByCustomerId", used_at as "usedAt" from point_coupons order by created_at desc`,
     sql`select id, shop_id as "shopId", shop_name as "shopName", actor_type as "actorType", actor_name as "actorName", actor_id as "actorId", action, action_label as "actionLabel", description, target_type as "targetType", target_id as "targetId", customer_id as "customerId", customer_name as "customerName", points, status, metadata, created_at as "createdAt" from audit_logs order by created_at desc`,
@@ -454,7 +467,7 @@ async function syncShops(rows: Shop[]) {
 
   await sql`
     insert into shops (
-      id, name, description, logo, category, points_rate,
+      id, name, description, logo, logo_url, logo_storage_key, category, points_rate,
       point_rounding_mode, minimum_purchase_for_points, point_link_expiry_days,
       point_expiry_days, point_expiry_reminder_days,
       is_active, registration_status, phone, created_at, updated_at
@@ -464,6 +477,8 @@ async function syncShops(rows: Shop[]) {
       name,
       coalesce(description, ''),
       coalesce(logo, ''),
+      nullif("logoUrl", ''),
+      nullif("logoStorageKey", ''),
       coalesce(category, 'General'),
       greatest(1, coalesce("pointsRate", 10)),
       case when "pointRoundingMode" = 'nearest' then 'nearest' else 'floor' end,
@@ -481,6 +496,8 @@ async function syncShops(rows: Shop[]) {
       name text,
       description text,
       logo text,
+      "logoUrl" text,
+      "logoStorageKey" text,
       category text,
       "pointsRate" integer,
       "pointRoundingMode" text,
@@ -497,6 +514,8 @@ async function syncShops(rows: Shop[]) {
       name = excluded.name,
       description = excluded.description,
       logo = excluded.logo,
+      logo_url = excluded.logo_url,
+      logo_storage_key = excluded.logo_storage_key,
       category = excluded.category,
       points_rate = excluded.points_rate,
       point_rounding_mode = excluded.point_rounding_mode,
@@ -544,12 +563,14 @@ async function syncRewards(rows: Reward[]) {
   if (!rows.length) return;
 
   await sql`
-    insert into rewards (id, name, image, description, points_cost, stock, is_available, shop_id, updated_at)
-    select id, name, coalesce(image, ''), coalesce(description, ''), coalesce("pointsCost", 1), coalesce(stock, 0), coalesce("isAvailable", true), "shopId", now()
-    from jsonb_to_recordset(${payload}::jsonb) as x(id text, name text, image text, description text, "pointsCost" integer, stock integer, "isAvailable" boolean, "shopId" text)
+    insert into rewards (id, name, image, image_url, image_storage_key, description, points_cost, stock, is_available, shop_id, updated_at)
+    select id, name, coalesce(image, ''), nullif("imageUrl", ''), nullif("imageStorageKey", ''), coalesce(description, ''), coalesce("pointsCost", 1), coalesce(stock, 0), coalesce("isAvailable", true), "shopId", now()
+    from jsonb_to_recordset(${payload}::jsonb) as x(id text, name text, image text, "imageUrl" text, "imageStorageKey" text, description text, "pointsCost" integer, stock integer, "isAvailable" boolean, "shopId" text)
     on conflict (id) do update set
       name = excluded.name,
       image = excluded.image,
+      image_url = excluded.image_url,
+      image_storage_key = excluded.image_storage_key,
       description = excluded.description,
       points_cost = excluded.points_cost,
       stock = excluded.stock,
@@ -564,11 +585,13 @@ export async function upsertRewardRow(reward: Reward) {
   const sql = requireSql();
 
   await sql`
-    insert into rewards (id, name, image, description, points_cost, stock, is_available, shop_id, updated_at)
+    insert into rewards (id, name, image, image_url, image_storage_key, description, points_cost, stock, is_available, shop_id, updated_at)
     values (
       ${reward.id},
       ${reward.name},
       ${reward.image || ""},
+      ${reward.imageUrl || null},
+      ${reward.imageStorageKey || null},
       ${reward.description || ""},
       ${Math.max(1, Number(reward.pointsCost) || 1)},
       ${Math.max(0, Number(reward.stock) || 0)},
@@ -579,6 +602,8 @@ export async function upsertRewardRow(reward: Reward) {
     on conflict (id) do update set
       name = excluded.name,
       image = excluded.image,
+      image_url = excluded.image_url,
+      image_storage_key = excluded.image_storage_key,
       description = excluded.description,
       points_cost = excluded.points_cost,
       stock = excluded.stock,
@@ -602,12 +627,14 @@ async function syncBanners(rows: PromoBanner[]) {
   if (!rows.length) return;
 
   await sql`
-    insert into promo_banners (id, title, image, description, is_ad, shop_id, url, expiration_date, updated_at)
-    select id, title, coalesce(image, ''), coalesce(description, ''), coalesce("isAd", false), nullif("shopId", ''), url, "expirationDate"::date, now()
-    from jsonb_to_recordset(${payload}::jsonb) as x(id text, title text, image text, description text, "isAd" boolean, "shopId" text, url text, "expirationDate" text)
+    insert into promo_banners (id, title, image, image_url, image_storage_key, description, is_ad, shop_id, url, expiration_date, updated_at)
+    select id, title, coalesce(image, ''), nullif("imageUrl", ''), nullif("imageStorageKey", ''), coalesce(description, ''), coalesce("isAd", false), nullif("shopId", ''), url, "expirationDate"::date, now()
+    from jsonb_to_recordset(${payload}::jsonb) as x(id text, title text, image text, "imageUrl" text, "imageStorageKey" text, description text, "isAd" boolean, "shopId" text, url text, "expirationDate" text)
     on conflict (id) do update set
       title = excluded.title,
       image = excluded.image,
+      image_url = excluded.image_url,
+      image_storage_key = excluded.image_storage_key,
       description = excluded.description,
       is_ad = excluded.is_ad,
       shop_id = excluded.shop_id,

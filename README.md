@@ -316,3 +316,12 @@ Phase 6D cleanup: removed duplicate-claim-per-link setting. Coupons are intentio
 เพิ่มฐานข้อมูลวันหมดอายุของแต้มแล้ว โดยใช้ `transactions.points_expires_at` สำหรับรายการรับแต้ม (`earn`) และแสดงแต้มใกล้หมดอายุในหน้าลูกค้า/หลังบ้านร้านค้า เฟสนี้ยังไม่หักแต้มอัตโนมัติ ยังไม่ทำ FIFO และยังไม่ทำ cron job เพื่อให้ปลอดภัยกับข้อมูล Pilot ก่อน
 
 Migration ที่ต้องรันก่อน deploy: `neon/migrations/006_phase_6f_point_expiry_foundation.sql`
+
+
+## Phase 6G — Vercel Blob Image Storage
+
+- เพิ่ม Vercel Blob สำหรับอัปโหลดโลโก้ร้าน รูปของรางวัล และรูปโปรโมชัน
+- เพิ่ม `BLOB_READ_WRITE_TOKEN` ใน `.env.example`
+- เพิ่ม migration `neon/migrations/007_phase_6g_vercel_blob_image_storage.sql`
+- เก็บ URL/storage key ใหม่ แต่ยังคง field รูปเดิมไว้เพื่อ fallback รูปเก่าแบบ data URL
+- เอกสาร: `docs/VERCEL_BLOB_IMAGE_STORAGE_PHASE6G_TH.md`

@@ -1298,7 +1298,7 @@ export default function CustomerDashboard({
                     className="overflow-hidden rounded-2xl border border-[#eadfce] bg-white text-left shadow-[0_14px_32px_-30px_rgba(55,36,18,0.55)] transition active:scale-[0.98]"
                   >
                     <div className="relative h-20 overflow-hidden bg-[#f5eee4]">
-                      <img src={rew.image} alt={rew.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                      <img src={rew.imageUrl || rew.image} alt={rew.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
                       {index === 0 && (
                         <span className="absolute left-1.5 top-1.5 rounded-full bg-[#2a140a]/90 px-2 py-0.5 text-[8px] font-black text-[#f4c767]">
                           ยอดนิยม
@@ -1383,7 +1383,7 @@ export default function CustomerDashboard({
             {/* Active Shop details banner inside rewards */}
             <div className="bg-white border border-slate-200/60 rounded-2xl p-3 flex items-center gap-3 shadow-sm">
               <img
-                src={activeShop?.logo}
+                src={activeShop?.logoUrl || activeShop?.logo}
                 className="w-10 h-10 rounded-full object-cover border border-slate-100"
                 referrerPolicy="no-referrer"
               />
@@ -1409,7 +1409,7 @@ export default function CustomerDashboard({
                   >
                     <div className="h-24 relative overflow-hidden">
                       <img
-                        src={rew.image}
+                        src={rew.imageUrl || rew.image}
                         alt={rew.name}
                         className="w-full h-full object-cover"
                         referrerPolicy="no-referrer"
@@ -2148,7 +2148,7 @@ export default function CustomerDashboard({
 
               <div className="space-y-4">
                 <img
-                  src={selectedReward.image}
+                  src={selectedReward.imageUrl || selectedReward.image}
                   alt={selectedReward.name}
                   className="w-full h-32 object-cover rounded-2xl border border-slate-100"
                   referrerPolicy="no-referrer"
