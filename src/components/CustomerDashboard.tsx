@@ -596,6 +596,7 @@ export default function CustomerDashboard({
     : "";
 
   // Point Progress calculate from database-backed membership tiers.
+  const currentTierName = resolveMembershipTier(customer.lifetimePoints, membershipTiers);
   const currentTierConfig = getCurrentMembershipTierConfig(customer.lifetimePoints, membershipTiers);
   const nextTierConfig = getNextMembershipTier(customer.lifetimePoints, membershipTiers);
   const tierInfo = {
@@ -1169,7 +1170,7 @@ export default function CustomerDashboard({
                     </h2>
                     <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[#d6c7b3] bg-[#fbf7ef] px-3 py-1 text-[10px] font-black text-[#4a3626] shadow-sm">
                       <Award className="h-3.5 w-3.5 text-[#b8872d]" />
-                      {customer.tier.toUpperCase()} MEMBER
+                      {currentTierName.toUpperCase()} MEMBER
                     </div>
                   </div>
                 </div>
@@ -1211,7 +1212,7 @@ export default function CustomerDashboard({
               <div className="relative mt-3 text-center">
                 <p className="text-[11px] font-black tracking-[0.16em] text-[#a8761f]">LOYALTY PRIVILEGE CLUB</p>
                 <h3 className="mt-1 text-[22px] font-black tracking-wide text-[#2a140a]">
-                  {customer.tier.toUpperCase()} MEMBER
+                  {currentTierName.toUpperCase()} MEMBER
                 </h3>
                 <div className="mx-auto mt-2 h-px w-24 bg-gradient-to-r from-transparent via-[#c89a45] to-transparent" />
               </div>
@@ -1910,7 +1911,7 @@ export default function CustomerDashboard({
                     ข้อมูลจาก LINE
                   </p>
                   <span className="inline-block mt-1 bg-amber-500/10 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full border border-amber-500/20 shadow-sm">
-                    👑 ระดับ {customer.tier}
+                    👑 ระดับ {currentTierName}
                   </span>
                 </div>
               </div>
@@ -1965,14 +1966,14 @@ export default function CustomerDashboard({
             {/* Level Privileges Info Card */}
             <div className="bg-amber-50/50 border border-amber-200/65 p-4 rounded-2xl space-y-2.5 text-[10.5px] shadow-sm">
               <span className="text-[11px] font-extrabold text-amber-900">
-                สิทธิพิเศษประจำระดับ {customer.tier} :
+                สิทธิพิเศษประจำระดับ {currentTierName} :
               </span>
               <ul className="space-y-1.5 text-stone-700 list-disc list-inside font-semibold font-sans">
                 <li>สะสมแต้มแลกเครื่องดื่มและของรางวัลพิเศษหน้าร้าน</li>
                 <li>
                   รับสิทธิ์ร่วมกิจกรรมพิเศษของร้านตามเงื่อนไข
                 </li>
-                {(customer.tier === "Platinum" || customer.tier === "VIP") ? (
+                {(currentTierName === "Platinum" || currentTierName === "VIP") ? (
                   <>
                     <li className="text-amber-700 font-bold">
                       ส่วนลดวันเกิดทันที 20% และเค้กวันเกิดจานพิเศษฟรี

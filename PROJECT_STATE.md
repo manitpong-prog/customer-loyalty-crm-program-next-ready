@@ -66,3 +66,11 @@ Phase 6D small correction: point-link expiry is no longer configured in Merchant
 - ลูกค้าใหม่เริ่มต้นที่ `Member`
 - การเพิ่มแต้มจะคำนวณ badge จาก `lifetimePoints` และ tier settings ของร้าน
 - ต้องรัน `neon/migrations/005_phase_6e_membership_tiers.sql` ก่อน deploy
+
+## Latest patch — Membership tier recalculation after point deduction
+
+- แก้ bug หลังปรับลดแต้มแล้ว badge ระดับสมาชิกยังค้างที่ระดับเดิม เช่น lifetimePoints เหลือ 3,000 แต่ยังแสดง Platinum ทั้งที่ Platinum ถูกตั้งไว้ 3,500
+- หน้า Merchant จะ normalize `customer.tier` จาก `lifetimePoints` + `membership_tiers` ล่าสุดตอนโหลดข้อมูล
+- ตารางสมาชิกและ export detail แสดงระดับจากการคำนวณสด ไม่พึ่งค่า `customer.tier` ที่อาจค้างใน cache
+- หน้า Customer แสดง badge/สิทธิ์จากระดับที่คำนวณสดเช่นกัน
+- ไม่ต้องรัน SQL ใหม่สำหรับ patch นี้

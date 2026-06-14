@@ -423,15 +423,29 @@ export default function OwnerDashboard({
   const loadData = () => {
     const allShops = getShops();
     const allTransactions = getTransactions();
+    const allMembershipTiers = getMembershipTiers();
+    const selectedShopMembershipTiers = getMembershipTiersForShop(allMembershipTiers, selectedShopId);
+    const allCustomers = getCustomers();
+    const normalizedCustomers = allCustomers.map((customer) => {
+      const belongsToSelectedShop = customer.shopIds?.includes(selectedShopId) || allTransactions.some((tx) => tx.userId === customer.id && tx.shopId === selectedShopId);
+      if (!belongsToSelectedShop) return customer;
+
+      const resolvedTier = resolveMembershipTier(customer.lifetimePoints, selectedShopMembershipTiers);
+      return customer.tier === resolvedTier ? customer : { ...customer, tier: resolvedTier };
+    });
+
+    if (normalizedCustomers.some((customer, index) => customer.tier !== allCustomers[index]?.tier)) {
+      saveCustomers(normalizedCustomers);
+    }
+
     setShops(scopeApprovedShops(allShops, selectedShopId, isProductionView));
-    setCustomers(filterCustomersByShop(getCustomers(), selectedShopId, allTransactions, true));
+    setCustomers(filterCustomersByShop(normalizedCustomers, selectedShopId, allTransactions, true));
     setRewards(filterRewardsByShop(getRewards(), selectedShopId));
     setBanners(filterBannersByShop(getBanners(), selectedShopId, false));
     setTransactions(filterTransactionsByShop(allTransactions, selectedShopId));
     setAuditLogs(getAuditLogs().filter((log) => log.shopId === selectedShopId));
     setOnboardingChecklist(getOrCreateOnboardingChecklist(selectedShopId));
-    const allMembershipTiers = getMembershipTiers();
-    setMembershipTiers(getMembershipTiersForShop(allMembershipTiers, selectedShopId));
+    setMembershipTiers(selectedShopMembershipTiers);
 
     try {
       const shopCoupons = filterCouponsByShop(getGeneratedCoupons(), selectedShopId);
@@ -544,6 +558,10 @@ export default function OwnerDashboard({
 
   const getTierForLifetime = (lifetimePoints: number): Customer['tier'] => {
     return resolveMembershipTier(lifetimePoints, activeMembershipTiers);
+  };
+
+  const getDisplayTierForCustomer = (customer: Customer): Customer['tier'] => {
+    return resolveMembershipTier(customer.lifetimePoints, activeMembershipTiers);
   };
 
   const showStatus = (text: string) => {
@@ -728,7 +746,7 @@ export default function OwnerDashboard({
     'เบอร์โทร': customer.phone || '',
     'แต้มคงเหลือ': customer.currentPoints,
     'แต้มสะสมทั้งหมด': customer.lifetimePoints,
-    'ระดับสมาชิก': customer.tier,
+    'ระดับสมาชิก': getDisplayTierForCustomer(customer),
     'วันที่สมัคร': formatReportDate(customer.createdAt),
   }));
 
@@ -3175,9 +3193,14 @@ export default function OwnerDashboard({
                         </div>
                       </td>
                       <td className="py-3.5">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${getTierBadgeClassName(c.tier)}`}>
-                          {c.tier}
-                        </span>
+                        {(() => {
+                          const resolvedTier = getDisplayTierForCustomer(c);
+                          return (
+                            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${getTierBadgeClassName(resolvedTier)}`}>
+                              {resolvedTier}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className="py-3.5 font-bold font-mono text-amber-700 text-sm">{c.currentPoints} แต้ม</td>
                       <td className="py-3.5 font-mono text-slate-700">{c.lifetimePoints} แต้ม</td>
