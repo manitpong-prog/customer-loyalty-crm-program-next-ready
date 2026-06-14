@@ -23,7 +23,7 @@ export interface Shop {
   createdAt: string;
 }
 
-export type TierType = 'Silver' | 'Gold' | 'Platinum';
+export type TierType = 'Member' | 'Silver' | 'Gold' | 'Platinum' | 'VIP';
 
 export interface Customer {
   id: string;
@@ -80,6 +80,18 @@ export interface Transaction {
 export interface StoreSession {
   activeShopId: string;
   ownerName: string;
+}
+
+export interface MembershipTier {
+  id: string;
+  shopId: string;
+  name: TierType;
+  minLifetimePoints: number;
+  benefitText: string;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ShopOnboardingChecklist {

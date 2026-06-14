@@ -5,12 +5,12 @@ import {
   ShoppingBag, Award, PlusCircle, MinusCircle, Search, 
   Image, HelpCircle, Calendar, RefreshCw, AlertCircle, FileText, Copy, UserPlus, ReceiptText, Share2
 } from 'lucide-react';
-import { Shop, Customer, Reward, Transaction, PromoBanner, AuditLog, ShopOnboardingChecklist, PointRoundingMode } from '../types';
+import { Shop, Customer, Reward, Transaction, PromoBanner, AuditLog, ShopOnboardingChecklist, PointRoundingMode, MembershipTier } from '../types';
 import { 
   getShops, saveShops, getCustomers, saveCustomers, 
   getRewards, saveRewards, getTransactions, saveTransactions,
   getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons,
-  getAuditLogs, addAuditLog, getOrCreateOnboardingChecklist, upsertOnboardingChecklist
+  getAuditLogs, addAuditLog, getOrCreateOnboardingChecklist, upsertOnboardingChecklist, getMembershipTiers, saveMembershipTiers
 } from '../data/mockData';
 import { shopIdToSlug } from '../lib/shopSlug';
 import {
@@ -22,6 +22,7 @@ import {
   scopeApprovedShops,
 } from '../lib/shopScope';
 import { calculateEarnPoints, getPointRuleSummary, getPointRules } from '../lib/pointRules';
+import { getDefaultMembershipTiersForShop, getMembershipTiersForShop, getTierBadgeClassName, resolveMembershipTier } from '../lib/membershipTiers';
 
 type MerchantTab = 'dashboard' | 'approvals' | 'customers' | 'rewards' | 'promotions' | 'generator' | 'reports' | 'audit' | 'settings';
 
@@ -59,6 +60,8 @@ export default function OwnerDashboard({
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [onboardingChecklist, setOnboardingChecklist] = useState<ShopOnboardingChecklist | null>(null);
+  const [membershipTiers, setMembershipTiers] = useState<MembershipTier[]>([]);
+  const [tierInputs, setTierInputs] = useState<Record<string, { minLifetimePoints: string; benefitText: string; isActive: boolean }>>({});
 
   // Search Filter / Inputs
   const [searchTerm, setSearchTerm] = useState('');
@@ -427,6 +430,8 @@ export default function OwnerDashboard({
     setTransactions(filterTransactionsByShop(allTransactions, selectedShopId));
     setAuditLogs(getAuditLogs().filter((log) => log.shopId === selectedShopId));
     setOnboardingChecklist(getOrCreateOnboardingChecklist(selectedShopId));
+    const allMembershipTiers = getMembershipTiers();
+    setMembershipTiers(getMembershipTiersForShop(allMembershipTiers, selectedShopId));
 
     try {
       const shopCoupons = filterCouponsByShop(getGeneratedCoupons(), selectedShopId);
@@ -460,6 +465,18 @@ export default function OwnerDashboard({
     setShopRichMenuContactUrlInput(activeShopDetail.richMenuContactUrl || '');
     setShopIsActiveInput(activeShopDetail.isActive !== false);
   }, [activeShopDetail?.id, activeShopDetail?.name, activeShopDetail?.description, activeShopDetail?.category, activeShopDetail?.phone, activeShopDetail?.logo, activeShopDetail?.pointsRate, activeShopDetail?.pointRoundingMode, activeShopDetail?.minimumPurchaseForPoints, activeShopDetail?.pointExpiryDays, activeShopDetail?.pointExpiryReminderDays, activeShopDetail?.isActive, activeShopDetail?.welcomeMessage, activeShopDetail?.contactText, activeShopDetail?.shareMessageTemplate, activeShopDetail?.richMenuContactUrl]);
+
+  useEffect(() => {
+    const nextInputs: Record<string, { minLifetimePoints: string; benefitText: string; isActive: boolean }> = {};
+    membershipTiers.forEach((tier) => {
+      nextInputs[tier.id] = {
+        minLifetimePoints: String(tier.minLifetimePoints),
+        benefitText: tier.benefitText || '',
+        isActive: tier.isActive,
+      };
+    });
+    setTierInputs(nextInputs);
+  }, [membershipTiers]);
 
   useEffect(() => {
     if (customers.length > 0 && !customers.some((customer) => customer.id === selectedSaleCustomerId)) {
@@ -523,11 +540,10 @@ export default function OwnerDashboard({
   const pointsRate = pointRules.pointsRate;
   const calculatedSalePoints = calculateEarnPoints(Number(saleAmount) || 0, activeShopDetail);
   const calculatedGeneratePoints = calculateEarnPoints(Number(generatePurchaseAmount) || 0, activeShopDetail);
+  const activeMembershipTiers = getMembershipTiersForShop(membershipTiers, selectedShopId);
 
   const getTierForLifetime = (lifetimePoints: number): Customer['tier'] => {
-    if (lifetimePoints >= 1000) return 'Platinum';
-    if (lifetimePoints >= 300) return 'Gold';
-    return 'Silver';
+    return resolveMembershipTier(lifetimePoints, activeMembershipTiers);
   };
 
   const showStatus = (text: string) => {
@@ -947,6 +963,83 @@ export default function OwnerDashboard({
     loadData();
   };
 
+
+  const updateTierInput = (tierId: string, patch: Partial<{ minLifetimePoints: string; benefitText: string; isActive: boolean }>) => {
+    setTierInputs((current) => ({
+      ...current,
+      [tierId]: {
+        minLifetimePoints: current[tierId]?.minLifetimePoints ?? '0',
+        benefitText: current[tierId]?.benefitText ?? '',
+        isActive: current[tierId]?.isActive ?? true,
+        ...patch,
+      },
+    }));
+  };
+
+  const handleSaveMembershipTiers = () => {
+    const now = new Date().toISOString();
+    const shopTiers = activeMembershipTiers.length > 0 ? activeMembershipTiers : getDefaultMembershipTiersForShop(selectedShopId);
+    const nextShopTiers: MembershipTier[] = [];
+
+    for (const tier of shopTiers) {
+      const input = tierInputs[tier.id];
+      const minText = String(input?.minLifetimePoints ?? tier.minLifetimePoints).trim();
+      const parsedMin = tier.name === 'Member' ? 0 : Number(minText);
+
+      if (!Number.isFinite(parsedMin) || parsedMin < 0) {
+        showStatus(`❌ กรุณาใส่แต้มขั้นต่ำของระดับ ${tier.name} เป็นตัวเลข 0 ขึ้นไป`);
+        return;
+      }
+
+      nextShopTiers.push({
+        ...tier,
+        minLifetimePoints: tier.name === 'Member' ? 0 : Math.floor(parsedMin),
+        benefitText: (input?.benefitText ?? tier.benefitText ?? '').trim(),
+        isActive: tier.name === 'Member' ? true : Boolean(input?.isActive ?? tier.isActive),
+        updatedAt: now,
+      });
+    }
+
+    const activeThresholds = nextShopTiers
+      .filter((tier) => tier.isActive)
+      .map((tier) => tier.minLifetimePoints);
+    const duplicatedThreshold = activeThresholds.some((value, index) => activeThresholds.indexOf(value) !== index);
+    if (duplicatedThreshold) {
+      showStatus('❌ แต้มขั้นต่ำของระดับที่เปิดใช้งานอยู่ต้องไม่ซ้ำกัน');
+      return;
+    }
+
+    const allTiers = getMembershipTiers();
+    const nextAllTiers = [
+      ...allTiers.filter((tier) => tier.shopId !== selectedShopId),
+      ...nextShopTiers,
+    ].sort((a, b) => a.shopId.localeCompare(b.shopId) || a.sortOrder - b.sortOrder);
+
+    saveMembershipTiers(nextAllTiers);
+    setMembershipTiers(getMembershipTiersForShop(nextAllTiers, selectedShopId));
+
+    const allCustomers = getCustomers();
+    const updatedCustomers = allCustomers.map((customer) => {
+      const belongsToShop = customer.shopIds?.includes(selectedShopId) || transactions.some((tx) => tx.userId === customer.id && tx.shopId === selectedShopId);
+      if (!belongsToShop) return customer;
+      return { ...customer, tier: resolveMembershipTier(customer.lifetimePoints, nextShopTiers) };
+    });
+    saveCustomers(updatedCustomers);
+
+    recordAuditLog({
+      action: 'membership_tiers_updated',
+      actionLabel: 'แก้ไขระดับสมาชิก',
+      description: `บันทึกระดับสมาชิก ${nextShopTiers.length} ระดับของร้าน ${activeShopDetail?.name || selectedShopId}`,
+      targetType: 'membership_tiers',
+      targetId: selectedShopId,
+      metadata: { tiers: nextShopTiers.map((tier) => ({ name: tier.name, minLifetimePoints: tier.minLifetimePoints, isActive: tier.isActive })) },
+    });
+
+    showStatus('✓ บันทึกระดับสมาชิกแล้ว และอัปเดต badge ลูกค้าตามแต้มสะสมรวม');
+    onDataChange();
+    loadData();
+  };
+
   const handleSaveShopSettings = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -1054,7 +1147,7 @@ export default function OwnerDashboard({
       avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(trimmedName)}&background=f59e0b&color=111827`,
       currentPoints: 0,
       lifetimePoints: 0,
-      tier: 'Silver',
+      tier: 'Member',
       createdAt: new Date().toISOString(),
       shopIds: [selectedShopId],
     };
@@ -2433,6 +2526,79 @@ export default function OwnerDashboard({
               </div>
             </form>
 
+            <div className="rounded-3xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-white p-5 shadow-sm space-y-4">
+              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black text-violet-700 uppercase tracking-[0.22em]">Phase 6E</p>
+                  <h4 className="text-xl font-black text-slate-950 mt-1">ตั้งค่าระดับสมาชิก</h4>
+                  <p className="text-xs text-slate-500 font-medium mt-1">ใช้แต้มสะสมรวมตลอดอายุสมาชิกในการอัปเกรดระดับ รอบนี้ล็อกชื่อระดับไว้ก่อนเพื่อให้ badge และรายงานไม่สับสน</p>
+                </div>
+                <div className="rounded-2xl border border-violet-200 bg-white px-4 py-3 text-xs font-bold text-violet-800">
+                  {activeMembershipTiers.filter((tier) => tier.isActive).length}/{activeMembershipTiers.length} ระดับเปิดใช้งาน
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3">
+                {activeMembershipTiers.map((tier) => {
+                  const input = tierInputs[tier.id] || { minLifetimePoints: String(tier.minLifetimePoints), benefitText: tier.benefitText || '', isActive: tier.isActive };
+                  return (
+                    <div key={tier.id} className={`rounded-3xl border p-4 ${input.isActive ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-200 opacity-80'}`}>
+                      <div className="grid grid-cols-1 lg:grid-cols-[150px_180px_1fr_120px] gap-3 lg:items-center">
+                        <div>
+                          <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black uppercase ${getTierBadgeClassName(tier.name)}`}>{tier.name}</span>
+                          {tier.name === 'Member' && <p className="mt-1 text-[10px] font-bold text-slate-500">ระดับเริ่มต้น ปิดไม่ได้</p>}
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-600">แต้มสะสมรวมขั้นต่ำ</label>
+                          <input
+                            type="number"
+                            min={0}
+                            disabled={tier.name === 'Member'}
+                            value={tier.name === 'Member' ? '0' : input.minLifetimePoints}
+                            onChange={(event) => updateTierInput(tier.id, { minLifetimePoints: event.target.value })}
+                            className="w-full rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-violet-300 disabled:bg-slate-100 disabled:text-slate-500"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-black text-slate-600">ตัวอย่างสิทธิ์ / คำอธิบาย</label>
+                          <input
+                            type="text"
+                            value={input.benefitText}
+                            onChange={(event) => updateTierInput(tier.id, { benefitText: event.target.value })}
+                            placeholder="เช่น ได้สิทธิ์โปรโมชันพิเศษ"
+                            className="w-full rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm font-medium text-slate-950 outline-none focus:ring-2 focus:ring-violet-300"
+                          />
+                        </div>
+                        <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-black text-slate-700">
+                          <input
+                            type="checkbox"
+                            disabled={tier.name === 'Member'}
+                            checked={tier.name === 'Member' ? true : Boolean(input.isActive)}
+                            onChange={(event) => updateTierInput(tier.id, { isActive: event.target.checked })}
+                            className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-400 disabled:opacity-50"
+                          />
+                          เปิดใช้
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="rounded-2xl border border-violet-100 bg-white p-4">
+                <p className="text-xs font-black text-slate-950">เกณฑ์เริ่มต้นที่แนะนำ</p>
+                <p className="mt-1 text-[11px] font-medium text-slate-500">Member 0 • Silver 500 • Gold 1,500 • Platinum 3,000 • VIP 5,000 แต้มสะสมรวม</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSaveMembershipTiers}
+                className="w-full rounded-2xl bg-violet-700 px-4 py-3 text-xs font-black text-white transition hover:bg-violet-800 active:scale-95"
+              >
+                บันทึกระดับสมาชิก
+              </button>
+            </div>
+
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
               <div>
                 <h4 className="text-base font-black text-slate-950">ลิงก์ลูกค้าและ Rich Menu</h4>
@@ -3009,7 +3175,7 @@ export default function OwnerDashboard({
                         </div>
                       </td>
                       <td className="py-3.5">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${c.tier === 'Platinum' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' : c.tier === 'Gold' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${getTierBadgeClassName(c.tier)}`}>
                           {c.tier}
                         </span>
                       </td>

@@ -292,3 +292,12 @@ Phase 6D cleanup: removed duplicate-claim-per-link setting. Coupons are intentio
 - เปิด popup อนุมัติ/ไม่อนุมัติอัตโนมัติเมื่อเข้าจากลิงก์ถูกต้อง
 - แสดง popup แจ้งลิงก์ไม่ถูกต้องเมื่อไม่พบรายการ
 - ไม่ต้องรัน SQL ใหม่สำหรับ patch นี้
+
+## Phase 6E — Membership Tiers with DB
+
+- เพิ่มตาราง `membership_tiers` สำหรับระดับสมาชิกแยกตามร้าน
+- ค่าเริ่มต้น: Member 0, Silver 500, Gold 1,500, Platinum 3,000, VIP 5,000 แต้มสะสมรวม
+- หน้า Merchant → ตั้งค่า มีการ์ด “ตั้งค่าระดับสมาชิก” ให้แก้แต้มขั้นต่ำ/สิทธิ์/เปิดปิดระดับ
+- ลูกค้าใหม่เริ่มต้นที่ `Member`
+- การเพิ่มแต้มจะคำนวณ badge จาก `lifetimePoints` และ tier settings ของร้าน
+- ต้องรัน `neon/migrations/005_phase_6e_membership_tiers.sql` ก่อน deploy

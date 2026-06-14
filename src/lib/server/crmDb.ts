@@ -1,21 +1,40 @@
-import { neon } from '@neondatabase/serverless';
-import type { AuditLog, Customer, PromoBanner, Reward, Shop, ShopOnboardingChecklist, Transaction } from '../../types';
+import { neon } from "@neondatabase/serverless";
+import type {
+  AuditLog,
+  Customer,
+  PromoBanner,
+  Reward,
+  Shop,
+  ShopOnboardingChecklist,
+  Transaction,
+  MembershipTier,
+} from "../../types";
 import {
   INITIAL_BANNERS,
   INITIAL_CUSTOMERS,
   INITIAL_REWARDS,
   INITIAL_SHOPS,
   INITIAL_TRANSACTIONS,
-} from '../../data/mockData';
+} from "../../data/mockData";
 import {
   PILOT_BANNERS,
   PILOT_CUSTOMERS,
   PILOT_REWARDS,
   PILOT_SHOPS,
   PILOT_TRANSACTIONS,
-} from '../../data/productionSeed';
+} from "../../data/productionSeed";
+import { getDefaultMembershipTiersForShops } from "../membershipTiers";
 
-export type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons' | 'auditLogs' | 'onboardingChecklists';
+export type CrmEntity =
+  | "shops"
+  | "customers"
+  | "rewards"
+  | "banners"
+  | "transactions"
+  | "coupons"
+  | "auditLogs"
+  | "onboardingChecklists"
+  | "membershipTiers";
 
 export type GeneratedCoupon = {
   code: string;
@@ -29,7 +48,6 @@ export type GeneratedCoupon = {
   usedByCustomerId?: string | null;
   usedAt?: string | null;
 };
-
 
 export type LineUserRecord = {
   lineUserId: string;
@@ -54,9 +72,11 @@ export type CrmSnapshot = {
   coupons: GeneratedCoupon[];
   auditLogs: AuditLog[];
   onboardingChecklists: ShopOnboardingChecklist[];
+  membershipTiers: MembershipTier[];
 };
 
-const connectionString = process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED || '';
+const connectionString =
+  process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED || "";
 const sql = connectionString ? neon(connectionString) : null;
 
 export function isDatabaseConfigured() {
@@ -65,7 +85,9 @@ export function isDatabaseConfigured() {
 
 function requireSql() {
   if (!sql) {
-    throw new Error('DATABASE_URL is not configured. Add DATABASE_URL in .env.local or Vercel Environment Variables.');
+    throw new Error(
+      "DATABASE_URL is not configured. Add DATABASE_URL in .env.local or Vercel Environment Variables.",
+    );
   }
   return sql;
 }
@@ -79,6 +101,9 @@ export const initialSnapshot: CrmSnapshot = {
   coupons: [],
   auditLogs: [],
   onboardingChecklists: [],
+  membershipTiers: getDefaultMembershipTiersForShops(
+    INITIAL_SHOPS.map((shop) => shop.id),
+  ),
 };
 
 export async function ensureCrmSchema() {
@@ -147,13 +172,35 @@ export async function ensureCrmSchema() {
     avatar text not null default '',
     current_points integer not null default 0 check (current_points >= 0),
     lifetime_points integer not null default 0 check (lifetime_points >= 0),
-    tier text not null default 'Silver' check (tier in ('Silver', 'Gold', 'Platinum')),
+    tier text not null default 'Member' check (tier in ('Member', 'Silver', 'Gold', 'Platinum', 'VIP')),
     created_at timestamptz not null default now(),
     shop_ids jsonb not null default '[]'::jsonb,
     updated_at timestamptz not null default now()
   )`;
 
   await sql`alter table customers add column if not exists shop_ids jsonb not null default '[]'::jsonb`;
+  await sql`alter table customers alter column tier set default 'Member'`;
+  await sql`
+    do $$
+    begin
+      if exists (select 1 from pg_constraint where conname = 'customers_tier_check') then
+        alter table customers drop constraint customers_tier_check;
+      end if;
+      alter table customers add constraint customers_tier_check check (tier in ('Member', 'Silver', 'Gold', 'Platinum', 'VIP'));
+    exception when duplicate_object then
+      null;
+    end
+    $$
+  `;
+  await sql`
+    update customers set tier = case
+      when lifetime_points >= 5000 then 'VIP'
+      when lifetime_points >= 3000 then 'Platinum'
+      when lifetime_points >= 1500 then 'Gold'
+      when lifetime_points >= 500 then 'Silver'
+      else 'Member'
+    end
+  `;
 
   // Backfill the current pilot customer created in earlier phases so Phase 5A scoping works without resetting Neon.
   await sql`update customers set shop_ids = jsonb_build_array('im_sticker') where id = 'cust_pilot_001' and jsonb_array_length(shop_ids) = 0 and exists (select 1 from shops where id = 'im_sticker')`;
@@ -212,7 +259,6 @@ export async function ensureCrmSchema() {
     used_at timestamptz
   )`;
 
-
   await sql`create table if not exists audit_logs (
     id text primary key,
     shop_id text not null references shops(id) on delete cascade,
@@ -267,6 +313,19 @@ export async function ensureCrmSchema() {
     constraint shop_onboarding_checklists_shop_unique unique (shop_id)
   )`;
 
+  await sql`create table if not exists membership_tiers (
+    id text primary key,
+    shop_id text not null references shops(id) on delete cascade,
+    name text not null check (name in ('Member', 'Silver', 'Gold', 'Platinum', 'VIP')),
+    min_lifetime_points integer not null default 0 check (min_lifetime_points >= 0),
+    benefit_text text not null default '',
+    is_active boolean not null default true,
+    sort_order integer not null default 0,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    constraint membership_tiers_shop_name_unique unique (shop_id, name)
+  )`;
+
   await sql`create index if not exists idx_rewards_shop_id on rewards(shop_id)`;
   await sql`create index if not exists idx_banners_shop_id on promo_banners(shop_id)`;
   await sql`create index if not exists idx_transactions_user_id on transactions(user_id)`;
@@ -277,15 +336,15 @@ export async function ensureCrmSchema() {
   await sql`create index if not exists idx_customers_line_id on customers(line_id)`;
   await sql`create index if not exists idx_merchant_line_users_line_user_id on merchant_line_users(line_user_id)`;
   await sql`create index if not exists idx_shop_onboarding_checklists_shop_id on shop_onboarding_checklists(shop_id)`;
+  await sql`create index if not exists idx_membership_tiers_shop_id on membership_tiers(shop_id)`;
 }
 
-
-export type AutoSeedMode = 'pilot' | 'demo' | 'none';
+export type AutoSeedMode = "pilot" | "demo" | "none";
 
 export function getAutoSeedMode(): AutoSeedMode {
-  const value = (process.env.CRM_AUTO_SEED || 'pilot').toLowerCase();
-  if (value === 'demo' || value === 'none' || value === 'pilot') return value;
-  return 'pilot';
+  const value = (process.env.CRM_AUTO_SEED || "pilot").toLowerCase();
+  if (value === "demo" || value === "none" || value === "pilot") return value;
+  return "pilot";
 }
 
 export async function seedInitialDataIfEmpty() {
@@ -299,16 +358,19 @@ export async function seedInitialDataIfEmpty() {
 
   const mode = getAutoSeedMode();
 
-  if (mode === 'none') {
+  if (mode === "none") {
     return { seeded: false, mode };
   }
 
-  if (mode === 'demo') {
+  if (mode === "demo") {
     await syncShops(INITIAL_SHOPS);
     await syncCustomers(INITIAL_CUSTOMERS);
     await syncRewards(INITIAL_REWARDS);
     await syncBanners(INITIAL_BANNERS);
     await syncTransactions(INITIAL_TRANSACTIONS);
+    await syncMembershipTiers(
+      getDefaultMembershipTiersForShops(INITIAL_SHOPS.map((shop) => shop.id)),
+    );
     return { seeded: true, mode };
   }
 
@@ -317,13 +379,26 @@ export async function seedInitialDataIfEmpty() {
   await syncRewards(PILOT_REWARDS);
   await syncBanners(PILOT_BANNERS);
   await syncTransactions(PILOT_TRANSACTIONS);
+  await syncMembershipTiers(
+    getDefaultMembershipTiersForShops(PILOT_SHOPS.map((shop) => shop.id)),
+  );
   return { seeded: true, mode };
 }
 
 export async function getCrmSnapshot(): Promise<CrmSnapshot> {
   const sql = requireSql();
 
-  const [shops, customers, rewards, banners, transactions, coupons, auditLogs, onboardingChecklists] = await Promise.all([
+  const [
+    shops,
+    customers,
+    rewards,
+    banners,
+    transactions,
+    coupons,
+    auditLogs,
+    onboardingChecklists,
+    membershipTiers,
+  ] = await Promise.all([
     sql`select id, name, description, logo, category, points_rate as "pointsRate", point_rounding_mode as "pointRoundingMode", minimum_purchase_for_points as "minimumPurchaseForPoints", point_link_expiry_days as "pointLinkExpiryDays", point_expiry_days as "pointExpiryDays", point_expiry_reminder_days as "pointExpiryReminderDays", is_active as "isActive", registration_status as "registrationStatus", phone, created_at as "createdAt" from shops order by created_at asc`,
     sql`select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds" from customers order by created_at asc`,
     sql`select id, name, image, description, points_cost as "pointsCost", stock, is_available as "isAvailable", shop_id as "shopId" from rewards order by created_at asc`,
@@ -332,6 +407,7 @@ export async function getCrmSnapshot(): Promise<CrmSnapshot> {
     sql`select code, points, shop_id as "shopId", shop_name as "shopName", description, created_at as "createdAt", expires_at as "expiresAt", is_used as "isUsed", used_by_customer_id as "usedByCustomerId", used_at as "usedAt" from point_coupons order by created_at desc`,
     sql`select id, shop_id as "shopId", shop_name as "shopName", actor_type as "actorType", actor_name as "actorName", actor_id as "actorId", action, action_label as "actionLabel", description, target_type as "targetType", target_id as "targetId", customer_id as "customerId", customer_name as "customerName", points, status, metadata, created_at as "createdAt" from audit_logs order by created_at desc`,
     sql`select id, shop_id as "shopId", rich_menu_configured as "richMenuConfigured", tested_in_line_browser as "testedInLineBrowser", tested_customer_claim as "testedCustomerClaim", tested_reward_redeem as "testedRewardRedeem", test_data_cleaned as "testDataCleaned", reviewed_customer_messages as "reviewedCustomerMessages", ready_for_pilot as "readyForPilot", notes, created_at as "createdAt", updated_at as "updatedAt" from shop_onboarding_checklists order by created_at asc`,
+    sql`select id, shop_id as "shopId", name, min_lifetime_points as "minLifetimePoints", benefit_text as "benefitText", is_active as "isActive", sort_order as "sortOrder", created_at as "createdAt", updated_at as "updatedAt" from membership_tiers order by shop_id asc, sort_order asc, min_lifetime_points asc`,
   ]);
 
   return {
@@ -342,21 +418,26 @@ export async function getCrmSnapshot(): Promise<CrmSnapshot> {
     transactions: transactions as unknown as Transaction[],
     coupons: coupons as unknown as GeneratedCoupon[],
     auditLogs: auditLogs as unknown as AuditLog[],
-    onboardingChecklists: onboardingChecklists as unknown as ShopOnboardingChecklist[],
+    onboardingChecklists:
+      onboardingChecklists as unknown as ShopOnboardingChecklist[],
+    membershipTiers: membershipTiers as unknown as MembershipTier[],
   };
 }
 
 export async function syncEntity(entity: CrmEntity, rows: unknown[]) {
   await ensureCrmSchema();
 
-  if (entity === 'shops') return syncShops(rows as Shop[]);
-  if (entity === 'customers') return syncCustomers(rows as Customer[]);
-  if (entity === 'rewards') return syncRewards(rows as Reward[]);
-  if (entity === 'banners') return syncBanners(rows as PromoBanner[]);
-  if (entity === 'transactions') return syncTransactions(rows as Transaction[]);
-  if (entity === 'coupons') return syncCoupons(rows as GeneratedCoupon[]);
-  if (entity === 'auditLogs') return syncAuditLogs(rows as AuditLog[]);
-  if (entity === 'onboardingChecklists') return syncOnboardingChecklists(rows as ShopOnboardingChecklist[]);
+  if (entity === "shops") return syncShops(rows as Shop[]);
+  if (entity === "customers") return syncCustomers(rows as Customer[]);
+  if (entity === "rewards") return syncRewards(rows as Reward[]);
+  if (entity === "banners") return syncBanners(rows as PromoBanner[]);
+  if (entity === "transactions") return syncTransactions(rows as Transaction[]);
+  if (entity === "coupons") return syncCoupons(rows as GeneratedCoupon[]);
+  if (entity === "auditLogs") return syncAuditLogs(rows as AuditLog[]);
+  if (entity === "onboardingChecklists")
+    return syncOnboardingChecklists(rows as ShopOnboardingChecklist[]);
+  if (entity === "membershipTiers")
+    return syncMembershipTiers(rows as MembershipTier[]);
 
   throw new Error(`Unsupported CRM entity: ${entity}`);
 }
@@ -436,7 +517,7 @@ async function syncCustomers(rows: Customer[]) {
 
   await sql`
     insert into customers (id, name, phone, line_name, line_id, avatar, current_points, lifetime_points, tier, created_at, shop_ids, updated_at)
-    select id, name, coalesce(phone, ''), coalesce("lineName", ''), coalesce("lineId", ''), coalesce(avatar, ''), coalesce("currentPoints", 0), coalesce("lifetimePoints", 0), coalesce(tier, 'Silver'), coalesce("createdAt"::timestamptz, now()), coalesce("shopIds", '[]'::jsonb), now()
+    select id, name, coalesce(phone, ''), coalesce("lineName", ''), coalesce("lineId", ''), coalesce(avatar, ''), coalesce("currentPoints", 0), coalesce("lifetimePoints", 0), case when tier in ('Member', 'Silver', 'Gold', 'Platinum', 'VIP') then tier else 'Member' end, coalesce("createdAt"::timestamptz, now()), coalesce("shopIds", '[]'::jsonb), now()
     from jsonb_to_recordset(${payload}::jsonb) as x(id text, name text, phone text, "lineName" text, "lineId" text, avatar text, "currentPoints" integer, "lifetimePoints" integer, tier text, "createdAt" text, "shopIds" jsonb)
     on conflict (id) do update set
       name = excluded.name,
@@ -484,8 +565,8 @@ export async function upsertRewardRow(reward: Reward) {
     values (
       ${reward.id},
       ${reward.name},
-      ${reward.image || ''},
-      ${reward.description || ''},
+      ${reward.image || ""},
+      ${reward.description || ""},
       ${Math.max(1, Number(reward.pointsCost) || 1)},
       ${Math.max(0, Number(reward.stock) || 0)},
       ${reward.isAvailable !== false},
@@ -582,7 +663,6 @@ async function syncCoupons(rows: GeneratedCoupon[]) {
   `;
 }
 
-
 async function syncAuditLogs(rows: AuditLog[]) {
   const sql = requireSql();
   const payload = JSON.stringify(rows);
@@ -613,7 +693,6 @@ async function syncAuditLogs(rows: AuditLog[]) {
       created_at = excluded.created_at
   `;
 }
-
 
 async function syncOnboardingChecklists(rows: ShopOnboardingChecklist[]) {
   const sql = requireSql();
@@ -677,13 +756,61 @@ async function syncOnboardingChecklists(rows: ShopOnboardingChecklist[]) {
   `;
 }
 
+async function syncMembershipTiers(rows: MembershipTier[]) {
+  const sql = requireSql();
+  const payload = JSON.stringify(rows);
+
+  await sql`delete from membership_tiers where id not in (select id from jsonb_to_recordset(${payload}::jsonb) as x(id text))`;
+  if (!rows.length) return;
+
+  await sql`
+    insert into membership_tiers (
+      id,
+      shop_id,
+      name,
+      min_lifetime_points,
+      benefit_text,
+      is_active,
+      sort_order,
+      created_at,
+      updated_at
+    )
+    select
+      id,
+      "shopId",
+      case when name in ('Member', 'Silver', 'Gold', 'Platinum', 'VIP') then name else 'Member' end,
+      greatest(0, coalesce("minLifetimePoints", 0)),
+      coalesce("benefitText", ''),
+      coalesce("isActive", true),
+      coalesce("sortOrder", 0),
+      coalesce("createdAt"::timestamptz, now()),
+      now()
+    from jsonb_to_recordset(${payload}::jsonb) as x(
+      id text,
+      "shopId" text,
+      name text,
+      "minLifetimePoints" integer,
+      "benefitText" text,
+      "isActive" boolean,
+      "sortOrder" integer,
+      "createdAt" text,
+      "updatedAt" text
+    )
+    on conflict (shop_id, name) do update set
+      min_lifetime_points = excluded.min_lifetime_points,
+      benefit_text = excluded.benefit_text,
+      is_active = excluded.is_active,
+      sort_order = excluded.sort_order,
+      updated_at = now()
+  `;
+}
 
 export async function upsertLineUser(lineUser: LineUserRecord) {
   const sql = requireSql();
 
   await sql`
     insert into line_users (line_user_id, display_name, picture_url, email, last_login_at, updated_at)
-    values (${lineUser.lineUserId}, ${lineUser.displayName || ''}, ${lineUser.pictureUrl || ''}, ${lineUser.email || ''}, now(), now())
+    values (${lineUser.lineUserId}, ${lineUser.displayName || ""}, ${lineUser.pictureUrl || ""}, ${lineUser.email || ""}, now(), now())
     on conflict (line_user_id) do update set
       display_name = excluded.display_name,
       picture_url = excluded.picture_url,
@@ -693,7 +820,9 @@ export async function upsertLineUser(lineUser: LineUserRecord) {
   `;
 }
 
-export async function getLineUser(lineUserId: string): Promise<StoredLineUser | null> {
+export async function getLineUser(
+  lineUserId: string,
+): Promise<StoredLineUser | null> {
   const sql = requireSql();
 
   const rows = await sql`
@@ -760,14 +889,14 @@ export async function ensureCustomerMembershipForLineUser(params: {
     )
     values (
       ${customerId},
-      ${params.displayName || 'LINE User'},
+      ${params.displayName || "LINE User"},
       '',
-      ${params.displayName || 'LINE User'},
+      ${params.displayName || "LINE User"},
       ${params.lineUserId},
-      ${params.pictureUrl || ''},
+      ${params.pictureUrl || ""},
       0,
       0,
-      'Silver',
+      'Member',
       now(),
       ${shopIds}::jsonb,
       now()
@@ -797,11 +926,10 @@ export async function ensureCustomerMembershipForLineUser(params: {
   return rows[0] as unknown as Customer;
 }
 
-
 export async function clearCrmData() {
   const sql = requireSql();
   await ensureCrmSchema();
-  await sql`truncate table audit_logs, merchant_line_users, line_users, point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade`;
+  await sql`truncate table membership_tiers, audit_logs, merchant_line_users, line_users, point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade`;
 }
 
 export async function reseedDemoData() {
@@ -811,6 +939,9 @@ export async function reseedDemoData() {
   await syncRewards(INITIAL_REWARDS);
   await syncBanners(INITIAL_BANNERS);
   await syncTransactions(INITIAL_TRANSACTIONS);
+  await syncMembershipTiers(
+    getDefaultMembershipTiersForShops(INITIAL_SHOPS.map((shop) => shop.id)),
+  );
 }
 
 export async function seedPilotData() {
@@ -820,4 +951,7 @@ export async function seedPilotData() {
   await syncRewards(PILOT_REWARDS);
   await syncBanners(PILOT_BANNERS);
   await syncTransactions(PILOT_TRANSACTIONS);
+  await syncMembershipTiers(
+    getDefaultMembershipTiersForShops(PILOT_SHOPS.map((shop) => shop.id)),
+  );
 }

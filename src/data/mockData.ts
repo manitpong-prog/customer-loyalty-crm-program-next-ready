@@ -1,4 +1,5 @@
-import { Shop, Customer, Reward, PromoBanner, Transaction, AuditLog, ShopOnboardingChecklist } from '../types';
+import { Shop, Customer, Reward, PromoBanner, Transaction, AuditLog, ShopOnboardingChecklist, MembershipTier } from '../types';
+import { getDefaultMembershipTiersForShops } from '../lib/membershipTiers';
 
 export const INITIAL_SHOPS: Shop[] = [
   {
@@ -86,7 +87,7 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=60',
     currentPoints: 480,
     lifetimePoints: 1280,
-    tier: 'Platinum',
+    tier: 'Silver',
     createdAt: '2026-01-11T10:00:00Z',
   },
   {
@@ -98,7 +99,7 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=60',
     currentPoints: 240,
     lifetimePoints: 540,
-    tier: 'Gold',
+    tier: 'Silver',
     createdAt: '2026-02-20T14:22:00Z',
   },
   {
@@ -122,7 +123,7 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&auto=format&fit=crop&q=60',
     currentPoints: 310,
     lifetimePoints: 810,
-    tier: 'Gold',
+    tier: 'Silver',
     createdAt: '2026-04-18T16:40:00Z',
   }
 ];
@@ -363,10 +364,11 @@ const KEYS = {
   COUPONS: 'crm_platform_generated_coupons',
   AUDIT_LOGS: 'crm_platform_audit_logs',
   ONBOARDING_CHECKLISTS: 'crm_platform_onboarding_checklists',
+  MEMBERSHIP_TIERS: 'crm_platform_membership_tiers',
 } as const;
 
 type SyncableKey = (typeof KEYS)[keyof typeof KEYS];
-type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons' | 'auditLogs' | 'onboardingChecklists';
+type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons' | 'auditLogs' | 'onboardingChecklists' | 'membershipTiers';
 
 export type DatabaseBootstrapResult = {
   source: 'neon' | 'local-fallback' | 'error-fallback';
@@ -395,6 +397,7 @@ const KEY_TO_ENTITY: Partial<Record<SyncableKey, CrmEntity>> = {
   [KEYS.COUPONS]: 'coupons',
   [KEYS.AUDIT_LOGS]: 'auditLogs',
   [KEYS.ONBOARDING_CHECKLISTS]: 'onboardingChecklists',
+  [KEYS.MEMBERSHIP_TIERS]: 'membershipTiers',
 };
 
 function canUseStorage() {
@@ -475,6 +478,9 @@ function seedLocalStorageIfEmpty() {
   if (!window.localStorage.getItem(KEYS.ONBOARDING_CHECKLISTS)) {
     saveStoredData(KEYS.ONBOARDING_CHECKLISTS, [], { sync: false });
   }
+  if (!window.localStorage.getItem(KEYS.MEMBERSHIP_TIERS)) {
+    saveStoredData(KEYS.MEMBERSHIP_TIERS, getDefaultMembershipTiersForShops(INITIAL_SHOPS.map((shop) => shop.id)), { sync: false });
+  }
 }
 
 function replaceLocalCacheFromSnapshot(snapshot: {
@@ -486,6 +492,7 @@ function replaceLocalCacheFromSnapshot(snapshot: {
   coupons?: GeneratedCoupon[];
   auditLogs?: AuditLog[];
   onboardingChecklists?: ShopOnboardingChecklist[];
+  membershipTiers?: MembershipTier[];
 }) {
   saveStoredData(KEYS.SHOPS, snapshot.shops || INITIAL_SHOPS, { sync: false });
   saveStoredData(KEYS.CUSTOMERS, snapshot.customers || INITIAL_CUSTOMERS, { sync: false });
@@ -495,6 +502,7 @@ function replaceLocalCacheFromSnapshot(snapshot: {
   saveStoredData(KEYS.COUPONS, snapshot.coupons || [], { sync: false });
   saveStoredData(KEYS.AUDIT_LOGS, snapshot.auditLogs || [], { sync: false });
   saveStoredData(KEYS.ONBOARDING_CHECKLISTS, snapshot.onboardingChecklists || [], { sync: false });
+  saveStoredData(KEYS.MEMBERSHIP_TIERS, snapshot.membershipTiers || getDefaultMembershipTiersForShops((snapshot.shops || INITIAL_SHOPS).map((shop) => shop.id)), { sync: false });
 }
 
 export async function initializeDatabase(): Promise<DatabaseBootstrapResult> {
@@ -590,6 +598,14 @@ export function addAuditLog(log: Omit<AuditLog, 'id' | 'createdAt'> & Partial<Pi
   const logs = getAuditLogs();
   saveAuditLogs([nextLog, ...logs].slice(0, 1000));
   return nextLog;
+}
+
+export function getMembershipTiers(): MembershipTier[] {
+  return getStoredData(KEYS.MEMBERSHIP_TIERS, getDefaultMembershipTiersForShops(getShops().map((shop) => shop.id)));
+}
+
+export function saveMembershipTiers(tiers: MembershipTier[]) {
+  saveStoredData(KEYS.MEMBERSHIP_TIERS, tiers);
 }
 
 export function getOnboardingChecklists(): ShopOnboardingChecklist[] {

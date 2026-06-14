@@ -31,7 +31,7 @@ create table if not exists customers (
   avatar text not null default '',
   current_points integer not null default 0 check (current_points >= 0),
   lifetime_points integer not null default 0 check (lifetime_points >= 0),
-  tier text not null default 'Silver' check (tier in ('Silver', 'Gold', 'Platinum')),
+  tier text not null default 'Member' check (tier in ('Member', 'Silver', 'Gold', 'Platinum', 'VIP')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -126,6 +126,20 @@ create table if not exists shop_onboarding_checklists (
   constraint shop_onboarding_checklists_shop_unique unique (shop_id)
 );
 
+
+create table if not exists membership_tiers (
+  id text primary key,
+  shop_id text not null references shops(id) on delete cascade,
+  name text not null check (name in ('Member', 'Silver', 'Gold', 'Platinum', 'VIP')),
+  min_lifetime_points integer not null default 0 check (min_lifetime_points >= 0),
+  benefit_text text not null default '',
+  is_active boolean not null default true,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint membership_tiers_shop_name_unique unique (shop_id, name)
+);
+
 create index if not exists idx_rewards_shop_id on rewards(shop_id);
 create index if not exists idx_banners_shop_id on promo_banners(shop_id);
 create index if not exists idx_transactions_user_id on transactions(user_id);
@@ -134,6 +148,7 @@ create index if not exists idx_point_coupons_shop_id on point_coupons(shop_id);
 create index if not exists idx_customers_line_id on customers(line_id);
 create index if not exists idx_merchant_line_users_line_user_id on merchant_line_users(line_user_id);
 create index if not exists idx_shop_onboarding_checklists_shop_id on shop_onboarding_checklists(shop_id);
+create index if not exists idx_membership_tiers_shop_id on membership_tiers(shop_id);
 
 -- ล้างข้อมูลธุรกิจทั้งหมด แต่คงโครงสร้างตารางไว้
--- truncate table shop_onboarding_checklists, merchant_line_users, line_users, point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade;
+-- truncate table membership_tiers, shop_onboarding_checklists, merchant_line_users, line_users, point_coupons, transactions, promo_banners, rewards, customers, shops restart identity cascade;

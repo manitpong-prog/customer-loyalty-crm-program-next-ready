@@ -29,7 +29,6 @@ import {
   PromoBanner,
   Transaction,
   Shop,
-  TierType,
 } from "../types";
 import {
   getCustomers,
@@ -43,6 +42,7 @@ import {
   getGeneratedCoupons,
   saveGeneratedCoupons,
   addAuditLog,
+  getMembershipTiers,
   type GeneratedCoupon,
 } from "../data/mockData";
 import {
@@ -54,6 +54,7 @@ import {
 } from "../lib/shopScope";
 import LineLoginPanel from "./LineLoginPanel";
 import { shopIdToSlug } from "../lib/shopSlug";
+import { getCurrentMembershipTierConfig, getMembershipTiersForShop, getNextMembershipTier, resolveMembershipTier } from "../lib/membershipTiers";
 import type { LineIdentity } from "../lib/lineAuth";
 
 type CustomerTab = "home" | "rewards" | "code" | "history" | "profile";
@@ -98,6 +99,7 @@ export default function CustomerDashboard({
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [banners, setBanners] = useState<PromoBanner[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [membershipTiers, setMembershipTiers] = useState(getMembershipTiersForShop(getMembershipTiers(), selectedShopId));
 
   // Interactive UI States
   const [promoCode, setPromoCode] = useState("");
@@ -382,6 +384,7 @@ export default function CustomerDashboard({
     );
     setBanners(filterBannersByShop(getBanners(), selectedShopId, true));
     setTransactions(scopedTransactions.filter((t) => t.userId === currCust.id));
+    setMembershipTiers(getMembershipTiersForShop(getMembershipTiers(), selectedShopId));
   };
 
   useEffect(() => {
@@ -592,28 +595,17 @@ export default function CustomerDashboard({
     })
     : "";
 
-  // Point Progress calculate
-  const getTierThreshold = (tier: TierType) => {
-    if (tier === "Silver")
-      return {
-        next: "Gold",
-        target: 300,
-        color: "from-amber-600 to-amber-800",
-      };
-    if (tier === "Gold")
-      return {
-        next: "Platinum",
-        target: 1000,
-        color: "from-yellow-500 to-amber-500",
-      };
-    return { next: "Maxed", target: 1000, color: "from-teal-400 to-cyan-500" };
+  // Point Progress calculate from database-backed membership tiers.
+  const currentTierConfig = getCurrentMembershipTierConfig(customer.lifetimePoints, membershipTiers);
+  const nextTierConfig = getNextMembershipTier(customer.lifetimePoints, membershipTiers);
+  const tierInfo = {
+    next: nextTierConfig?.name || "Maxed",
+    target: nextTierConfig?.minLifetimePoints || Math.max(currentTierConfig.minLifetimePoints, customer.lifetimePoints, 1),
+    color: nextTierConfig ? "from-amber-600 to-amber-800" : "from-teal-400 to-cyan-500",
   };
-
-  const tierInfo = getTierThreshold(customer.tier);
-  const pointsProgress = Math.min(
-    100,
-    (customer.currentPoints / tierInfo.target) * 100,
-  );
+  const pointsProgress = nextTierConfig
+    ? Math.min(100, Math.max(0, (customer.lifetimePoints / Math.max(1, nextTierConfig.minLifetimePoints)) * 100))
+    : 100;
 
   const processPromoCode = (rawCode: string) => {
     const code = rawCode.trim().toUpperCase();
@@ -680,9 +672,7 @@ export default function CustomerDashboard({
         const newPts = c.currentPoints + pointsEarned;
         const newLifetime = c.lifetimePoints + pointsEarned;
         // recalculate tier
-        let newTier = c.tier;
-        if (newLifetime >= 1000) newTier = "Platinum";
-        else if (newLifetime >= 300) newTier = "Gold";
+        const newTier = resolveMembershipTier(newLifetime, membershipTiers);
 
         return {
           ...c,
@@ -839,9 +829,7 @@ export default function CustomerDashboard({
       if (c.id === customer.id) {
         const newPts = c.currentPoints + pointsToAdd;
         const newLifetime = c.lifetimePoints + pointsToAdd;
-        let newTier = c.tier;
-        if (newLifetime >= 1000) newTier = "Platinum";
-        else if (newLifetime >= 300) newTier = "Gold";
+        const newTier = resolveMembershipTier(newLifetime, membershipTiers);
 
         return {
           ...c,
@@ -904,9 +892,7 @@ export default function CustomerDashboard({
         if (c.id === customer.id) {
           const newPts = c.currentPoints + points;
           const newLifetime = c.lifetimePoints + points;
-          let newTier = c.tier;
-          if (newLifetime >= 1000) newTier = "Platinum";
-          else if (newLifetime >= 300) newTier = "Gold";
+          const newTier = resolveMembershipTier(newLifetime, membershipTiers);
 
           return {
             ...c,
@@ -1986,7 +1972,7 @@ export default function CustomerDashboard({
                 <li>
                   รับสิทธิ์ร่วมกิจกรรมพิเศษของร้านตามเงื่อนไข
                 </li>
-                {customer.tier === "Platinum" ? (
+                {(customer.tier === "Platinum" || customer.tier === "VIP") ? (
                   <>
                     <li className="text-amber-700 font-bold">
                       ส่วนลดวันเกิดทันที 20% และเค้กวันเกิดจานพิเศษฟรี
@@ -1996,7 +1982,7 @@ export default function CustomerDashboard({
                     </li>
                   </>
                 ) : (
-                  <li>สะสมครบ 1000 แต้มเพื่ออัปเกรดเป็น Platinum</li>
+                  <li>สะสมแต้มให้ถึงระดับถัดไปเพื่ออัปเกรด badge สมาชิก</li>
                 )}
               </ul>
             </div>

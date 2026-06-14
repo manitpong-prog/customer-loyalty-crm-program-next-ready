@@ -30,7 +30,7 @@ export const PILOT_CUSTOMERS: Customer[] = [
     avatar: '',
     currentPoints: 0,
     lifetimePoints: 0,
-    tier: 'Silver',
+    tier: 'Member',
     createdAt: new Date('2026-06-09T00:00:00.000Z').toISOString(),
     shopIds: ['im_sticker'],
   },
