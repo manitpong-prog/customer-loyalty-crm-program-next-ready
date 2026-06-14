@@ -47,3 +47,12 @@ BLOB_READ_WRITE_TOKEN=...
 ## หมายเหตุ
 
 เฟสนี้ยังไม่ลบรูปเก่าออกจาก database และยังไม่ทำปุ่มลบไฟล์เก่าใน Blob เพื่อให้ปลอดภัยกับข้อมูลเดิมก่อน
+
+
+## หมายเหตุเรื่อง Public / Private Blob Store
+
+สำหรับโลโก้ร้าน รูปของรางวัล และ banner ควรใช้ Vercel Blob Store แบบ `Public` เพราะรูปต้องเปิดแสดงบนหน้าลูกค้าได้โดยตรง
+
+ถ้าสร้าง store เป็น Private ไปแล้ว แนะนำให้สร้าง Blob Store ใหม่แบบ Public แล้วเปลี่ยน `BLOB_READ_WRITE_TOKEN` ใน Vercel Environment Variables ไปใช้ token ของ store ใหม่ จากนั้น Redeploy ใหม่หนึ่งรอบ
+
+ใน Vercel ให้ใส่ token เป็น Sensitive เฉพาะ Production/Preview ได้ ส่วน local development ให้ใส่ใน `.env.local` แทน

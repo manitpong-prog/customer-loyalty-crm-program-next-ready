@@ -271,7 +271,9 @@ neon/migrations/002_phase_6c5_pilot_checklist.sql
 
 ## Phase 6D - Point Rules Schema and UI
 
-เพิ่มการตั้งค่ากฎการสะสมแต้มแบบบันทึกลงฐานข้อมูลจริงในตาราง `shops` ได้แก่ วิธีปัดเศษแต้ม, ยอดซื้อขั้นต่ำที่จะได้แต้ม, จำนวนวันหมดอายุของลิงก์รับแต้ม, จำนวนวันหมดอายุของแต้ม และจำนวนวันแจ้งเตือนก่อนแต้มหมดอายุ
+เพิ่มการตั้งค่ากฎการสะสมแต้มแบบบันทึกลงฐานข้อมูลจริงในตาราง `shops` ได้แก่ วิธีปัดเศษแต้ม, ยอดซื้อขั้นต่ำที่จะได้แต้ม, จำนวนวันหมดอายุของแต้ม และจำนวนวันแจ้งเตือนก่อนแต้มหมดอายุ
+
+หมายเหตุ: อายุลิงก์รับแต้มไม่ได้ตั้งในหน้า Settings แล้ว แต่ตั้งเป็น “นาที” เฉพาะตอนสร้างลิงก์ในหน้า “รับแต้ม” ค่าเริ่มต้น 10 นาที
 
 Migration ที่ต้องรันก่อน deploy code:
 
@@ -325,3 +327,10 @@ Migration ที่ต้องรันก่อน deploy: `neon/migrations/00
 - เพิ่ม migration `neon/migrations/007_phase_6g_vercel_blob_image_storage.sql`
 - เก็บ URL/storage key ใหม่ แต่ยังคง field รูปเดิมไว้เพื่อ fallback รูปเก่าแบบ data URL
 - เอกสาร: `docs/VERCEL_BLOB_IMAGE_STORAGE_PHASE6G_TH.md`
+
+
+## Pilot Hardening Checklist — after Phase 6G
+
+เพิ่มเอกสารตรวจระบบก่อนเปิด Pilot จริงที่ `docs/PILOT_HARDENING_CHECKLIST_TH.md` ครอบคลุม flow หลัก: Customer, Merchant, Point Claim, Reward Approval, Settings, Vercel Blob Image Storage, Export/Report และ Reset Tools
+
+รอบนี้ไม่เพิ่มฟีเจอร์ใหญ่และไม่เพิ่ม migration ใหม่ เป้าหมายคือใช้ checklist ตรวจระบบที่ deploy แล้วให้มั่นคงก่อนเปิดใช้งานจริง

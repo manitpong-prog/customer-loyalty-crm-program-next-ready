@@ -14,7 +14,7 @@ Customer Loyalty / CRM web app for LINE LIFF pilot. Current pilot shop: `im-stic
 
 ## Latest completed phase in this package
 
-Phase 6D — Point Rules Schema and UI
+Pilot Hardening package after Phase 6G — Vercel Blob Image Storage
 
 ## New in Phase 6D
 
@@ -34,11 +34,11 @@ Phase 6D — Point Rules Schema and UI
 - Customer app: `/customer/{shopSlug}`
 - Admin: `/admin`
 
-## Next recommended phases
+## Next recommended work
 
-1. Phase 6E — Membership Tiers table and tier calculation from DB
-2. Phase 6F — Point Expiry foundation
-3. Phase 6G — Real image storage
+1. Run Pilot Hardening checklist end-to-end on the live deployment
+2. Fix only bugs found during real pilot testing
+3. After pilot is stable, consider Point Lots/FIFO and automatic point expiry jobs
 
 ## Deployment rule
 
@@ -90,3 +90,11 @@ Migration ที่ต้องรันก่อน deploy: `neon/migrations/00
 - เพิ่ม migration `neon/migrations/007_phase_6g_vercel_blob_image_storage.sql`
 - เก็บ URL/storage key ใหม่ แต่ยังคง field รูปเดิมไว้เพื่อ fallback รูปเก่าแบบ data URL
 - เอกสาร: `docs/VERCEL_BLOB_IMAGE_STORAGE_PHASE6G_TH.md`
+
+
+## Pilot Hardening — after Phase 6G
+
+- เพิ่มเอกสาร `docs/PILOT_HARDENING_CHECKLIST_TH.md` สำหรับตรวจระบบก่อนเปิด Pilot จริง
+- ยืนยันสถานะล่าสุดว่า Dashboard/Export และ Reset Tools มีอยู่แล้ว ไม่ต้องทำซ้ำเป็น phase ใหม่
+- สถานะระบบหลักที่ผ่านแล้ว: Pilot Checklist, Point Rules, Reward Approval Link, Membership Tiers, Tier Downgrade Fix, Point Expiry Foundation, Vercel Blob Image Storage
+- ข้อจำกัดที่ตั้งใจคงไว้: ยังไม่ทำ FIFO point lots, ยังไม่หักแต้มหมดอายุอัตโนมัติ, ยังไม่ลบไฟล์เก่าใน Blob อัตโนมัติ
