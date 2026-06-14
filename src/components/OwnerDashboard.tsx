@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Store, QrCode, Users, Plus, Edit, Trash2, Check, X,
@@ -46,6 +46,10 @@ export default function OwnerDashboard({
   const [activeTab, setActiveTab] = useState<MerchantTab>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const [approvalsSubTab, setApprovalsSubTab] = useState<'queue' | 'history'>('queue');
+  const [redeemVerifyInput, setRedeemVerifyInput] = useState('');
+  const [reviewRedeemId, setReviewRedeemId] = useState<string | null>(null);
+  const [redeemReviewError, setRedeemReviewError] = useState<string | null>(null);
+  const handledInitialRedeemParamRef = useRef(false);
   
   // Database States
   const [shops, setShops] = useState<Shop[]>([]);
@@ -462,6 +466,57 @@ export default function OwnerDashboard({
       setSelectedSaleCustomerId(customers[0].id);
     }
   }, [customers, selectedSaleCustomerId]);
+
+  useEffect(() => {
+    if (handledInitialRedeemParamRef.current || typeof window === 'undefined') return;
+
+    const collectParams = () => {
+      const directParams = new URLSearchParams(window.location.search);
+      const mergedParams = new URLSearchParams(directParams.toString());
+      const rawLiffState = directParams.get('liff.state');
+
+      if (rawLiffState) {
+        try {
+          const decodedState = decodeURIComponent(rawLiffState);
+          const queryStart = decodedState.indexOf('?');
+          const queryText = decodedState.startsWith('?') ? decodedState.slice(1) : queryStart >= 0 ? decodedState.slice(queryStart + 1) : decodedState;
+          new URLSearchParams(queryText).forEach((value, key) => {
+            if (!mergedParams.has(key)) mergedParams.set(key, value);
+          });
+        } catch {
+          // Keep direct params if LIFF state is malformed.
+        }
+      }
+
+      return mergedParams;
+    };
+
+    const params = collectParams();
+    const merchantTab = params.get('merchantTab');
+    const redeemId = params.get('redeem');
+
+    if (merchantTab === 'approvals' || redeemId) {
+      setActiveTab('approvals');
+      setApprovalsSubTab('queue');
+    }
+
+    if (!redeemId) {
+      handledInitialRedeemParamRef.current = true;
+      return;
+    }
+
+    handledInitialRedeemParamRef.current = true;
+    openRedeemReviewById(redeemId, 'link');
+
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('merchantTab');
+      url.searchParams.delete('redeem');
+      window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
+    } catch {
+      // Non-critical.
+    }
+  }, [selectedShopId]);
 
   const pointRules = getPointRules(activeShopDetail);
   const pointRuleSummary = getPointRuleSummary(activeShopDetail);
@@ -1127,7 +1182,7 @@ export default function OwnerDashboard({
   };
 
   // 1. APPROVE CUSTOMER REWARD CLAIM
-  const handleApproveRedeem = (txId: string) => {
+  const handleApproveRedeem = (txId: string, options?: { skipConfirm?: boolean; closeModal?: boolean }) => {
     const allTxs = getTransactions();
     const tx = allTxs.find(t => t.id === txId && t.shopId === selectedShopId);
 
@@ -1155,14 +1210,16 @@ export default function OwnerDashboard({
       return;
     }
 
-    const confirmed = confirm(`ยืนยันอนุมัติรายการแลกรางวัลนี้ใช่ไหม?
+    if (!options?.skipConfirm) {
+      const confirmed = confirm(`ยืนยันอนุมัติรายการแลกรางวัลนี้ใช่ไหม?
 
 ลูกค้า: ${tx.userName}
 ของรางวัล: ${rewardName}
 ใช้แต้ม: ${tx.points.toLocaleString('th-TH')} แต้ม
 
 หลังอนุมัติ ระบบจะลดสต็อกของรางวัล 1 ชิ้น`);
-    if (!confirmed) return;
+      if (!confirmed) return;
+    }
 
     if (matchedReward) {
       const updatedRewards = allRewards.map(r => {
@@ -1195,12 +1252,13 @@ export default function OwnerDashboard({
     });
 
     showStatus(`✓ อนุมัติให้ของรางวัล “${rewardName}” กับ ${tx.userName} แล้ว`);
+    if (options?.closeModal) setReviewRedeemId(null);
     onDataChange();
     loadData();
   };
 
   // 2. REJECT CUSTOMER REWARD CLAIM (refunds points)
-  const handleRejectRedeem = (txId: string) => {
+  const handleRejectRedeem = (txId: string, options?: { skipConfirm?: boolean; closeModal?: boolean }) => {
     const allTxs = getTransactions();
     const tx = allTxs.find(t => t.id === txId && t.shopId === selectedShopId);
 
@@ -1215,14 +1273,16 @@ export default function OwnerDashboard({
     }
 
     const rewardName = tx.description.replace('ขอแลกรางวัล: ', '');
-    const confirmed = confirm(`ยืนยันปฏิเสธรายการแลกรางวัลนี้ใช่ไหม?
+    if (!options?.skipConfirm) {
+      const confirmed = confirm(`ยืนยันปฏิเสธรายการแลกรางวัลนี้ใช่ไหม?
 
 ลูกค้า: ${tx.userName}
 ของรางวัล: ${rewardName}
 แต้มที่จะคืน: ${tx.points.toLocaleString('th-TH')} แต้ม
 
 หลังปฏิเสธ ระบบจะคืนแต้มให้ลูกค้าทันที`);
-    if (!confirmed) return;
+      if (!confirmed) return;
+    }
 
     const allCustomers = getCustomers();
     const updatedCustomers = allCustomers.map(c => {
@@ -1259,8 +1319,89 @@ export default function OwnerDashboard({
     });
 
     showStatus(`✕ ปฏิเสธรายการแล้ว และคืน ${tx.points.toLocaleString('th-TH')} แต้มให้ ${tx.userName} แล้ว`);
+    if (options?.closeModal) setReviewRedeemId(null);
     onDataChange();
     loadData();
+  };
+
+  const getCleanRewardName = (tx?: Transaction | null) => {
+    if (!tx) return 'ของรางวัล';
+    return tx.description.replace('ขอแลกรางวัล: ', '').replace(' (ร้านปฏิเสธ - คืนแต้มแล้ว)', '') || 'ของรางวัล';
+  };
+
+  const extractRedeemIdFromText = (rawText: string) => {
+    const trimmed = rawText.trim();
+    if (!trimmed) return '';
+
+    try {
+      const parsedUrl = new URL(trimmed);
+      const redeemId = parsedUrl.searchParams.get('redeem');
+      if (redeemId) return redeemId.trim();
+
+      const liffState = parsedUrl.searchParams.get('liff.state');
+      if (liffState) {
+        const decodedState = decodeURIComponent(liffState);
+        const queryStart = decodedState.indexOf('?');
+        const queryText = decodedState.startsWith('?') ? decodedState.slice(1) : queryStart >= 0 ? decodedState.slice(queryStart + 1) : decodedState;
+        const stateParams = new URLSearchParams(queryText);
+        const stateRedeemId = stateParams.get('redeem');
+        if (stateRedeemId) return stateRedeemId.trim();
+      }
+    } catch {
+      // Not a URL. Treat it as a raw transaction id below.
+    }
+
+    const directMatch = trimmed.match(/tx_[A-Za-z0-9_-]+/);
+    if (directMatch?.[0]) return directMatch[0];
+    return trimmed;
+  };
+
+  const openRedeemReviewById = (txId: string, source: 'link' | 'manual' | 'list' = 'manual') => {
+    const cleanTxId = txId.trim();
+
+    if (!cleanTxId) {
+      setRedeemReviewError('กรุณาวางลิงก์รับรางวัล หรือรหัสรายการแลกรางวัลก่อนตรวจสอบ');
+      return;
+    }
+
+    const tx = getTransactions().find((item) => item.id === cleanTxId && item.shopId === selectedShopId && item.type === 'redeem');
+
+    if (!tx) {
+      setReviewRedeemId(null);
+      setRedeemReviewError('ลิงก์ไม่ถูกต้อง หรือไม่พบรายการแลกรางวัลของร้านนี้ กรุณาตรวจสอบว่าลูกค้าส่งลิงก์ล่าสุดมาให้ถูกต้อง');
+      recordAuditLog({
+        action: 'reward_redeem_link_invalid',
+        actionLabel: 'ตรวจลิงก์รับรางวัลไม่สำเร็จ',
+        description: `ตรวจลิงก์รับรางวัลไม่พบรายการ (${cleanTxId})`,
+        targetType: 'transaction',
+        targetId: cleanTxId,
+        status: 'warning',
+        metadata: { source },
+      });
+      return;
+    }
+
+    setRedeemReviewError(null);
+    setReviewRedeemId(tx.id);
+    setRedeemVerifyInput(source === 'manual' ? redeemVerifyInput : getMerchantRedeemUrlForTransaction(tx));
+    setActiveTab('approvals');
+    setApprovalsSubTab(tx.status === 'pending' ? 'queue' : 'history');
+  };
+
+  const handleVerifyRedeemLink = () => {
+    const txId = extractRedeemIdFromText(redeemVerifyInput);
+    openRedeemReviewById(txId, 'manual');
+  };
+
+  const getMerchantRedeemUrlForTransaction = (tx: Transaction) => {
+    const slug = shopIdToSlug(tx.shopId || selectedShopId);
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return `${origin}/merchant/${slug}?merchantTab=approvals&redeem=${encodeURIComponent(tx.id)}`;
+  };
+
+  const closeRedeemReviewModal = () => {
+    setReviewRedeemId(null);
+    setRedeemReviewError(null);
   };
 
   // 3. GENERATED LINK SIMULATION (Adds points to current user context immediately!)
@@ -1587,6 +1728,11 @@ export default function OwnerDashboard({
   const completedRedeems = rewardRedeems.filter(t => t.status === 'completed');
   const rejectedRedeems = rewardRedeems.filter(t => t.status === 'rejected');
   const pendingRedeemPoints = pendingRedeems.reduce((sum, tx) => sum + tx.points, 0);
+  const reviewRedeemTx = reviewRedeemId ? transactions.find((tx) => tx.id === reviewRedeemId && tx.type === 'redeem') || getTransactions().find((tx) => tx.id === reviewRedeemId && tx.shopId === selectedShopId && tx.type === 'redeem') : null;
+  const reviewRedeemReward = reviewRedeemTx?.rewardId ? rewards.find((reward) => reward.id === reviewRedeemTx.rewardId) || getRewards().find((reward) => reward.id === reviewRedeemTx.rewardId && reward.shopId === selectedShopId) : null;
+  const reviewRedeemCustomer = reviewRedeemTx ? customers.find((customer) => customer.id === reviewRedeemTx.userId) || getCustomers().find((customer) => customer.id === reviewRedeemTx.userId) : null;
+  const reviewRedeemRewardName = getCleanRewardName(reviewRedeemTx);
+  const reviewRedeemStockDanger = Boolean(reviewRedeemReward && reviewRedeemReward.stock <= 0);
   const earnTransactions = transactions.filter(t => t.type === 'earn' && t.status === 'completed');
   const totalPointsIssued = earnTransactions.reduce((sum, tx) => sum + tx.points, 0);
   const availableRewards = rewards.filter(reward => reward.isAvailable);
@@ -2559,6 +2705,36 @@ export default function OwnerDashboard({
                   <p className="text-[10px] font-black text-slate-500">แต้มในคิว</p>
                   <p className="text-xl font-black text-slate-950 font-mono mt-1">{pendingRedeemPoints}</p>
                 </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col lg:flex-row lg:items-end gap-3">
+                <div className="flex-1">
+                  <label className="text-[11px] font-black text-slate-700">ตรวจสอบลิงก์รับรางวัลจากลูกค้า</label>
+                  <p className="mt-1 text-[11px] text-slate-500 font-medium leading-relaxed">
+                    วางลิงก์ที่ลูกค้าส่งมา เช่น /merchant/{customerSlug}?merchantTab=approvals&amp;redeem=... หรือวางรหัสรายการ tx_... แล้วกดตรวจสอบ
+                  </p>
+                  <input
+                    value={redeemVerifyInput}
+                    onChange={(event) => setRedeemVerifyInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        handleVerifyRedeemLink();
+                      }
+                    }}
+                    placeholder="วางลิงก์รับรางวัล หรือรหัส tx_..."
+                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-800 outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-100"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleVerifyRedeemLink}
+                  className="shrink-0 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black px-5 py-3 text-xs transition active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <Search className="w-4 h-4" /> ตรวจสอบลิงก์
+                </button>
               </div>
             </div>
 
@@ -3605,6 +3781,141 @@ export default function OwnerDashboard({
         )}
 
       </div>
+
+      <AnimatePresence>
+        {(reviewRedeemTx || redeemReviewError) && (
+          <motion.div
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            role="dialog"
+            aria-modal="true"
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 18, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 18, scale: 0.98 }}
+              transition={{ duration: 0.18, ease: 'easeOut' }}
+              className="w-full max-w-lg rounded-3xl bg-white shadow-2xl border border-slate-200 overflow-hidden"
+            >
+              {redeemReviewError ? (
+                <div className="p-5 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-11 h-11 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                      <AlertCircle className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black text-rose-600 uppercase tracking-[0.22em]">Invalid reward link</p>
+                      <h3 className="text-lg font-black text-slate-950 mt-1">ลิงก์ไม่ถูกต้อง</h3>
+                      <p className="text-sm text-slate-600 font-medium leading-relaxed mt-2">{redeemReviewError}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeRedeemReviewModal}
+                    className="w-full rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black py-3 text-sm transition active:scale-95"
+                  >
+                    ปิด
+                  </button>
+                </div>
+              ) : reviewRedeemTx ? (
+                <div className="p-5 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black text-amber-700 uppercase tracking-[0.22em]">Reward approval check</p>
+                      <h3 className="text-lg font-black text-slate-950 mt-1">ตรวจสอบคำขอแลกรางวัล</h3>
+                      <p className="text-[11px] text-slate-500 font-mono mt-1 break-all">{reviewRedeemTx.id}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeRedeemReviewModal}
+                      className="w-9 h-9 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-500 flex items-center justify-center transition"
+                      aria-label="ปิด"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 space-y-3 text-sm">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[10px] font-black text-slate-500">ของรางวัล</p>
+                        <p className="font-black text-slate-950 mt-1">{reviewRedeemRewardName}</p>
+                      </div>
+                      {reviewRedeemTx.status === 'pending' ? (
+                        <span className="rounded-full bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1 text-[10px] font-black">รออนุมัติ</span>
+                      ) : reviewRedeemTx.status === 'completed' ? (
+                        <span className="rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-1 text-[10px] font-black">อนุมัติแล้ว</span>
+                      ) : (
+                        <span className="rounded-full bg-rose-100 text-rose-800 border border-rose-200 px-2.5 py-1 text-[10px] font-black">ปฏิเสธแล้ว</span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-2xl bg-white border border-slate-200 p-3 col-span-2 sm:col-span-1">
+                        <p className="text-[10px] font-black text-slate-500">ลูกค้า</p>
+                        <p className="font-black text-slate-950 mt-1">{reviewRedeemTx.userName}</p>
+                        <p className="text-[11px] text-slate-600 mt-0.5">{reviewRedeemTx.userPhone || '-'}</p>
+                        {reviewRedeemCustomer && <p className="text-[11px] text-slate-500 mt-0.5">แต้มคงเหลือ: {reviewRedeemCustomer.currentPoints.toLocaleString('th-TH')} แต้ม</p>}
+                      </div>
+                      <div className="rounded-2xl bg-white border border-slate-200 p-3 col-span-2 sm:col-span-1">
+                        <p className="text-[10px] font-black text-slate-500">แต้ม / สต็อก</p>
+                        <p className="font-black text-rose-700 mt-1">-{reviewRedeemTx.points.toLocaleString('th-TH')} แต้ม</p>
+                        <p className={`text-[11px] font-bold mt-0.5 ${reviewRedeemStockDanger ? 'text-rose-700' : 'text-slate-600'}`}>
+                          คงเหลือ: {reviewRedeemReward ? `${reviewRedeemReward.stock} ชิ้น` : 'ไม่พบข้อมูลสต็อก'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-slate-500 font-mono">ขอแลกเมื่อ: {new Date(reviewRedeemTx.createdAt).toLocaleString('th-TH')}</p>
+
+                    {reviewRedeemStockDanger && reviewRedeemTx.status === 'pending' && (
+                      <div className="rounded-2xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700">
+                        ของรางวัลนี้หมดสต็อกแล้ว ต้องเพิ่มสต็อกก่อนจึงจะอนุมัติได้
+                      </div>
+                    )}
+
+                    {reviewRedeemTx.status !== 'pending' && (
+                      <div className="rounded-2xl bg-slate-100 border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700">
+                        รายการนี้ถูกดำเนินการไปแล้ว จึงไม่สามารถอนุมัติหรือปฏิเสธซ้ำได้
+                      </div>
+                    )}
+                  </div>
+
+                  {reviewRedeemTx.status === 'pending' ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleApproveRedeem(reviewRedeemTx.id, { skipConfirm: true, closeModal: true })}
+                        disabled={reviewRedeemStockDanger}
+                        className="rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-black py-3 text-sm transition active:scale-95 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        <Check className="w-4 h-4" /> อนุมัติ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRejectRedeem(reviewRedeemTx.id, { skipConfirm: true, closeModal: true })}
+                        className="rounded-2xl bg-white border border-rose-200 hover:bg-rose-50 text-rose-700 font-black py-3 text-sm transition active:scale-95 flex items-center justify-center gap-2"
+                      >
+                        <X className="w-4 h-4" /> ไม่อนุมัติ
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={closeRedeemReviewModal}
+                      className="w-full rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black py-3 text-sm transition active:scale-95"
+                    >
+                      ปิด
+                    </button>
+                  )}
+                </div>
+              ) : null}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
         <div className="grid grid-cols-5 gap-1 max-w-md mx-auto">

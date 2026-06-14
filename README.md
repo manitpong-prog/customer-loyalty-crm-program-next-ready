@@ -283,3 +283,12 @@ neon/migrations/003_phase_6d_point_rules.sql
 
 
 Phase 6D cleanup: removed duplicate-claim-per-link setting. Coupons are intentionally one-use only. If the earlier 6D migration was already run, use neon/migrations/004_phase_6d_remove_duplicate_claim_setting.sql to drop the old column.
+
+
+## Latest patch — Reward approval link check
+
+- เพิ่มช่องตรวจสอบลิงก์รับรางวัลในหน้า `อนุมัติรางวัล`
+- รองรับลิงก์ `/merchant/{shopSlug}?merchantTab=approvals&redeem={transactionId}` จากลูกค้า
+- เปิด popup อนุมัติ/ไม่อนุมัติอัตโนมัติเมื่อเข้าจากลิงก์ถูกต้อง
+- แสดง popup แจ้งลิงก์ไม่ถูกต้องเมื่อไม่พบรายการ
+- ไม่ต้องรัน SQL ใหม่สำหรับ patch นี้
