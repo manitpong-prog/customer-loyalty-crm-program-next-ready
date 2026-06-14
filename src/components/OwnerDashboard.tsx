@@ -21,7 +21,7 @@ import {
   filterTransactionsByShop,
   scopeApprovedShops,
 } from '../lib/shopScope';
-import { calculateEarnPoints, getPointRuleSummary, getPointRules } from '../lib/pointRules';
+import { calculateEarnPoints, getEarnPointsExpiresAt, getPointRuleSummary, getPointRules, isEarnTransactionNearExpiry } from '../lib/pointRules';
 import { getDefaultMembershipTiersForShop, getMembershipTiersForShop, getTierBadgeClassName, resolveMembershipTier } from '../lib/membershipTiers';
 
 type MerchantTab = 'dashboard' | 'approvals' | 'customers' | 'rewards' | 'promotions' | 'generator' | 'reports' | 'audit' | 'settings';
@@ -1246,6 +1246,7 @@ export default function OwnerDashboard({
       points: calculatedSalePoints,
       description: `${saleReason || 'บันทึกยอดซื้อหน้าร้าน'}: ยอดซื้อ ${saleAmountValue.toLocaleString('th-TH')} บาท`,
       status: 'completed',
+      pointsExpiresAt: getEarnPointsExpiresAt(activeShopDetail),
       createdAt: new Date().toISOString(),
     };
 
@@ -1549,6 +1550,7 @@ export default function OwnerDashboard({
       points: calculatedGeneratePoints,
       description: `รับแต้มจากลิงก์ของร้าน: ${generateDesc || `ยอดซื้อ ${Number(generatePurchaseAmount || 0).toLocaleString('th-TH')} บาท`}`,
       status: 'completed',
+      pointsExpiresAt: getEarnPointsExpiresAt(activeShopDetail),
       createdAt: new Date().toISOString()
     };
 
@@ -1615,6 +1617,7 @@ export default function OwnerDashboard({
       points: adjustPointsValue,
       description: `ปรับแต้มโดยร้าน: ${adjustReason}`,
       status: 'completed',
+      pointsExpiresAt: adjustType === 'add' ? getEarnPointsExpiresAt(activeShopDetail) : undefined,
       createdAt: new Date().toISOString()
     };
 
@@ -1846,6 +1849,10 @@ export default function OwnerDashboard({
   const reviewRedeemStockDanger = Boolean(reviewRedeemReward && reviewRedeemReward.stock <= 0);
   const earnTransactions = transactions.filter(t => t.type === 'earn' && t.status === 'completed');
   const totalPointsIssued = earnTransactions.reduce((sum, tx) => sum + tx.points, 0);
+  const pointExpiryReminderDays = getPointRules(activeShopDetail).pointExpiryReminderDays;
+  const getCustomerNearExpiryPoints = (customerId: string) => transactions
+    .filter((transaction) => transaction.userId === customerId && isEarnTransactionNearExpiry(transaction, activeShopDetail))
+    .reduce((sum, transaction) => sum + transaction.points, 0);
   const availableRewards = rewards.filter(reward => reward.isAvailable);
   const usableCoupons = generatedCouponsList.filter((coupon: any) => !coupon.isUsed && new Date(coupon.expiresAt) > new Date());
   const latestActivities = [...transactions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
@@ -3202,7 +3209,7 @@ export default function OwnerDashboard({
                           );
                         })()}
                       </td>
-                      <td className="py-3.5 font-bold font-mono text-amber-700 text-sm">{c.currentPoints} แต้ม</td>
+                      <td className="py-3.5 font-bold font-mono text-amber-700 text-sm">{c.currentPoints} แต้ม<div className="mt-0.5 text-[9px] font-semibold text-rose-500">ใกล้หมดอายุ {getCustomerNearExpiryPoints(c.id).toLocaleString('th-TH')} แต้ม</div></td>
                       <td className="py-3.5 font-mono text-slate-700">{c.lifetimePoints} แต้ม</td>
                       <td className="py-3.5 font-mono text-slate-500">{new Date(c.createdAt).toLocaleDateString('th-TH')}</td>
                       <td className="py-3.5 text-right font-medium">
@@ -3250,8 +3257,9 @@ export default function OwnerDashboard({
                     <p className="text-[10px] text-slate-600">ลูกค้าปัจจุบัน: {selectedCustForAdjust.name}</p>
                   </div>
 
-                  <div className="bg-neutral-950 p-2.5 rounded-lg text-[10px] text-center text-neutral-400">
-                    มีแต้มปัจจุบันสะสมอยู่: <span className="font-mono text-yellow-400 font-bold">{selectedCustForAdjust.currentPoints} แต้ม</span>
+                  <div className="bg-neutral-950 p-2.5 rounded-lg text-[10px] text-center text-neutral-400 space-y-1">
+                    <p>มีแต้มปัจจุบันสะสมอยู่: <span className="font-mono text-yellow-400 font-bold">{selectedCustForAdjust.currentPoints} แต้ม</span></p>
+                    <p>แต้มใกล้หมดอายุใน {pointExpiryReminderDays.toLocaleString('th-TH')} วัน: <span className="font-mono text-rose-300 font-bold">{getCustomerNearExpiryPoints(selectedCustForAdjust.id).toLocaleString('th-TH')} แต้ม</span></p>
                   </div>
 
                   <div className="space-y-3">

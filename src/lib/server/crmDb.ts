@@ -243,6 +243,7 @@ export async function ensureCrmSchema() {
     description text not null default '',
     status text not null default 'completed' check (status in ('completed', 'pending', 'rejected')),
     reward_id text references rewards(id) on delete set null,
+    points_expires_at timestamptz,
     created_at timestamptz not null default now()
   )`;
 
@@ -329,7 +330,9 @@ export async function ensureCrmSchema() {
   await sql`create index if not exists idx_rewards_shop_id on rewards(shop_id)`;
   await sql`create index if not exists idx_banners_shop_id on promo_banners(shop_id)`;
   await sql`create index if not exists idx_transactions_user_id on transactions(user_id)`;
+  await sql`alter table transactions add column if not exists points_expires_at timestamptz`;
   await sql`create index if not exists idx_transactions_shop_id on transactions(shop_id)`;
+  await sql`create index if not exists idx_transactions_points_expires_at on transactions(points_expires_at)`;
   await sql`create index if not exists idx_point_coupons_shop_id on point_coupons(shop_id)`;
   await sql`create index if not exists idx_audit_logs_shop_id on audit_logs(shop_id)`;
   await sql`create index if not exists idx_audit_logs_created_at on audit_logs(created_at desc)`;
@@ -403,7 +406,7 @@ export async function getCrmSnapshot(): Promise<CrmSnapshot> {
     sql`select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds" from customers order by created_at asc`,
     sql`select id, name, image, description, points_cost as "pointsCost", stock, is_available as "isAvailable", shop_id as "shopId" from rewards order by created_at asc`,
     sql`select id, title, image, description, is_ad as "isAd", shop_id as "shopId", url, expiration_date as "expirationDate" from promo_banners order by created_at asc`,
-    sql`select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", created_at as "createdAt" from transactions order by created_at desc`,
+    sql`select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", points_expires_at as "pointsExpiresAt", created_at as "createdAt" from transactions order by created_at desc`,
     sql`select code, points, shop_id as "shopId", shop_name as "shopName", description, created_at as "createdAt", expires_at as "expiresAt", is_used as "isUsed", used_by_customer_id as "usedByCustomerId", used_at as "usedAt" from point_coupons order by created_at desc`,
     sql`select id, shop_id as "shopId", shop_name as "shopName", actor_type as "actorType", actor_name as "actorName", actor_id as "actorId", action, action_label as "actionLabel", description, target_type as "targetType", target_id as "targetId", customer_id as "customerId", customer_name as "customerName", points, status, metadata, created_at as "createdAt" from audit_logs order by created_at desc`,
     sql`select id, shop_id as "shopId", rich_menu_configured as "richMenuConfigured", tested_in_line_browser as "testedInLineBrowser", tested_customer_claim as "testedCustomerClaim", tested_reward_redeem as "testedRewardRedeem", test_data_cleaned as "testDataCleaned", reviewed_customer_messages as "reviewedCustomerMessages", ready_for_pilot as "readyForPilot", notes, created_at as "createdAt", updated_at as "updatedAt" from shop_onboarding_checklists order by created_at asc`,
@@ -622,9 +625,9 @@ async function syncTransactions(rows: Transaction[]) {
   if (!rows.length) return;
 
   await sql`
-    insert into transactions (id, user_id, user_name, user_phone, shop_id, shop_name, type, points, description, status, reward_id, created_at)
-    select id, "userId", coalesce("userName", ''), coalesce("userPhone", ''), "shopId", coalesce("shopName", ''), type, points, coalesce(description, ''), coalesce(status, 'completed'), nullif("rewardId", ''), coalesce("createdAt"::timestamptz, now())
-    from jsonb_to_recordset(${payload}::jsonb) as x(id text, "userId" text, "userName" text, "userPhone" text, "shopId" text, "shopName" text, type text, points integer, description text, status text, "rewardId" text, "createdAt" text)
+    insert into transactions (id, user_id, user_name, user_phone, shop_id, shop_name, type, points, description, status, reward_id, points_expires_at, created_at)
+    select id, "userId", coalesce("userName", ''), coalesce("userPhone", ''), "shopId", coalesce("shopName", ''), type, points, coalesce(description, ''), coalesce(status, 'completed'), nullif("rewardId", ''), nullif("pointsExpiresAt", '')::timestamptz, coalesce("createdAt"::timestamptz, now())
+    from jsonb_to_recordset(${payload}::jsonb) as x(id text, "userId" text, "userName" text, "userPhone" text, "shopId" text, "shopName" text, type text, points integer, description text, status text, "rewardId" text, "pointsExpiresAt" text, "createdAt" text)
     on conflict (id) do update set
       user_id = excluded.user_id,
       user_name = excluded.user_name,
@@ -636,6 +639,7 @@ async function syncTransactions(rows: Transaction[]) {
       description = excluded.description,
       status = excluded.status,
       reward_id = excluded.reward_id,
+      points_expires_at = excluded.points_expires_at,
       created_at = excluded.created_at
   `;
 }

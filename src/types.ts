@@ -74,6 +74,8 @@ export interface Transaction {
   description: string;
   status: 'completed' | 'pending' | 'rejected';
   rewardId?: string; // Optional if type is redeem
+  /** For earn transactions, points expire at this timestamp. Redeem/manual deduct rows usually leave this empty. */
+  pointsExpiresAt?: string;
   createdAt: string;
 }
 

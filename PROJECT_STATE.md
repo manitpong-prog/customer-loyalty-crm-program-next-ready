@@ -74,3 +74,10 @@ Phase 6D small correction: point-link expiry is no longer configured in Merchant
 - ตารางสมาชิกและ export detail แสดงระดับจากการคำนวณสด ไม่พึ่งค่า `customer.tier` ที่อาจค้างใน cache
 - หน้า Customer แสดง badge/สิทธิ์จากระดับที่คำนวณสดเช่นกัน
 - ไม่ต้องรัน SQL ใหม่สำหรับ patch นี้
+
+
+## Phase 6F — Point Expiry Foundation
+
+เพิ่มฐานข้อมูลวันหมดอายุของแต้มแล้ว โดยใช้ `transactions.points_expires_at` สำหรับรายการรับแต้ม (`earn`) และแสดงแต้มใกล้หมดอายุในหน้าลูกค้า/หลังบ้านร้านค้า เฟสนี้ยังไม่หักแต้มอัตโนมัติ ยังไม่ทำ FIFO และยังไม่ทำ cron job เพื่อให้ปลอดภัยกับข้อมูล Pilot ก่อน
+
+Migration ที่ต้องรันก่อน deploy: `neon/migrations/006_phase_6f_point_expiry_foundation.sql`

@@ -74,6 +74,7 @@ create table if not exists transactions (
   description text not null default '',
   status text not null default 'completed' check (status in ('completed', 'pending', 'rejected')),
   reward_id text references rewards(id) on delete set null,
+  points_expires_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -144,6 +145,7 @@ create index if not exists idx_rewards_shop_id on rewards(shop_id);
 create index if not exists idx_banners_shop_id on promo_banners(shop_id);
 create index if not exists idx_transactions_user_id on transactions(user_id);
 create index if not exists idx_transactions_shop_id on transactions(shop_id);
+create index if not exists idx_transactions_points_expires_at on transactions(points_expires_at);
 create index if not exists idx_point_coupons_shop_id on point_coupons(shop_id);
 create index if not exists idx_customers_line_id on customers(line_id);
 create index if not exists idx_merchant_line_users_line_user_id on merchant_line_users(line_user_id);

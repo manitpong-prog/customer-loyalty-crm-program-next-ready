@@ -55,6 +55,7 @@ import {
 import LineLoginPanel from "./LineLoginPanel";
 import { shopIdToSlug } from "../lib/shopSlug";
 import { getCurrentMembershipTierConfig, getMembershipTiersForShop, getNextMembershipTier, resolveMembershipTier } from "../lib/membershipTiers";
+import { getEarnPointsExpiresAt, getPointRules, isEarnTransactionNearExpiry } from "../lib/pointRules";
 import type { LineIdentity } from "../lib/lineAuth";
 
 type CustomerTab = "home" | "rewards" | "code" | "history" | "profile";
@@ -581,7 +582,14 @@ export default function CustomerDashboard({
   const activeShopContactText = activeShop?.contactText || activeShop?.phone || "ติดต่อร้านค้าเพื่อสอบถามรายละเอียดเพิ่มเติม";
   const displayedCustomerName = customer.name || customer.lineName || "สมาชิก";
   const maskedMemberId = `${(customer.lineId || customer.id).substring(0, 12).toUpperCase()}***`;
-  const expiringPoints = 0;
+  const activeShopPointRules = getPointRules(activeShop);
+  const expiringPointTransactions = transactions
+    .filter((transaction) => isEarnTransactionNearExpiry(transaction, activeShop))
+    .sort((a, b) => new Date(a.pointsExpiresAt || '').getTime() - new Date(b.pointsExpiresAt || '').getTime());
+  const expiringPoints = expiringPointTransactions.reduce((sum, transaction) => sum + transaction.points, 0);
+  const nearestPointExpiryLabel = expiringPointTransactions[0]?.pointsExpiresAt
+    ? new Date(expiringPointTransactions[0].pointsExpiresAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
+    : '-';
   const featuredRewards = rewards.slice(0, 3);
   const recentTransactions = [...transactions]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -699,6 +707,7 @@ export default function CustomerDashboard({
       points: pointsEarned,
       description,
       status: "completed",
+      pointsExpiresAt: getEarnPointsExpiresAt(activeShop),
       createdAt: new Date().toISOString(),
     };
 
@@ -855,6 +864,7 @@ export default function CustomerDashboard({
       points: pointsToAdd,
       description: `รับแต้มจากลิงก์ของร้าน: ${matched.description} (รหัส: ${matched.code})`,
       status: "completed",
+      pointsExpiresAt: getEarnPointsExpiresAt(activeShop),
       createdAt: new Date().toISOString(),
     };
     saveTransactions([newTx, ...getTransactions()]);
@@ -917,6 +927,7 @@ export default function CustomerDashboard({
         points,
         description: `สแกนคิวอาร์โค้ดรับแต้มหน้าร้าน: ${desc}`,
         status: "completed",
+        pointsExpiresAt: getEarnPointsExpiresAt(activeShop),
         createdAt: new Date().toISOString(),
       };
 
@@ -1231,12 +1242,12 @@ export default function CustomerDashboard({
                 </div>
                 <div className="space-y-1 border-l border-[#d8c4a2] pl-3 text-right">
                   <p className="text-[10px] font-black uppercase tracking-wide text-[#836848]">VALID THRU</p>
-                  <p className="text-[11px] font-black text-[#2a140a]">31 ธ.ค. 2568</p>
+                  <p className="text-[11px] font-black text-[#2a140a]">{nearestPointExpiryLabel}</p>
                 </div>
               </div>
 
               <div className="relative mt-5 flex items-center justify-between border-t border-[#d8c4a2] pt-3 text-[12px] font-black">
-                <span className="text-[#4f3c2c]">แต้มใกล้หมดอายุใน 30 วัน</span>
+                <span className="text-[#4f3c2c]">แต้มใกล้หมดอายุใน {activeShopPointRules.pointExpiryReminderDays.toLocaleString("th-TH")} วัน</span>
                 <span className="text-red-600">{expiringPoints.toLocaleString()} คะแนน</span>
               </div>
             </motion.section>

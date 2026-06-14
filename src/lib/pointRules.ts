@@ -67,3 +67,26 @@ export function getPointRuleSummary(shop?: Partial<Shop> | null) {
       : 'ยังไม่แจ้งเตือนก่อนแต้มหมดอายุ',
   };
 }
+
+export function getEarnPointsExpiresAt(shop?: Partial<Shop> | null, earnedAt: Date = new Date()): string {
+  const { pointExpiryDays } = getPointRules(shop);
+  const expiresAt = new Date(earnedAt.getTime());
+  expiresAt.setDate(expiresAt.getDate() + pointExpiryDays);
+  return expiresAt.toISOString();
+}
+
+export function getPointExpiryReminderWindow(shop?: Partial<Shop> | null, now: Date = new Date()) {
+  const { pointExpiryReminderDays } = getPointRules(shop);
+  const windowEnd = new Date(now.getTime());
+  windowEnd.setDate(windowEnd.getDate() + pointExpiryReminderDays);
+  return { now, windowEnd, pointExpiryReminderDays };
+}
+
+export function isEarnTransactionNearExpiry(transaction: { type: string; status: string; pointsExpiresAt?: string }, shop?: Partial<Shop> | null, now: Date = new Date()): boolean {
+  if (transaction.type !== 'earn' || transaction.status !== 'completed' || !transaction.pointsExpiresAt) return false;
+  const expiresAt = new Date(transaction.pointsExpiresAt);
+  if (Number.isNaN(expiresAt.getTime())) return false;
+  const { windowEnd, pointExpiryReminderDays } = getPointExpiryReminderWindow(shop, now);
+  if (pointExpiryReminderDays <= 0) return false;
+  return expiresAt.getTime() > now.getTime() && expiresAt.getTime() <= windowEnd.getTime();
+}
