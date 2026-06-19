@@ -129,6 +129,7 @@ export default function CustomerDashboard({
   // Dynamic Coupon States
   const [pendingCoupon, setPendingCoupon] = useState<GeneratedCoupon | null>(null);
   const [showCouponConfirm, setShowCouponConfirm] = useState(false);
+  const [isClaimingCoupon, setIsClaimingCoupon] = useState(false);
 
   const validateCouponForCurrentShop = (coupon?: GeneratedCoupon | null): CouponValidationState => {
     if (!coupon) return "not-found";
@@ -738,6 +739,21 @@ export default function CustomerDashboard({
     processPromoCode(promoCode);
   };
 
+  const handleDataChangeAfterOnlineClaim = (
+    confirmedCustomer: Customer,
+    confirmedCoupon: GeneratedCoupon,
+    confirmedTransaction: Transaction,
+  ) => {
+    // Keep the UI responsive after Neon confirms the write. These local updates are
+    // cache-only because initializeDatabase() has just refreshed from Neon.
+    setCustomer(confirmedCustomer);
+    setPendingCoupon(confirmedCoupon);
+    setTransactions((current) => {
+      const withoutDuplicate = current.filter((tx) => tx.id !== confirmedTransaction.id);
+      return [confirmedTransaction, ...withoutDuplicate];
+    });
+  };
+
   const handleDeclineDynamicCoupon = () => {
     setShowCouponConfirm(false);
     setPendingCoupon(null);
@@ -803,22 +819,17 @@ export default function CustomerDashboard({
     }
   };
 
-  // Confirm claim points via Dynamic Coupon modal overlay
-  const handleConfirmClaimDynamicCoupon = () => {
-    if (!pendingCoupon || !customer) return;
+  // Confirm claim points via Dynamic Coupon modal overlay.
+  // Phase 7A: online-only. The customer receives points only after Neon confirms
+  // customer update + coupon used + transaction insert. LocalStorage becomes cache only.
+  const handleConfirmClaimDynamicCoupon = async () => {
+    if (!pendingCoupon || !customer || isClaimingCoupon) return;
 
     const coupons = getGeneratedCoupons();
-
-    const matchedIdx = coupons.findIndex(
+    const matched = coupons.find(
       (c: any) => c.code.toUpperCase() === pendingCoupon.code.toUpperCase(),
-    );
-    if (matchedIdx === -1) {
-      setErrorMessage("ตรวจรหัสไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
-      setShowCouponConfirm(false);
-      return;
-    }
+    ) || pendingCoupon;
 
-    const matched = coupons[matchedIdx];
     const couponState = validateCouponForCurrentShop(matched);
     if (couponState !== "ready") {
       setErrorMessage(explainCouponValidation(couponState));
@@ -826,67 +837,65 @@ export default function CustomerDashboard({
       return;
     }
 
-    // 1. Mark as used
-    coupons[matchedIdx].isUsed = true;
-    coupons[matchedIdx].usedByCustomerId = customer.id;
-    coupons[matchedIdx].usedAt = new Date().toISOString();
-    saveGeneratedCoupons(coupons);
+    setIsClaimingCoupon(true);
+    setErrorMessage("");
 
-    // 2. Add points to the user
-    const pointsToAdd = matched.points;
-    const allCustomers = getCustomers();
-    const updatedCustomers = allCustomers.map((c) => {
-      if (c.id === customer.id) {
-        const newPts = c.currentPoints + pointsToAdd;
-        const newLifetime = c.lifetimePoints + pointsToAdd;
-        const newTier = resolveMembershipTier(newLifetime, membershipTiers);
+    try {
+      const response = await fetch('/api/db/point-claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          couponCode: matched.code,
+          shopId: selectedShopId,
+          customer: {
+            id: customer.id,
+            name: displayedCustomerName || customer.name,
+            phone: customer.phone || '',
+            lineName: customer.lineName || lineIdentity?.displayName || displayedCustomerName || customer.name,
+            lineId: customer.lineId || lineIdentity?.lineUserId || '',
+            avatar: customer.avatar || lineIdentity?.pictureUrl || '',
+            createdAt: customer.createdAt,
+          },
+        }),
+      });
 
-        return {
-          ...c,
-          currentPoints: newPts,
-          lifetimePoints: newLifetime,
-          tier: newTier,
-        };
+      const payload = await response.json().catch(() => null) as {
+        ok?: boolean;
+        message?: string;
+        customer?: Customer;
+        coupon?: GeneratedCoupon;
+        transaction?: Transaction;
+      } | null;
+
+      if (!response.ok || !payload?.ok || !payload.customer || !payload.coupon || !payload.transaction) {
+        throw new Error(payload?.message || 'บันทึกรับแต้มลงฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
       }
-      return c;
-    });
-    saveCustomers(updatedCustomers);
 
-    // 3. Create Transaction
-    const newTx: Transaction = {
-      id: `tx_${Date.now()}`,
-      userId: customer.id,
-      userName: customer.name,
-      userPhone: customer.phone,
-      shopId: matched.shopId,
-      shopName: matched.shopName,
-      type: "earn",
-      points: pointsToAdd,
-      description: `รับแต้มจากลิงก์ของร้าน: ${matched.description} (รหัส: ${matched.code})`,
-      status: "completed",
-      pointsExpiresAt: getEarnPointsExpiresAt(activeShop),
-      createdAt: new Date().toISOString(),
-    };
-    saveTransactions([newTx, ...getTransactions()]);
-    recordCustomerAuditLog({
-      action: 'customer_point_link_claimed',
-      actionLabel: 'ลูกค้ากดรับแต้มจากลิงก์',
-      description: `${customer.name} รับแต้ม +${pointsToAdd.toLocaleString('th-TH')} จากลิงก์รหัส ${matched.code}`,
-      targetType: 'coupon',
-      targetId: matched.code,
-      points: pointsToAdd,
-      metadata: { transactionId: newTx.id, couponCode: matched.code },
-    });
+      // Refresh the whole local cache from Neon so customer page and merchant back office
+      // read the same database-confirmed values on the next render/page refresh.
+      await initializeDatabase();
+      handleDataChangeAfterOnlineClaim(payload.customer, payload.coupon, payload.transaction);
 
-    setShowCouponConfirm(false);
-    setSuccessMessage(
-      `รับแต้ม ${pointsToAdd} แต้มแล้ว กำลังพากลับหน้าแรก`,
-    );
-    setPromoCode("");
-    setPendingCoupon(null);
-    onDataChange();
-    loadData();
-    goToCustomerHome(1300);
+      setShowCouponConfirm(false);
+      setSuccessMessage(
+        `รับแต้ม ${payload.transaction.points.toLocaleString('th-TH')} แต้มแล้ว กำลังพากลับหน้าแรก`,
+      );
+      setPromoCode("");
+      setPendingCoupon(null);
+      onDataChange();
+      loadData();
+      goToCustomerHome(1300);
+    } catch (error) {
+      console.error('[point-claim-online]', error);
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : 'บันทึกรับแต้มลงฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
+      );
+      setShowCouponConfirm(false);
+    } finally {
+      setIsClaimingCoupon(false);
+    }
   };
 
   // QR Simulator Scan
@@ -1523,13 +1532,13 @@ export default function CustomerDashboard({
                   <button
                     type="button"
                     onClick={handleConfirmClaimDynamicCoupon}
-                    disabled={pendingCouponState !== "ready"}
-                    className={`flex-1 rounded-xl px-3 py-2.5 text-xs font-black shadow-sm transition active:scale-[0.98] ${pendingCouponState === "ready"
+                    disabled={pendingCouponState !== "ready" || isClaimingCoupon}
+                    className={`flex-1 rounded-xl px-3 py-2.5 text-xs font-black shadow-sm transition active:scale-[0.98] ${pendingCouponState === "ready" && !isClaimingCoupon
                       ? "bg-emerald-600 text-white hover:bg-emerald-700"
                       : "bg-slate-200 text-slate-500 cursor-not-allowed"
                       }`}
                   >
-                    ยืนยัน
+                    {isClaimingCoupon ? "กำลังบันทึก..." : "ยืนยัน"}
                   </button>
                 </div>
               </div>
@@ -2415,6 +2424,7 @@ export default function CustomerDashboard({
                 <button
                   type="button"
                   onClick={handleDeclineDynamicCoupon}
+                  disabled={isClaimingCoupon}
                   className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs py-2.5 font-bold rounded-xl transition cursor-pointer"
                 >
                   ไม่รับ
@@ -2422,9 +2432,10 @@ export default function CustomerDashboard({
                 <button
                   type="button"
                   onClick={handleConfirmClaimDynamicCoupon}
+                  disabled={isClaimingCoupon}
                   className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-xl shadow-lg shadow-emerald-600/10 transition active:scale-[0.98] cursor-pointer"
                 >
-                  ยืนยัน
+                  {isClaimingCoupon ? "กำลังบันทึก..." : "ยืนยัน"}
                 </button>
               </div>
             </motion.div>

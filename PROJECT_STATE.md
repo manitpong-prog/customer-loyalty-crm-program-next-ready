@@ -98,3 +98,18 @@ Migration ที่ต้องรันก่อน deploy: `neon/migrations/00
 - ยืนยันสถานะล่าสุดว่า Dashboard/Export และ Reset Tools มีอยู่แล้ว ไม่ต้องทำซ้ำเป็น phase ใหม่
 - สถานะระบบหลักที่ผ่านแล้ว: Pilot Checklist, Point Rules, Reward Approval Link, Membership Tiers, Tier Downgrade Fix, Point Expiry Foundation, Vercel Blob Image Storage
 - ข้อจำกัดที่ตั้งใจคงไว้: ยังไม่ทำ FIFO point lots, ยังไม่หักแต้มหมดอายุอัตโนมัติ, ยังไม่ลบไฟล์เก่าใน Blob อัตโนมัติ
+
+## Pilot Hardening Fix: Point Claim Database Sync
+
+เพิ่ม API `/api/db/point-claim` เพื่อให้การรับแต้มจากลิงก์บันทึกลง Neon แบบยืนยันผล ไม่ใช่ background sync เงียบ ๆ เท่านั้น แก้ปัญหาหน้าเว็บเหมือนรับแต้มสำเร็จ แต่ข้อมูลใน Neon ไม่ขึ้นทันทีหรือไม่ถูกเขียนครบในตาราง `customers`, `point_coupons`, `transactions`.
+
+เอกสาร: `docs/POINT_CLAIM_DATABASE_SYNC_FIX_TH.md`
+
+
+
+## Phase 7A — Online-only Point Claim and Customer Visibility
+
+- ปรับ flow ลูกค้ารับแต้มจากลิงก์ให้เขียน Neon Database สำเร็จก่อนจึงแสดงว่าสำเร็จ
+- `/api/db/point-claim` อ่านคูปองจาก Neon โดยตรง ตรวจคูปอง ใช้คูปอง เพิ่มแต้ม สร้าง transaction และ audit log จากฝั่ง server
+- ฝั่งลูกค้าไม่บันทึกแต้มลง localStorage ก่อน API สำเร็จแล้ว ลดปัญหาหน้าเว็บสำเร็จแต่หลังบ้าน/Neon ไม่เห็นลูกค้าใหม่
+- ยังไม่ refactor ทั้งระบบเป็น online-only ทั้งหมด รอบถัดไปควรทำ Reward Redeem/Approval และ Merchant Point Adjustment แบบ online-only ต่อ

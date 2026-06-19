@@ -404,6 +404,68 @@ function canUseStorage() {
   return typeof window !== 'undefined' && Boolean(window.localStorage);
 }
 
+async function syncEntityToNeon<T>(key: SyncableKey, data: T): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  const entity = KEY_TO_ENTITY[key];
+  if (!entity) return;
+
+  const response = await window.fetch('/api/db/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ entity, rows: data }),
+  });
+
+  let payload: { message?: string } | null = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok || payload?.message) {
+    throw new Error(payload?.message || `Could not sync ${entity} to Neon.`);
+  }
+}
+
+export async function syncPointClaimDataToNeon(params: {
+  customers: Customer[];
+  coupons: GeneratedCoupon[];
+  transactions: Transaction[];
+}): Promise<void> {
+  // Customer rows must be persisted before coupon/transaction rows because
+  // point_coupons.used_by_customer_id and transactions.user_id reference customers.id.
+  // The legacy fire-and-forget sync can race here, especially in LINE in-app browser.
+  await syncEntityToNeon(KEYS.CUSTOMERS, params.customers);
+  await syncEntityToNeon(KEYS.COUPONS, params.coupons);
+  await syncEntityToNeon(KEYS.TRANSACTIONS, params.transactions);
+}
+
+export async function persistPointClaimToNeon(params: {
+  customer: Customer;
+  coupon: GeneratedCoupon;
+  transaction: Transaction;
+}): Promise<void> {
+  if (typeof window === 'undefined') return;
+
+  const response = await window.fetch('/api/db/point-claim', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  let payload: { message?: string; skipped?: boolean } | null = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok || payload?.message) {
+    throw new Error(payload?.message || 'บันทึกรับแต้มลง Neon ไม่สำเร็จ');
+  }
+}
+
 function queueNeonSync<T>(key: SyncableKey, data: T) {
   if (typeof window === 'undefined') return;
 

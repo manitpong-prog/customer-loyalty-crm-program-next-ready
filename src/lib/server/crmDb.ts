@@ -836,6 +836,460 @@ async function syncMembershipTiers(rows: MembershipTier[]) {
   `;
 }
 
+
+type OnlinePointClaimParams = {
+  couponCode: string;
+  shopId: string;
+  customer: Partial<Customer> & { id: string };
+};
+
+function makeServerId(prefix: string) {
+  const randomPart = globalThis.crypto?.randomUUID?.().slice(0, 8) || Math.random().toString(36).slice(2, 10);
+  return `${prefix}_${Date.now()}_${randomPart}`;
+}
+
+function mapCustomerRow(row: Record<string, unknown>): Customer {
+  const shopIdsValue = row.shopIds;
+  const shopIds = Array.isArray(shopIdsValue)
+    ? shopIdsValue.map(String)
+    : typeof shopIdsValue === 'string'
+      ? (() => {
+          try {
+            const parsed = JSON.parse(shopIdsValue);
+            return Array.isArray(parsed) ? parsed.map(String) : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+
+  return {
+    id: String(row.id || ''),
+    name: String(row.name || 'LINE User'),
+    phone: String(row.phone || ''),
+    lineName: String(row.lineName || ''),
+    lineId: String(row.lineId || ''),
+    avatar: String(row.avatar || ''),
+    currentPoints: Number(row.currentPoints || 0),
+    lifetimePoints: Number(row.lifetimePoints || 0),
+    tier: ['Member', 'Silver', 'Gold', 'Platinum', 'VIP'].includes(String(row.tier)) ? (String(row.tier) as Customer['tier']) : 'Member',
+    createdAt: new Date(String(row.createdAt || new Date().toISOString())).toISOString(),
+    shopIds,
+  };
+}
+
+function mapCouponRow(row: Record<string, unknown>): GeneratedCoupon {
+  return {
+    code: String(row.code || ''),
+    points: Number(row.points || 0),
+    shopId: String(row.shopId || ''),
+    shopName: String(row.shopName || ''),
+    description: String(row.description || ''),
+    createdAt: new Date(String(row.createdAt || new Date().toISOString())).toISOString(),
+    expiresAt: new Date(String(row.expiresAt || new Date().toISOString())).toISOString(),
+    isUsed: Boolean(row.isUsed),
+    usedByCustomerId: row.usedByCustomerId ? String(row.usedByCustomerId) : null,
+    usedAt: row.usedAt ? new Date(String(row.usedAt)).toISOString() : null,
+  };
+}
+
+function mapTransactionRow(row: Record<string, unknown>): Transaction {
+  return {
+    id: String(row.id || ''),
+    userId: String(row.userId || ''),
+    userName: String(row.userName || ''),
+    userPhone: String(row.userPhone || ''),
+    shopId: String(row.shopId || ''),
+    shopName: String(row.shopName || ''),
+    type: row.type === 'redeem' ? 'redeem' : 'earn',
+    points: Number(row.points || 0),
+    description: String(row.description || ''),
+    status: row.status === 'pending' || row.status === 'rejected' ? row.status : 'completed',
+    rewardId: row.rewardId ? String(row.rewardId) : undefined,
+    pointsExpiresAt: row.pointsExpiresAt ? new Date(String(row.pointsExpiresAt)).toISOString() : undefined,
+    createdAt: new Date(String(row.createdAt || new Date().toISOString())).toISOString(),
+  };
+}
+
+export async function claimPointCouponOnline(params: OnlinePointClaimParams): Promise<{
+  customer: Customer;
+  coupon: GeneratedCoupon;
+  transaction: Transaction;
+}> {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  const couponCode = params.couponCode.trim().toUpperCase();
+  const shopId = params.shopId.trim();
+  const customerInput = params.customer;
+  const customerId = customerInput.id.trim();
+
+  if (!couponCode || !shopId || !customerId) {
+    throw new Error('ข้อมูลรับแต้มไม่ครบ กรุณาลองใหม่อีกครั้ง');
+  }
+
+  const couponRows = await sql`
+    select
+      pc.code,
+      pc.points,
+      pc.shop_id as "shopId",
+      pc.shop_name as "shopName",
+      pc.description,
+      pc.created_at as "createdAt",
+      pc.expires_at as "expiresAt",
+      pc.is_used as "isUsed",
+      pc.used_by_customer_id as "usedByCustomerId",
+      pc.used_at as "usedAt",
+      s.point_expiry_days as "pointExpiryDays"
+    from point_coupons pc
+    join shops s on s.id = pc.shop_id
+    where upper(pc.code) = upper(${couponCode}) and pc.shop_id = ${shopId}
+    limit 1
+  `;
+
+  const couponCandidate = couponRows[0] as (Record<string, unknown> & { pointExpiryDays?: number }) | undefined;
+  if (!couponCandidate) {
+    throw new Error('ไม่พบลิงก์รับแต้มนี้ หรือไม่ได้เป็นลิงก์ของร้านนี้');
+  }
+
+  if (Boolean(couponCandidate.isUsed)) {
+    throw new Error('ลิงก์รับแต้มนี้ถูกใช้ไปแล้ว');
+  }
+
+  if (new Date(String(couponCandidate.expiresAt)).getTime() < Date.now()) {
+    throw new Error('ลิงก์รับแต้มนี้หมดอายุแล้ว');
+  }
+
+  const safeName = String(customerInput.name || customerInput.lineName || 'LINE User').trim() || 'LINE User';
+  const safePhone = String(customerInput.phone || '').trim();
+  const safeLineName = String(customerInput.lineName || safeName).trim();
+  const safeLineId = String(customerInput.lineId || '').trim();
+  const safeAvatar = String(customerInput.avatar || '').trim();
+  const createdAt = customerInput.createdAt || new Date().toISOString();
+  const shopIds = JSON.stringify([shopId]);
+
+  // Online-only point claim: create/update profile fields, but never trust client-side
+  // currentPoints/lifetimePoints. Neon is the source of truth and increments below.
+  await sql`
+    insert into customers (
+      id,
+      name,
+      phone,
+      line_name,
+      line_id,
+      avatar,
+      current_points,
+      lifetime_points,
+      tier,
+      created_at,
+      shop_ids,
+      updated_at
+    ) values (
+      ${customerId},
+      ${safeName},
+      ${safePhone},
+      ${safeLineName},
+      ${safeLineId},
+      ${safeAvatar},
+      0,
+      0,
+      'Member',
+      ${createdAt}::timestamptz,
+      ${shopIds}::jsonb,
+      now()
+    )
+    on conflict (id) do update set
+      name = case when customers.name = '' or customers.name = 'LINE User' then excluded.name else customers.name end,
+      phone = coalesce(nullif(excluded.phone, ''), customers.phone),
+      line_name = coalesce(nullif(excluded.line_name, ''), customers.line_name),
+      line_id = coalesce(nullif(excluded.line_id, ''), customers.line_id),
+      avatar = coalesce(nullif(excluded.avatar, ''), customers.avatar),
+      shop_ids = coalesce(
+        (
+          select jsonb_agg(distinct value)
+          from jsonb_array_elements_text(customers.shop_ids || excluded.shop_ids) as merged(value)
+        ),
+        excluded.shop_ids
+      ),
+      updated_at = now()
+  `;
+
+  const usedCouponRows = await sql`
+    update point_coupons
+    set
+      is_used = true,
+      used_by_customer_id = ${customerId},
+      used_at = now()
+    where upper(code) = upper(${couponCode})
+      and shop_id = ${shopId}
+      and is_used = false
+      and expires_at >= now()
+    returning
+      code,
+      points,
+      shop_id as "shopId",
+      shop_name as "shopName",
+      description,
+      created_at as "createdAt",
+      expires_at as "expiresAt",
+      is_used as "isUsed",
+      used_by_customer_id as "usedByCustomerId",
+      used_at as "usedAt"
+  `;
+
+  const usedCoupon = usedCouponRows[0] as Record<string, unknown> | undefined;
+  if (!usedCoupon) {
+    throw new Error('ลิงก์รับแต้มนี้ถูกใช้ไปแล้วหรือหมดอายุแล้ว กรุณาขอลิงก์ใหม่จากร้านค้า');
+  }
+
+  const points = Math.max(1, Number(usedCoupon.points || 0));
+  const updatedCustomerRows = await sql`
+    update customers
+    set
+      current_points = current_points + ${points},
+      lifetime_points = lifetime_points + ${points},
+      tier = coalesce(
+        (
+          select name
+          from membership_tiers
+          where shop_id = ${shopId}
+            and is_active = true
+            and min_lifetime_points <= (customers.lifetime_points + ${points})
+          order by min_lifetime_points desc, sort_order desc
+          limit 1
+        ),
+        'Member'
+      ),
+      updated_at = now()
+    where id = ${customerId}
+    returning
+      id,
+      name,
+      phone,
+      line_name as "lineName",
+      line_id as "lineId",
+      avatar,
+      current_points as "currentPoints",
+      lifetime_points as "lifetimePoints",
+      tier,
+      created_at as "createdAt",
+      shop_ids as "shopIds"
+  `;
+
+  const updatedCustomer = updatedCustomerRows[0] as Record<string, unknown> | undefined;
+  if (!updatedCustomer) {
+    throw new Error('ไม่สามารถอัปเดตแต้มลูกค้าได้ กรุณาลองใหม่อีกครั้ง');
+  }
+
+  const pointExpiryDays = Math.max(1, Number(couponCandidate.pointExpiryDays || 365));
+  const transactionId = makeServerId('tx');
+  const transactionRows = await sql`
+    insert into transactions (
+      id,
+      user_id,
+      user_name,
+      user_phone,
+      shop_id,
+      shop_name,
+      type,
+      points,
+      description,
+      status,
+      points_expires_at,
+      created_at
+    ) values (
+      ${transactionId},
+      ${customerId},
+      ${String(updatedCustomer.name || safeName)},
+      ${String(updatedCustomer.phone || safePhone)},
+      ${String(usedCoupon.shopId || shopId)},
+      ${String(usedCoupon.shopName || '')},
+      'earn',
+      ${points},
+      ${`รับแต้มจากลิงก์ของร้าน: ${String(usedCoupon.description || '')} (รหัส: ${String(usedCoupon.code || couponCode)})`},
+      'completed',
+      now() + (${pointExpiryDays} * interval '1 day'),
+      now()
+    )
+    returning
+      id,
+      user_id as "userId",
+      user_name as "userName",
+      user_phone as "userPhone",
+      shop_id as "shopId",
+      shop_name as "shopName",
+      type,
+      points,
+      description,
+      status,
+      reward_id as "rewardId",
+      points_expires_at as "pointsExpiresAt",
+      created_at as "createdAt"
+  `;
+
+  const transaction = transactionRows[0] as Record<string, unknown> | undefined;
+  if (!transaction) {
+    throw new Error('ไม่สามารถสร้างประวัติรับแต้มได้ กรุณาลองใหม่อีกครั้ง');
+  }
+
+  await sql`
+    insert into audit_logs (
+      id,
+      shop_id,
+      shop_name,
+      actor_type,
+      actor_name,
+      actor_id,
+      action,
+      action_label,
+      description,
+      target_type,
+      target_id,
+      customer_id,
+      customer_name,
+      points,
+      status,
+      metadata,
+      created_at
+    ) values (
+      ${makeServerId('audit')},
+      ${String(usedCoupon.shopId || shopId)},
+      ${String(usedCoupon.shopName || '')},
+      'customer',
+      ${String(updatedCustomer.name || safeName)},
+      ${customerId},
+      'customer_point_link_claimed',
+      'ลูกค้ากดรับแต้มจากลิงก์',
+      ${`${String(updatedCustomer.name || safeName)} รับแต้ม +${points.toLocaleString('th-TH')} จากลิงก์รหัส ${String(usedCoupon.code || couponCode)}`},
+      'coupon',
+      ${String(usedCoupon.code || couponCode)},
+      ${customerId},
+      ${String(updatedCustomer.name || safeName)},
+      ${points},
+      'success',
+      ${JSON.stringify({ transactionId, couponCode: String(usedCoupon.code || couponCode) })}::jsonb,
+      now()
+    )
+    on conflict (id) do nothing
+  `;
+
+  return {
+    customer: mapCustomerRow(updatedCustomer),
+    coupon: mapCouponRow(usedCoupon),
+    transaction: mapTransactionRow(transaction),
+  };
+}
+
+export async function persistPointClaim(params: {
+  customer: Customer;
+  coupon: GeneratedCoupon;
+  transaction: Transaction;
+}) {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  const { customer, coupon, transaction } = params;
+
+  const existingCoupon = await sql`
+    select is_used as "isUsed", used_by_customer_id as "usedByCustomerId"
+    from point_coupons
+    where code = ${coupon.code}
+    limit 1
+  `;
+
+  const existing = existingCoupon[0] as { isUsed?: boolean; usedByCustomerId?: string | null } | undefined;
+  if (existing?.isUsed && existing.usedByCustomerId && existing.usedByCustomerId !== customer.id) {
+    throw new Error('ลิงก์รับแต้มนี้ถูกใช้โดยลูกค้าคนอื่นแล้ว');
+  }
+
+  await sql`
+    insert into customers (
+      id, name, phone, line_name, line_id, avatar, current_points, lifetime_points, tier, created_at, shop_ids, updated_at
+    ) values (
+      ${customer.id},
+      ${customer.name},
+      ${customer.phone || ''},
+      ${customer.lineName || ''},
+      ${customer.lineId || ''},
+      ${customer.avatar || ''},
+      ${Math.max(0, Number(customer.currentPoints) || 0)},
+      ${Math.max(0, Number(customer.lifetimePoints) || 0)},
+      ${['Member', 'Silver', 'Gold', 'Platinum', 'VIP'].includes(customer.tier) ? customer.tier : 'Member'},
+      ${customer.createdAt || new Date().toISOString()}::timestamptz,
+      ${JSON.stringify(customer.shopIds || [])}::jsonb,
+      now()
+    )
+    on conflict (id) do update set
+      name = excluded.name,
+      phone = excluded.phone,
+      line_name = excluded.line_name,
+      line_id = excluded.line_id,
+      avatar = excluded.avatar,
+      current_points = excluded.current_points,
+      lifetime_points = excluded.lifetime_points,
+      tier = excluded.tier,
+      shop_ids = excluded.shop_ids,
+      updated_at = now()
+  `;
+
+  await sql`
+    insert into point_coupons (
+      code, points, shop_id, shop_name, description, created_at, expires_at, is_used, used_by_customer_id, used_at
+    ) values (
+      ${coupon.code},
+      ${Math.max(1, Number(coupon.points) || 1)},
+      ${coupon.shopId},
+      ${coupon.shopName || ''},
+      ${coupon.description || ''},
+      ${coupon.createdAt || new Date().toISOString()}::timestamptz,
+      ${coupon.expiresAt}::timestamptz,
+      true,
+      ${customer.id},
+      ${coupon.usedAt || new Date().toISOString()}::timestamptz
+    )
+    on conflict (code) do update set
+      points = excluded.points,
+      shop_id = excluded.shop_id,
+      shop_name = excluded.shop_name,
+      description = excluded.description,
+      expires_at = excluded.expires_at,
+      is_used = true,
+      used_by_customer_id = excluded.used_by_customer_id,
+      used_at = excluded.used_at
+  `;
+
+  await sql`
+    insert into transactions (
+      id, user_id, user_name, user_phone, shop_id, shop_name, type, points, description, status, reward_id, points_expires_at, created_at
+    ) values (
+      ${transaction.id},
+      ${transaction.userId},
+      ${transaction.userName || ''},
+      ${transaction.userPhone || ''},
+      ${transaction.shopId},
+      ${transaction.shopName || ''},
+      ${transaction.type},
+      ${Math.max(1, Number(transaction.points) || 1)},
+      ${transaction.description || ''},
+      ${transaction.status || 'completed'},
+      ${transaction.rewardId || null},
+      ${transaction.pointsExpiresAt || null}::timestamptz,
+      ${transaction.createdAt || new Date().toISOString()}::timestamptz
+    )
+    on conflict (id) do update set
+      user_id = excluded.user_id,
+      user_name = excluded.user_name,
+      user_phone = excluded.user_phone,
+      shop_id = excluded.shop_id,
+      shop_name = excluded.shop_name,
+      type = excluded.type,
+      points = excluded.points,
+      description = excluded.description,
+      status = excluded.status,
+      reward_id = excluded.reward_id,
+      points_expires_at = excluded.points_expires_at,
+      created_at = excluded.created_at
+  `;
+}
+
 export async function upsertLineUser(lineUser: LineUserRecord) {
   const sql = requireSql();
 
