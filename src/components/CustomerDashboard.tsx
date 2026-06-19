@@ -970,7 +970,7 @@ export default function CustomerDashboard({
   };
 
   // Confirm Redeem
-  const handleConfirmRedeem = () => {
+  const handleConfirmRedeem = async () => {
     if (!selectedReward || !customer) return;
 
     const latestReward = getRewards().find(
@@ -983,69 +983,57 @@ export default function CustomerDashboard({
       return;
     }
 
-    if (latestReward.stock <= 0) {
-      setErrorMessage("ของรางวัลนี้หมดสต็อกแล้ว กรุณาติดต่อร้านค้า");
-      setTimeout(() => setErrorMessage(""), 3000);
-      return;
-    }
-
-    if (customer.currentPoints < latestReward.pointsCost) {
-      setErrorMessage("แต้มสะสมของคุณไม่เพียงพอสำหรับการแลกของรางวัลชิ้นนี้");
-      setTimeout(() => setErrorMessage(""), 3000);
-      return;
-    }
+    // Phase 7B: do not trust local stock/points here. The API checks the latest
+    // Neon reward stock and customer points before it writes the redeem request.
 
     setIsRedeeming(true);
+    setErrorMessage("");
 
-    // Short delay for a friendlier mobile/LINE OA interaction.
-    setTimeout(() => {
-      const allCustomers = getCustomers();
-      const updatedCustomers = allCustomers.map((c) => {
-        if (c.id === customer.id) {
-          return {
-            ...c,
-            currentPoints: c.currentPoints - latestReward.pointsCost,
-          };
-        }
-        return c;
-      });
-      saveCustomers(updatedCustomers);
-
-      // Create Pending Transaction. Merchant confirms handover in /merchant/im-sticker.
-      const newTx: Transaction = {
-        id: `tx_${Date.now()}`,
-        userId: customer.id,
-        userName: customer.name,
-        userPhone: customer.phone,
-        shopId: selectedShopId,
-        shopName: activeShop?.name || "ร้านค้าพาร์ทเนอร์",
-        type: "redeem",
-        points: latestReward.pointsCost,
-        description: `ขอแลกรางวัล: ${latestReward.name}`,
-        status: "pending",
-        rewardId: latestReward.id,
-        createdAt: new Date().toISOString(),
-      };
-
-      const currentTxs = getTransactions();
-      saveTransactions([newTx, ...currentTxs]);
-      recordCustomerAuditLog({
-        action: 'customer_reward_redeemed',
-        actionLabel: 'ลูกค้าแลกรางวัล',
-        description: `${customer.name} ขอแลกรางวัล “${latestReward.name}” ใช้ ${latestReward.pointsCost.toLocaleString('th-TH')} แต้ม`,
-        targetType: 'transaction',
-        targetId: newTx.id,
-        points: -Math.abs(latestReward.pointsCost),
-        metadata: { rewardId: latestReward.id, rewardName: latestReward.name },
+    try {
+      const response = await fetch('/api/db/reward-redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rewardId: latestReward.id,
+          shopId: selectedShopId,
+          customer: {
+            ...customer,
+            shopIds: Array.from(new Set([...(customer.shopIds || []), selectedShopId])),
+          },
+        }),
       });
 
-      setSelectedReward(latestReward);
-      setLatestRedeemTransaction(newTx);
-      setIsRedeeming(false);
+      const payload = await response.json().catch(() => null) as {
+        ok?: boolean;
+        message?: string;
+        customer?: Customer;
+        transaction?: Transaction;
+        reward?: Reward;
+      } | null;
+
+      if (!response.ok || !payload?.ok || !payload.transaction || !payload.customer) {
+        throw new Error(payload?.message || 'แลกรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+      }
+
+      // Refresh local read cache from Neon after the online write succeeds.
+      // Do not save localStorage first, otherwise the browser can become the source of truth again.
+      await initializeDatabase();
+
+      setCustomer(payload.customer);
+      setSelectedReward(payload.reward || latestReward);
+      setLatestRedeemTransaction(payload.transaction);
       setIsRedeemSuccess(true);
+      setSuccessMessage('ส่งคำขอแลกรางวัลให้ร้านแล้ว กรุณาส่งลิงก์ให้ร้านตรวจสอบ');
+      setTimeout(() => setSuccessMessage(""), 4000);
       onDataChange();
       loadData();
-    }, 900);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'แลกรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
+      setErrorMessage(message);
+      setTimeout(() => setErrorMessage(""), 5000);
+    } finally {
+      setIsRedeeming(false);
+    }
   };
 
   // Update Profile

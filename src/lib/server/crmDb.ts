@@ -837,6 +837,19 @@ async function syncMembershipTiers(rows: MembershipTier[]) {
 }
 
 
+
+type OnlineRewardRedeemParams = {
+  rewardId: string;
+  shopId: string;
+  customer: Partial<Customer> & { id: string };
+};
+
+type OnlineRewardApprovalParams = {
+  transactionId: string;
+  shopId: string;
+  action: 'approve' | 'reject';
+};
+
 type OnlinePointClaimParams = {
   couponCode: string;
   shopId: string;
@@ -908,6 +921,22 @@ function mapTransactionRow(row: Record<string, unknown>): Transaction {
     rewardId: row.rewardId ? String(row.rewardId) : undefined,
     pointsExpiresAt: row.pointsExpiresAt ? new Date(String(row.pointsExpiresAt)).toISOString() : undefined,
     createdAt: new Date(String(row.createdAt || new Date().toISOString())).toISOString(),
+  };
+}
+
+
+function mapRewardRow(row: Record<string, unknown>): Reward {
+  return {
+    id: String(row.id || ''),
+    name: String(row.name || ''),
+    image: String(row.image || ''),
+    imageUrl: row.imageUrl ? String(row.imageUrl) : undefined,
+    imageStorageKey: row.imageStorageKey ? String(row.imageStorageKey) : undefined,
+    description: String(row.description || ''),
+    pointsCost: Number(row.pointsCost || 0),
+    stock: Number(row.stock || 0),
+    isAvailable: Boolean(row.isAvailable),
+    shopId: String(row.shopId || ''),
   };
 }
 
@@ -1177,6 +1206,676 @@ export async function claimPointCouponOnline(params: OnlinePointClaimParams): Pr
     coupon: mapCouponRow(usedCoupon),
     transaction: mapTransactionRow(transaction),
   };
+}
+
+
+export async function redeemRewardOnline(params: OnlineRewardRedeemParams): Promise<{
+  customer: Customer;
+  transaction: Transaction;
+  reward: Reward;
+}> {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  const rewardId = params.rewardId.trim();
+  const shopId = params.shopId.trim();
+  const customerInput = params.customer;
+  const customerId = customerInput.id.trim();
+
+  if (!rewardId || !shopId || !customerId) {
+    throw new Error('ข้อมูลแลกรางวัลไม่ครบ กรุณาลองใหม่อีกครั้ง');
+  }
+
+  const rewardCheckRows = await sql`
+    select
+      id,
+      name,
+      image,
+      image_url as "imageUrl",
+      image_storage_key as "imageStorageKey",
+      description,
+      points_cost as "pointsCost",
+      stock,
+      is_available as "isAvailable",
+      shop_id as "shopId"
+    from rewards
+    where id = ${rewardId} and shop_id = ${shopId}
+    limit 1
+  `;
+
+  const rewardCheck = rewardCheckRows[0] as Record<string, unknown> | undefined;
+  if (!rewardCheck) {
+    throw new Error('ไม่พบของรางวัลนี้ในร้านปัจจุบัน กรุณารีเฟรชแล้วลองใหม่');
+  }
+  if (!Boolean(rewardCheck.isAvailable)) {
+    throw new Error('ของรางวัลนี้ไม่เปิดให้แลกในขณะนี้');
+  }
+  if (Number(rewardCheck.stock || 0) <= 0) {
+    throw new Error('ของรางวัลนี้หมดสต็อกแล้ว กรุณาติดต่อร้านค้า');
+  }
+
+  const shopRows = await sql`select name from shops where id = ${shopId} limit 1`;
+  const shopName = String((shopRows[0] as { name?: string } | undefined)?.name || shopId);
+  const safeName = String(customerInput.name || customerInput.lineName || 'LINE User').trim() || 'LINE User';
+  const safePhone = String(customerInput.phone || '').trim();
+  const safeLineName = String(customerInput.lineName || safeName).trim();
+  const safeLineId = String(customerInput.lineId || '').trim();
+  const safeAvatar = String(customerInput.avatar || '').trim();
+  const createdAt = customerInput.createdAt || new Date().toISOString();
+  const shopIds = JSON.stringify([shopId]);
+
+  // Keep profile fields fresh, but do not trust client-side points. Neon remains the source of truth.
+  await sql`
+    insert into customers (
+      id,
+      name,
+      phone,
+      line_name,
+      line_id,
+      avatar,
+      current_points,
+      lifetime_points,
+      tier,
+      created_at,
+      shop_ids,
+      updated_at
+    ) values (
+      ${customerId},
+      ${safeName},
+      ${safePhone},
+      ${safeLineName},
+      ${safeLineId},
+      ${safeAvatar},
+      0,
+      0,
+      'Member',
+      ${createdAt}::timestamptz,
+      ${shopIds}::jsonb,
+      now()
+    )
+    on conflict (id) do update set
+      name = case when customers.name = '' or customers.name = 'LINE User' then excluded.name else customers.name end,
+      phone = coalesce(nullif(excluded.phone, ''), customers.phone),
+      line_name = coalesce(nullif(excluded.line_name, ''), customers.line_name),
+      line_id = coalesce(nullif(excluded.line_id, ''), customers.line_id),
+      avatar = coalesce(nullif(excluded.avatar, ''), customers.avatar),
+      shop_ids = coalesce(
+        (
+          select jsonb_agg(distinct value)
+          from jsonb_array_elements_text(customers.shop_ids || excluded.shop_ids) as merged(value)
+        ),
+        excluded.shop_ids
+      ),
+      updated_at = now()
+  `;
+
+  const transactionId = makeServerId('tx');
+  const redeemRows = await sql`
+    with selected_reward as (
+      select
+        id,
+        name,
+        image,
+        image_url,
+        image_storage_key,
+        description,
+        points_cost,
+        stock,
+        is_available,
+        shop_id
+      from rewards
+      where id = ${rewardId}
+        and shop_id = ${shopId}
+        and is_available = true
+        and stock > 0
+      limit 1
+    ),
+    updated_customer as (
+      update customers c
+      set
+        current_points = c.current_points - sr.points_cost,
+        updated_at = now()
+      from selected_reward sr
+      where c.id = ${customerId}
+        and c.current_points >= sr.points_cost
+      returning
+        c.id,
+        c.name,
+        c.phone,
+        c.line_name,
+        c.line_id,
+        c.avatar,
+        c.current_points,
+        c.lifetime_points,
+        c.tier,
+        c.created_at,
+        c.shop_ids
+    ),
+    inserted_tx as (
+      insert into transactions (
+        id,
+        user_id,
+        user_name,
+        user_phone,
+        shop_id,
+        shop_name,
+        type,
+        points,
+        description,
+        status,
+        reward_id,
+        created_at
+      )
+      select
+        ${transactionId},
+        uc.id,
+        uc.name,
+        coalesce(uc.phone, ''),
+        sr.shop_id,
+        ${shopName},
+        'redeem',
+        sr.points_cost,
+        'ขอแลกรางวัล: ' || sr.name,
+        'pending',
+        sr.id,
+        now()
+      from selected_reward sr
+      join updated_customer uc on true
+      returning
+        id,
+        user_id,
+        user_name,
+        user_phone,
+        shop_id,
+        shop_name,
+        type,
+        points,
+        description,
+        status,
+        reward_id,
+        points_expires_at,
+        created_at
+    )
+    select
+      uc.id as "customerId",
+      uc.name as "customerName",
+      uc.phone as "customerPhone",
+      uc.line_name as "customerLineName",
+      uc.line_id as "customerLineId",
+      uc.avatar as "customerAvatar",
+      uc.current_points as "customerCurrentPoints",
+      uc.lifetime_points as "customerLifetimePoints",
+      uc.tier as "customerTier",
+      uc.created_at as "customerCreatedAt",
+      uc.shop_ids as "customerShopIds",
+      tx.id as "transactionId",
+      tx.user_id as "transactionUserId",
+      tx.user_name as "transactionUserName",
+      tx.user_phone as "transactionUserPhone",
+      tx.shop_id as "transactionShopId",
+      tx.shop_name as "transactionShopName",
+      tx.type as "transactionType",
+      tx.points as "transactionPoints",
+      tx.description as "transactionDescription",
+      tx.status as "transactionStatus",
+      tx.reward_id as "transactionRewardId",
+      tx.points_expires_at as "transactionPointsExpiresAt",
+      tx.created_at as "transactionCreatedAt",
+      sr.id as "rewardId",
+      sr.name as "rewardName",
+      sr.image as "rewardImage",
+      sr.image_url as "rewardImageUrl",
+      sr.image_storage_key as "rewardImageStorageKey",
+      sr.description as "rewardDescription",
+      sr.points_cost as "rewardPointsCost",
+      sr.stock as "rewardStock",
+      sr.is_available as "rewardIsAvailable",
+      sr.shop_id as "rewardShopId"
+    from updated_customer uc
+    join inserted_tx tx on true
+    join selected_reward sr on true
+  `;
+
+  const row = redeemRows[0] as Record<string, unknown> | undefined;
+  if (!row) {
+    const customerRows = await sql`
+      select current_points as "currentPoints"
+      from customers
+      where id = ${customerId}
+      limit 1
+    `;
+    const currentPoints = Number((customerRows[0] as { currentPoints?: number } | undefined)?.currentPoints || 0);
+    const requiredPoints = Number(rewardCheck.pointsCost || 0);
+    if (currentPoints < requiredPoints) {
+      throw new Error(`แต้มสะสมของคุณไม่เพียงพอสำหรับของรางวัลนี้ ต้องใช้ ${requiredPoints.toLocaleString('th-TH')} แต้ม แต่มี ${currentPoints.toLocaleString('th-TH')} แต้ม`);
+    }
+    throw new Error('ไม่สามารถสร้างคำขอแลกรางวัลได้ กรุณารีเฟรชแล้วลองใหม่');
+  }
+
+  const customer = mapCustomerRow({
+    id: row.customerId,
+    name: row.customerName,
+    phone: row.customerPhone,
+    lineName: row.customerLineName,
+    lineId: row.customerLineId,
+    avatar: row.customerAvatar,
+    currentPoints: row.customerCurrentPoints,
+    lifetimePoints: row.customerLifetimePoints,
+    tier: row.customerTier,
+    createdAt: row.customerCreatedAt,
+    shopIds: row.customerShopIds,
+  });
+  const transaction = mapTransactionRow({
+    id: row.transactionId,
+    userId: row.transactionUserId,
+    userName: row.transactionUserName,
+    userPhone: row.transactionUserPhone,
+    shopId: row.transactionShopId,
+    shopName: row.transactionShopName,
+    type: row.transactionType,
+    points: row.transactionPoints,
+    description: row.transactionDescription,
+    status: row.transactionStatus,
+    rewardId: row.transactionRewardId,
+    pointsExpiresAt: row.transactionPointsExpiresAt,
+    createdAt: row.transactionCreatedAt,
+  });
+  const reward = mapRewardRow({
+    id: row.rewardId,
+    name: row.rewardName,
+    image: row.rewardImage,
+    imageUrl: row.rewardImageUrl,
+    imageStorageKey: row.rewardImageStorageKey,
+    description: row.rewardDescription,
+    pointsCost: row.rewardPointsCost,
+    stock: row.rewardStock,
+    isAvailable: row.rewardIsAvailable,
+    shopId: row.rewardShopId,
+  });
+
+  await sql`
+    insert into audit_logs (
+      id,
+      shop_id,
+      shop_name,
+      actor_type,
+      actor_name,
+      actor_id,
+      action,
+      action_label,
+      description,
+      target_type,
+      target_id,
+      customer_id,
+      customer_name,
+      points,
+      status,
+      metadata,
+      created_at
+    ) values (
+      ${makeServerId('audit')},
+      ${shopId},
+      ${shopName},
+      'customer',
+      ${customer.name},
+      ${customer.id},
+      'customer_reward_redeemed_online',
+      'ลูกค้าขอแลกรางวัลแบบออนไลน์',
+      ${`${customer.name} ขอแลกรางวัล “${reward.name}” ใช้ ${transaction.points.toLocaleString('th-TH')} แต้ม`},
+      'transaction',
+      ${transaction.id},
+      ${customer.id},
+      ${customer.name},
+      ${-Math.abs(transaction.points)},
+      'success',
+      ${JSON.stringify({ rewardId: reward.id, rewardName: reward.name })}::jsonb,
+      now()
+    )
+    on conflict (id) do nothing
+  `;
+
+  return { customer, transaction, reward };
+}
+
+export async function handleRewardApprovalOnline(params: OnlineRewardApprovalParams): Promise<{
+  transaction: Transaction;
+  customer?: Customer;
+  reward?: Reward;
+}> {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  const transactionId = params.transactionId.trim();
+  const shopId = params.shopId.trim();
+  const action = params.action;
+
+  if (!transactionId || !shopId || (action !== 'approve' && action !== 'reject')) {
+    throw new Error('ข้อมูลอนุมัติรางวัลไม่ครบ กรุณาลองใหม่อีกครั้ง');
+  }
+
+  const existingRows = await sql`
+    select
+      t.id,
+      t.user_id as "userId",
+      t.user_name as "userName",
+      t.user_phone as "userPhone",
+      t.shop_id as "shopId",
+      t.shop_name as "shopName",
+      t.type,
+      t.points,
+      t.description,
+      t.status,
+      t.reward_id as "rewardId",
+      t.created_at as "createdAt",
+      r.name as "rewardName",
+      r.stock as "rewardStock"
+    from transactions t
+    left join rewards r on r.id = t.reward_id and r.shop_id = t.shop_id
+    where t.id = ${transactionId} and t.shop_id = ${shopId} and t.type = 'redeem'
+    limit 1
+  `;
+
+  const existing = existingRows[0] as Record<string, unknown> | undefined;
+  if (!existing) {
+    throw new Error('ไม่พบรายการแลกรางวัลนี้ในร้านปัจจุบัน');
+  }
+  if (String(existing.status) !== 'pending') {
+    throw new Error('รายการนี้ถูกดำเนินการไปแล้ว');
+  }
+
+  if (action === 'approve') {
+    if (!existing.rewardId) {
+      throw new Error('รายการนี้ไม่มีข้อมูลของรางวัล กรุณาตรวจสอบอีกครั้ง');
+    }
+    if (Number(existing.rewardStock || 0) <= 0) {
+      throw new Error('ไม่สามารถอนุมัติได้ เพราะของรางวัลนี้หมดสต็อกแล้ว');
+    }
+
+    const approveRows = await sql`
+      with tx as (
+        select *
+        from transactions
+        where id = ${transactionId}
+          and shop_id = ${shopId}
+          and type = 'redeem'
+          and status = 'pending'
+          and reward_id is not null
+        limit 1
+      ),
+      updated_reward as (
+        update rewards r
+        set
+          stock = r.stock - 1,
+          updated_at = now()
+        from tx
+        where r.id = tx.reward_id
+          and r.shop_id = tx.shop_id
+          and r.stock > 0
+        returning
+          r.id,
+          r.name,
+          r.image,
+          r.image_url,
+          r.image_storage_key,
+          r.description,
+          r.points_cost,
+          r.stock,
+          r.is_available,
+          r.shop_id
+      ),
+      updated_tx as (
+        update transactions t
+        set status = 'completed'
+        from tx
+        join updated_reward ur on true
+        where t.id = tx.id
+        returning
+          t.id,
+          t.user_id,
+          t.user_name,
+          t.user_phone,
+          t.shop_id,
+          t.shop_name,
+          t.type,
+          t.points,
+          t.description,
+          t.status,
+          t.reward_id,
+          t.points_expires_at,
+          t.created_at
+      )
+      select
+        ut.id as "transactionId",
+        ut.user_id as "transactionUserId",
+        ut.user_name as "transactionUserName",
+        ut.user_phone as "transactionUserPhone",
+        ut.shop_id as "transactionShopId",
+        ut.shop_name as "transactionShopName",
+        ut.type as "transactionType",
+        ut.points as "transactionPoints",
+        ut.description as "transactionDescription",
+        ut.status as "transactionStatus",
+        ut.reward_id as "transactionRewardId",
+        ut.points_expires_at as "transactionPointsExpiresAt",
+        ut.created_at as "transactionCreatedAt",
+        ur.id as "rewardId",
+        ur.name as "rewardName",
+        ur.image as "rewardImage",
+        ur.image_url as "rewardImageUrl",
+        ur.image_storage_key as "rewardImageStorageKey",
+        ur.description as "rewardDescription",
+        ur.points_cost as "rewardPointsCost",
+        ur.stock as "rewardStock",
+        ur.is_available as "rewardIsAvailable",
+        ur.shop_id as "rewardShopId"
+      from updated_tx ut
+      join updated_reward ur on true
+    `;
+
+    const row = approveRows[0] as Record<string, unknown> | undefined;
+    if (!row) {
+      throw new Error('อนุมัติไม่สำเร็จ รายการอาจถูกดำเนินการแล้วหรือของรางวัลหมดสต็อก');
+    }
+
+    const transaction = mapTransactionRow({
+      id: row.transactionId,
+      userId: row.transactionUserId,
+      userName: row.transactionUserName,
+      userPhone: row.transactionUserPhone,
+      shopId: row.transactionShopId,
+      shopName: row.transactionShopName,
+      type: row.transactionType,
+      points: row.transactionPoints,
+      description: row.transactionDescription,
+      status: row.transactionStatus,
+      rewardId: row.transactionRewardId,
+      pointsExpiresAt: row.transactionPointsExpiresAt,
+      createdAt: row.transactionCreatedAt,
+    });
+    const reward = mapRewardRow({
+      id: row.rewardId,
+      name: row.rewardName,
+      image: row.rewardImage,
+      imageUrl: row.rewardImageUrl,
+      imageStorageKey: row.rewardImageStorageKey,
+      description: row.rewardDescription,
+      pointsCost: row.rewardPointsCost,
+      stock: row.rewardStock,
+      isAvailable: row.rewardIsAvailable,
+      shopId: row.rewardShopId,
+    });
+
+    await sql`
+      insert into audit_logs (
+        id, shop_id, shop_name, actor_type, actor_name, action, action_label,
+        description, target_type, target_id, customer_id, customer_name, points, status, metadata, created_at
+      ) values (
+        ${makeServerId('audit')},
+        ${transaction.shopId},
+        ${transaction.shopName},
+        'owner',
+        'เจ้าของร้าน',
+        'reward_redeem_approved_online',
+        'อนุมัติรางวัลแบบออนไลน์',
+        ${`อนุมัติของรางวัล “${reward.name}” ให้ ${transaction.userName}`},
+        'transaction',
+        ${transaction.id},
+        ${transaction.userId},
+        ${transaction.userName},
+        ${-Math.abs(transaction.points)},
+        'success',
+        ${JSON.stringify({ rewardId: reward.id, rewardName: reward.name })}::jsonb,
+        now()
+      )
+      on conflict (id) do nothing
+    `;
+
+    return { transaction, reward };
+  }
+
+  const rejectRows = await sql`
+    with tx as (
+      select *
+      from transactions
+      where id = ${transactionId}
+        and shop_id = ${shopId}
+        and type = 'redeem'
+        and status = 'pending'
+      limit 1
+    ),
+    updated_customer as (
+      update customers c
+      set
+        current_points = c.current_points + tx.points,
+        updated_at = now()
+      from tx
+      where c.id = tx.user_id
+      returning
+        c.id,
+        c.name,
+        c.phone,
+        c.line_name,
+        c.line_id,
+        c.avatar,
+        c.current_points,
+        c.lifetime_points,
+        c.tier,
+        c.created_at,
+        c.shop_ids
+    ),
+    updated_tx as (
+      update transactions t
+      set
+        status = 'rejected',
+        description = case
+          when position('คืนแต้มแล้ว' in t.description) > 0 then t.description
+          else t.description || ' (ร้านปฏิเสธ - คืนแต้มแล้ว)'
+        end
+      from tx
+      join updated_customer uc on true
+      where t.id = tx.id
+      returning
+        t.id,
+        t.user_id,
+        t.user_name,
+        t.user_phone,
+        t.shop_id,
+        t.shop_name,
+        t.type,
+        t.points,
+        t.description,
+        t.status,
+        t.reward_id,
+        t.points_expires_at,
+        t.created_at
+    )
+    select
+      ut.id as "transactionId",
+      ut.user_id as "transactionUserId",
+      ut.user_name as "transactionUserName",
+      ut.user_phone as "transactionUserPhone",
+      ut.shop_id as "transactionShopId",
+      ut.shop_name as "transactionShopName",
+      ut.type as "transactionType",
+      ut.points as "transactionPoints",
+      ut.description as "transactionDescription",
+      ut.status as "transactionStatus",
+      ut.reward_id as "transactionRewardId",
+      ut.points_expires_at as "transactionPointsExpiresAt",
+      ut.created_at as "transactionCreatedAt",
+      uc.id as "customerId",
+      uc.name as "customerName",
+      uc.phone as "customerPhone",
+      uc.line_name as "customerLineName",
+      uc.line_id as "customerLineId",
+      uc.avatar as "customerAvatar",
+      uc.current_points as "customerCurrentPoints",
+      uc.lifetime_points as "customerLifetimePoints",
+      uc.tier as "customerTier",
+      uc.created_at as "customerCreatedAt",
+      uc.shop_ids as "customerShopIds"
+    from updated_tx ut
+    join updated_customer uc on true
+  `;
+
+  const row = rejectRows[0] as Record<string, unknown> | undefined;
+  if (!row) {
+    throw new Error('ปฏิเสธไม่สำเร็จ รายการอาจถูกดำเนินการไปแล้ว');
+  }
+
+  const transaction = mapTransactionRow({
+    id: row.transactionId,
+    userId: row.transactionUserId,
+    userName: row.transactionUserName,
+    userPhone: row.transactionUserPhone,
+    shopId: row.transactionShopId,
+    shopName: row.transactionShopName,
+    type: row.transactionType,
+    points: row.transactionPoints,
+    description: row.transactionDescription,
+    status: row.transactionStatus,
+    rewardId: row.transactionRewardId,
+    pointsExpiresAt: row.transactionPointsExpiresAt,
+    createdAt: row.transactionCreatedAt,
+  });
+  const customer = mapCustomerRow({
+    id: row.customerId,
+    name: row.customerName,
+    phone: row.customerPhone,
+    lineName: row.customerLineName,
+    lineId: row.customerLineId,
+    avatar: row.customerAvatar,
+    currentPoints: row.customerCurrentPoints,
+    lifetimePoints: row.customerLifetimePoints,
+    tier: row.customerTier,
+    createdAt: row.customerCreatedAt,
+    shopIds: row.customerShopIds,
+  });
+
+  await sql`
+    insert into audit_logs (
+      id, shop_id, shop_name, actor_type, actor_name, action, action_label,
+      description, target_type, target_id, customer_id, customer_name, points, status, metadata, created_at
+    ) values (
+      ${makeServerId('audit')},
+      ${transaction.shopId},
+      ${transaction.shopName},
+      'owner',
+      'เจ้าของร้าน',
+      'reward_redeem_rejected_online',
+      'ปฏิเสธรางวัล / คืนแต้มแบบออนไลน์',
+      ${`ปฏิเสธรายการแลกและคืน ${transaction.points.toLocaleString('th-TH')} แต้มให้ ${transaction.userName}`},
+      'transaction',
+      ${transaction.id},
+      ${transaction.userId},
+      ${transaction.userName},
+      ${transaction.points},
+      'warning',
+      ${JSON.stringify({ rewardId: transaction.rewardId || null })}::jsonb,
+      now()
+    )
+    on conflict (id) do nothing
+  `;
+
+  return { transaction, customer };
 }
 
 export async function persistPointClaim(params: {

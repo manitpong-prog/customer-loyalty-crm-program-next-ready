@@ -113,3 +113,14 @@ Migration ที่ต้องรันก่อน deploy: `neon/migrations/00
 - `/api/db/point-claim` อ่านคูปองจาก Neon โดยตรง ตรวจคูปอง ใช้คูปอง เพิ่มแต้ม สร้าง transaction และ audit log จากฝั่ง server
 - ฝั่งลูกค้าไม่บันทึกแต้มลง localStorage ก่อน API สำเร็จแล้ว ลดปัญหาหน้าเว็บสำเร็จแต่หลังบ้าน/Neon ไม่เห็นลูกค้าใหม่
 - ยังไม่ refactor ทั้งระบบเป็น online-only ทั้งหมด รอบถัดไปควรทำ Reward Redeem/Approval และ Merchant Point Adjustment แบบ online-only ต่อ
+
+
+## Phase 7B — Online-only Reward Redeem / Approval
+
+- ลูกค้าขอแลกรางวัลผ่าน `/api/db/reward-redeem` และต้องเขียน Neon สำเร็จก่อนจึงแสดงว่าสำเร็จ
+- API ตรวจ reward/customer จาก Neon, หัก `current_points`, สร้าง transaction `redeem` status `pending`, และสร้าง audit log
+- ร้านอนุมัติ/ไม่อนุมัติผ่าน `/api/db/reward-approval` โดยเขียน Neon ก่อน UI สำเร็จ
+- อนุมัติ: transaction เป็น `completed` และลด reward stock
+- ไม่อนุมัติ: transaction เป็น `rejected` และคืนแต้มให้ลูกค้า
+- ไม่ต้องรัน SQL migration ใหม่
+- Phase ถัดไปที่แนะนำ: Phase 7C — Online-only Merchant Point Adjustment

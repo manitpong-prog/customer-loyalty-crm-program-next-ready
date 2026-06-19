@@ -10,7 +10,7 @@ import {
   getShops, saveShops, getCustomers, saveCustomers, 
   getRewards, saveRewards, getTransactions, saveTransactions,
   getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons,
-  getAuditLogs, addAuditLog, getOrCreateOnboardingChecklist, upsertOnboardingChecklist, getMembershipTiers, saveMembershipTiers
+  getAuditLogs, addAuditLog, getOrCreateOnboardingChecklist, upsertOnboardingChecklist, getMembershipTiers, saveMembershipTiers, initializeDatabase
 } from '../data/mockData';
 import { shopIdToSlug } from '../lib/shopSlug';
 import {
@@ -50,6 +50,7 @@ export default function OwnerDashboard({
   const [redeemVerifyInput, setRedeemVerifyInput] = useState('');
   const [reviewRedeemId, setReviewRedeemId] = useState<string | null>(null);
   const [redeemReviewError, setRedeemReviewError] = useState<string | null>(null);
+  const [processingRedeemId, setProcessingRedeemId] = useState<string | null>(null);
   const handledInitialRedeemParamRef = useRef(false);
   
   // Database States
@@ -531,7 +532,7 @@ export default function OwnerDashboard({
     }
 
     handledInitialRedeemParamRef.current = true;
-    openRedeemReviewById(redeemId, 'link');
+    void openRedeemReviewById(redeemId, 'link');
 
     try {
       const url = new URL(window.location.href);
@@ -1290,7 +1291,7 @@ export default function OwnerDashboard({
   };
 
   // 1. APPROVE CUSTOMER REWARD CLAIM
-  const handleApproveRedeem = (txId: string, options?: { skipConfirm?: boolean; closeModal?: boolean }) => {
+  const handleApproveRedeem = async (txId: string, options?: { skipConfirm?: boolean; closeModal?: boolean }) => {
     const allTxs = getTransactions();
     const tx = allTxs.find(t => t.id === txId && t.shopId === selectedShopId);
 
@@ -1309,8 +1310,7 @@ export default function OwnerDashboard({
       return;
     }
 
-    const allRewards = getRewards();
-    const matchedReward = allRewards.find(r => r.id === tx.rewardId && r.shopId === selectedShopId);
+    const matchedReward = getRewards().find(r => r.id === tx.rewardId && r.shopId === selectedShopId);
     const rewardName = matchedReward?.name || tx.description.replace('ขอแลกรางวัล: ', '');
 
     if (matchedReward && matchedReward.stock <= 0) {
@@ -1319,54 +1319,41 @@ export default function OwnerDashboard({
     }
 
     if (!options?.skipConfirm) {
-      const confirmed = confirm(`ยืนยันอนุมัติรายการแลกรางวัลนี้ใช่ไหม?
-
-ลูกค้า: ${tx.userName}
-ของรางวัล: ${rewardName}
-ใช้แต้ม: ${tx.points.toLocaleString('th-TH')} แต้ม
-
-หลังอนุมัติ ระบบจะลดสต็อกของรางวัล 1 ชิ้น`);
+      const confirmed = confirm(`ยืนยันอนุมัติรายการแลกรางวัลนี้ใช่ไหม?\n\nลูกค้า: ${tx.userName}\nของรางวัล: ${rewardName}\nใช้แต้ม: ${tx.points.toLocaleString('th-TH')} แต้ม\n\nหลังอนุมัติ ระบบจะลดสต็อกของรางวัล 1 ชิ้น`);
       if (!confirmed) return;
     }
 
-    if (matchedReward) {
-      const updatedRewards = allRewards.map(r => {
-        if (r.id === tx.rewardId && r.shopId === selectedShopId) {
-          return { ...r, stock: Math.max(0, r.stock - 1) };
-        }
-        return r;
+    setProcessingRedeemId(txId);
+    try {
+      const response = await fetch('/api/db/reward-approval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactionId: txId,
+          shopId: selectedShopId,
+          action: 'approve',
+        }),
       });
-      saveRewards(updatedRewards);
-    }
 
-    const updatedTxs = allTxs.map(t => {
-      if (t.id === txId && t.shopId === selectedShopId) {
-        return { ...t, status: 'completed' as const };
+      const payload = await response.json().catch(() => null) as { ok?: boolean; message?: string; transaction?: Transaction; reward?: Reward } | null;
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.message || 'อนุมัติรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
       }
-      return t;
-    });
-    saveTransactions(updatedTxs);
 
-    recordAuditLog({
-      action: 'reward_redeem_approved',
-      actionLabel: 'อนุมัติรางวัล',
-      description: `อนุมัติของรางวัล “${rewardName}” ให้ ${tx.userName}`,
-      targetType: 'transaction',
-      targetId: tx.id,
-      customerId: tx.userId,
-      customerName: tx.userName,
-      points: -Math.abs(tx.points),
-      metadata: { rewardId: tx.rewardId, rewardName },
-    });
-
-    showStatus(`✓ อนุมัติให้ของรางวัล “${rewardName}” กับ ${tx.userName} แล้ว`);
-    if (options?.closeModal) setReviewRedeemId(null);
-    onDataChange();
-    loadData();
+      await initializeDatabase();
+      showStatus(`✓ อนุมัติให้ของรางวัล “${payload.reward?.name || rewardName}” กับ ${tx.userName} แล้ว`);
+      if (options?.closeModal) setReviewRedeemId(null);
+      onDataChange();
+      loadData();
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'อนุมัติรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'}`);
+    } finally {
+      setProcessingRedeemId(null);
+    }
   };
 
   // 2. REJECT CUSTOMER REWARD CLAIM (refunds points)
-  const handleRejectRedeem = (txId: string, options?: { skipConfirm?: boolean; closeModal?: boolean }) => {
+  const handleRejectRedeem = async (txId: string, options?: { skipConfirm?: boolean; closeModal?: boolean }) => {
     const allTxs = getTransactions();
     const tx = allTxs.find(t => t.id === txId && t.shopId === selectedShopId);
 
@@ -1382,54 +1369,37 @@ export default function OwnerDashboard({
 
     const rewardName = tx.description.replace('ขอแลกรางวัล: ', '');
     if (!options?.skipConfirm) {
-      const confirmed = confirm(`ยืนยันปฏิเสธรายการแลกรางวัลนี้ใช่ไหม?
-
-ลูกค้า: ${tx.userName}
-ของรางวัล: ${rewardName}
-แต้มที่จะคืน: ${tx.points.toLocaleString('th-TH')} แต้ม
-
-หลังปฏิเสธ ระบบจะคืนแต้มให้ลูกค้าทันที`);
+      const confirmed = confirm(`ยืนยันปฏิเสธรายการแลกรางวัลนี้ใช่ไหม?\n\nลูกค้า: ${tx.userName}\nของรางวัล: ${rewardName}\nแต้มที่จะคืน: ${tx.points.toLocaleString('th-TH')} แต้ม\n\nหลังปฏิเสธ ระบบจะคืนแต้มให้ลูกค้าทันที`);
       if (!confirmed) return;
     }
 
-    const allCustomers = getCustomers();
-    const updatedCustomers = allCustomers.map(c => {
-      if (c.id === tx.userId) {
-        return { ...c, currentPoints: c.currentPoints + tx.points };
+    setProcessingRedeemId(txId);
+    try {
+      const response = await fetch('/api/db/reward-approval', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactionId: txId,
+          shopId: selectedShopId,
+          action: 'reject',
+        }),
+      });
+
+      const payload = await response.json().catch(() => null) as { ok?: boolean; message?: string; transaction?: Transaction; customer?: Customer } | null;
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.message || 'ปฏิเสธรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
       }
-      return c;
-    });
-    saveCustomers(updatedCustomers);
 
-    const updatedTxs = allTxs.map(t => {
-      if (t.id === txId && t.shopId === selectedShopId) {
-        const alreadyHasRefundNote = t.description.includes('คืนแต้มแล้ว');
-        return {
-          ...t,
-          status: 'rejected' as const,
-          description: alreadyHasRefundNote ? t.description : `${t.description} (ร้านปฏิเสธ - คืนแต้มแล้ว)`,
-        };
-      }
-      return t;
-    });
-    saveTransactions(updatedTxs);
-
-    recordAuditLog({
-      action: 'reward_redeem_rejected',
-      actionLabel: 'ปฏิเสธรางวัล / คืนแต้ม',
-      description: `ปฏิเสธรายการแลก “${rewardName}” และคืน ${tx.points.toLocaleString('th-TH')} แต้มให้ ${tx.userName}`,
-      targetType: 'transaction',
-      targetId: tx.id,
-      customerId: tx.userId,
-      customerName: tx.userName,
-      points: tx.points,
-      status: 'warning',
-    });
-
-    showStatus(`✕ ปฏิเสธรายการแล้ว และคืน ${tx.points.toLocaleString('th-TH')} แต้มให้ ${tx.userName} แล้ว`);
-    if (options?.closeModal) setReviewRedeemId(null);
-    onDataChange();
-    loadData();
+      await initializeDatabase();
+      showStatus(`✕ ปฏิเสธรายการแล้ว และคืน ${tx.points.toLocaleString('th-TH')} แต้มให้ ${tx.userName} แล้ว`);
+      if (options?.closeModal) setReviewRedeemId(null);
+      onDataChange();
+      loadData();
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'ปฏิเสธรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'}`);
+    } finally {
+      setProcessingRedeemId(null);
+    }
   };
 
   const getCleanRewardName = (tx?: Transaction | null) => {
@@ -1464,7 +1434,11 @@ export default function OwnerDashboard({
     return trimmed;
   };
 
-  const openRedeemReviewById = (txId: string, source: 'link' | 'manual' | 'list' = 'manual') => {
+  const findRedeemTransactionInCache = (txId: string) => {
+    return getTransactions().find((item) => item.id === txId && item.shopId === selectedShopId && item.type === 'redeem');
+  };
+
+  const openRedeemReviewById = async (txId: string, source: 'link' | 'manual' | 'list' = 'manual') => {
     const cleanTxId = txId.trim();
 
     if (!cleanTxId) {
@@ -1472,7 +1446,21 @@ export default function OwnerDashboard({
       return;
     }
 
-    const tx = getTransactions().find((item) => item.id === cleanTxId && item.shopId === selectedShopId && item.type === 'redeem');
+    let tx = findRedeemTransactionInCache(cleanTxId);
+
+    // Phase 7B: reward requests are written to Neon first. If the merchant page
+    // has been open since before the customer redeemed, refresh from Neon once
+    // before declaring the link invalid.
+    if (!tx) {
+      try {
+        setRedeemReviewError(null);
+        await initializeDatabase();
+        loadData();
+        tx = findRedeemTransactionInCache(cleanTxId);
+      } catch {
+        // The invalid-link message below is clearer for the merchant than a raw network error.
+      }
+    }
 
     if (!tx) {
       setReviewRedeemId(null);
@@ -1498,7 +1486,7 @@ export default function OwnerDashboard({
 
   const handleVerifyRedeemLink = () => {
     const txId = extractRedeemIdFromText(redeemVerifyInput);
-    openRedeemReviewById(txId, 'manual');
+    void openRedeemReviewById(txId, 'manual');
   };
 
   const getMerchantRedeemUrlForTransaction = (tx: Transaction) => {
@@ -3008,17 +2996,18 @@ export default function OwnerDashboard({
                             <button 
                               type="button"
                               onClick={() => handleApproveRedeem(t.id)}
-                              disabled={stockDanger}
+                              disabled={stockDanger || processingRedeemId === t.id}
                               className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-black px-3 py-2.5 rounded-2xl text-xs transition cursor-pointer disabled:cursor-not-allowed active:scale-95 flex items-center justify-center gap-1.5"
                             >
-                              <Check className="w-4 h-4" /> อนุมัติให้ของแล้ว
+                              <Check className="w-4 h-4" /> {processingRedeemId === t.id ? 'กำลังบันทึก...' : 'อนุมัติให้ของแล้ว'}
                             </button>
                             <button 
                               type="button"
                               onClick={() => handleRejectRedeem(t.id)}
-                              className="bg-white border border-rose-200 hover:bg-rose-50 text-rose-700 font-black px-3 py-2.5 rounded-2xl text-xs transition cursor-pointer active:scale-95 flex items-center justify-center gap-1.5"
+                              disabled={processingRedeemId === t.id}
+                              className="bg-white border border-rose-200 hover:bg-rose-50 disabled:bg-slate-100 disabled:text-slate-400 text-rose-700 font-black px-3 py-2.5 rounded-2xl text-xs transition cursor-pointer disabled:cursor-not-allowed active:scale-95 flex items-center justify-center gap-1.5"
                             >
-                              <X className="w-4 h-4" /> ปฏิเสธและคืนแต้ม
+                              <X className="w-4 h-4" /> {processingRedeemId === t.id ? 'กำลังบันทึก...' : 'ปฏิเสธและคืนแต้ม'}
                             </button>
                           </div>
                         </div>
@@ -4113,17 +4102,18 @@ export default function OwnerDashboard({
                       <button
                         type="button"
                         onClick={() => handleApproveRedeem(reviewRedeemTx.id, { skipConfirm: true, closeModal: true })}
-                        disabled={reviewRedeemStockDanger}
+                        disabled={reviewRedeemStockDanger || processingRedeemId === reviewRedeemTx.id}
                         className="rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-black py-3 text-sm transition active:scale-95 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                       >
-                        <Check className="w-4 h-4" /> อนุมัติ
+                        <Check className="w-4 h-4" /> {processingRedeemId === reviewRedeemTx.id ? 'กำลังบันทึก...' : 'อนุมัติ'}
                       </button>
                       <button
                         type="button"
                         onClick={() => handleRejectRedeem(reviewRedeemTx.id, { skipConfirm: true, closeModal: true })}
-                        className="rounded-2xl bg-white border border-rose-200 hover:bg-rose-50 text-rose-700 font-black py-3 text-sm transition active:scale-95 flex items-center justify-center gap-2"
+                        disabled={processingRedeemId === reviewRedeemTx.id}
+                        className="rounded-2xl bg-white border border-rose-200 hover:bg-rose-50 disabled:bg-slate-100 disabled:text-slate-400 text-rose-700 font-black py-3 text-sm transition active:scale-95 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                       >
-                        <X className="w-4 h-4" /> ไม่อนุมัติ
+                        <X className="w-4 h-4" /> {processingRedeemId === reviewRedeemTx.id ? 'กำลังบันทึก...' : 'ไม่อนุมัติ'}
                       </button>
                     </div>
                   ) : (
