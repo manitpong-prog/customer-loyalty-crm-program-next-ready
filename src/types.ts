@@ -1,3 +1,5 @@
+export type PointRoundingMode = 'floor' | 'nearest';
+
 export interface Shop {
   id: string;
   name: string;
@@ -13,10 +15,29 @@ export interface Shop {
   contactText?: string;
   shareMessageTemplate?: string;
   richMenuContactUrl?: string;
+  pointRoundingMode?: PointRoundingMode;
+  minimumPurchaseForPoints?: number;
+  pointLinkExpiryDays?: number;
+  pointExpiryDays?: number;
+  pointExpiryReminderDays?: number;
+  logoUrl?: string | null;
+  logoStorageKey?: string | null;
   createdAt: string;
 }
 
-export type TierType = 'Silver' | 'Gold' | 'Platinum';
+export type TierType = 'Member' | 'Silver' | 'Gold' | 'Platinum' | 'VIP';
+
+export interface MembershipTier {
+  id: string;
+  shopId: string;
+  name: TierType;
+  minLifetimePoints: number;
+  benefitText: string;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface Customer {
   id: string;
@@ -42,6 +63,8 @@ export interface Reward {
   stock: number;
   isAvailable: boolean;
   shopId: string;
+  imageUrl?: string | null;
+  imageStorageKey?: string | null;
 }
 
 export interface PromoBanner {
@@ -53,6 +76,8 @@ export interface PromoBanner {
   shopId?: string; // Empty if it's a platform ad
   url?: string;
   expirationDate: string;
+  imageUrl?: string | null;
+  imageStorageKey?: string | null;
 }
 
 export interface Transaction {
