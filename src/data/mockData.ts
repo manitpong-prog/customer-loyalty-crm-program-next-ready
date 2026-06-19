@@ -548,7 +548,7 @@ function seedLocalStorageIfEmpty() {
   }
 }
 
-function replaceLocalCacheFromSnapshot(snapshot: {
+export function replaceLocalCacheFromSnapshot(snapshot: {
   shops?: Shop[];
   customers?: Customer[];
   rewards?: Reward[];

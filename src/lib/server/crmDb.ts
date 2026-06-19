@@ -448,6 +448,55 @@ export async function getCrmSnapshot(): Promise<CrmSnapshot> {
   };
 }
 
+
+
+export async function getCustomerOnlineState(params: {
+  shopId: string;
+  customerId?: string;
+  lineUserId?: string;
+  couponCode?: string;
+}): Promise<CrmSnapshot> {
+  const sql = requireSql();
+  const shopId = params.shopId.trim();
+  const customerId = params.customerId?.trim() || '';
+  const lineUserId = params.lineUserId?.trim() || '';
+  const couponCode = params.couponCode?.trim().toUpperCase() || '';
+
+  if (!shopId) {
+    throw new Error('Missing shopId for customer state.');
+  }
+
+  const [shops, customers, rewards, banners, membershipTiers, coupons] = await Promise.all([
+    sql`select id, name, description, logo, logo_url as "logoUrl", logo_storage_key as "logoStorageKey", category, points_rate as "pointsRate", point_rounding_mode as "pointRoundingMode", minimum_purchase_for_points as "minimumPurchaseForPoints", point_link_expiry_days as "pointLinkExpiryDays", point_expiry_days as "pointExpiryDays", point_expiry_reminder_days as "pointExpiryReminderDays", is_active as "isActive", registration_status as "registrationStatus", phone, welcome_message as "welcomeMessage", contact_text as "contactText", share_message_template as "shareMessageTemplate", rich_menu_contact_url as "richMenuContactUrl", created_at as "createdAt" from shops where id = ${shopId} limit 1`,
+    sql`select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds" from customers where ((${customerId} <> '' and id = ${customerId}) or (${customerId} = '' and ${lineUserId} <> '' and line_id = ${lineUserId})) limit 1`,
+    sql`select id, name, image, image_url as "imageUrl", image_storage_key as "imageStorageKey", description, points_cost as "pointsCost", stock, is_available as "isAvailable", shop_id as "shopId" from rewards where shop_id = ${shopId} order by created_at asc`,
+    sql`select id, title, image, image_url as "imageUrl", image_storage_key as "imageStorageKey", description, is_ad as "isAd", shop_id as "shopId", url, expiration_date as "expirationDate" from promo_banners where (shop_id = ${shopId} or is_ad = true) order by created_at desc`,
+    sql`select id, shop_id as "shopId", name, min_lifetime_points as "minLifetimePoints", benefit_text as "benefitText", is_active as "isActive", sort_order as "sortOrder", created_at as "createdAt", updated_at as "updatedAt" from membership_tiers where shop_id = ${shopId} order by sort_order asc, min_lifetime_points asc`,
+    couponCode
+      ? sql`select code, points, shop_id as "shopId", shop_name as "shopName", description, created_at as "createdAt", expires_at as "expiresAt", is_used as "isUsed", used_by_customer_id as "usedByCustomerId", used_at as "usedAt" from point_coupons where upper(code) = upper(${couponCode}) and shop_id = ${shopId} limit 1`
+      : sql`select code, points, shop_id as "shopId", shop_name as "shopName", description, created_at as "createdAt", expires_at as "expiresAt", is_used as "isUsed", used_by_customer_id as "usedByCustomerId", used_at as "usedAt" from point_coupons where shop_id = ${shopId} and created_at >= now() - interval '30 days' order by created_at desc limit 100`,
+  ]);
+
+  const customer = customers[0] as Record<string, unknown> | undefined;
+  const customerForTransactions = customer?.id ? String(customer.id) : customerId;
+  const transactions = customerForTransactions
+    ? await sql`select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", points_expires_at as "pointsExpiresAt", created_at as "createdAt" from transactions where shop_id = ${shopId} and user_id = ${customerForTransactions} order by created_at desc limit 100`
+    : [];
+
+  return {
+    shops: shops as unknown as Shop[],
+    customers: customers as unknown as Customer[],
+    rewards: rewards as unknown as Reward[],
+    banners: banners as unknown as PromoBanner[],
+    transactions: transactions as unknown as Transaction[],
+    coupons: coupons as unknown as GeneratedCoupon[],
+    auditLogs: [],
+    onboardingChecklists: [],
+    membershipTiers: membershipTiers as unknown as MembershipTier[],
+  };
+}
+
+
 export async function syncEntity(entity: CrmEntity, rows: unknown[]) {
   await ensureCrmSchema();
 
@@ -576,7 +625,6 @@ async function syncCustomers(rows: Customer[]) {
 }
 
 export async function upsertCustomerRow(customer: Customer): Promise<Customer> {
-  await ensureCrmSchema();
   const sql = requireSql();
   const shopIdsPayload = JSON.stringify(Array.from(new Set(customer.shopIds || [])));
 
@@ -667,7 +715,6 @@ async function syncRewards(rows: Reward[]) {
 }
 
 export async function upsertRewardRow(reward: Reward) {
-  await ensureCrmSchema();
   const sql = requireSql();
 
   await sql`
@@ -700,13 +747,11 @@ export async function upsertRewardRow(reward: Reward) {
 }
 
 export async function deleteRewardRow(rewardId: string, shopId: string) {
-  await ensureCrmSchema();
   const sql = requireSql();
   await sql`delete from rewards where id = ${rewardId} and shop_id = ${shopId}`;
 }
 
 export async function upsertShopRow(shop: Shop) {
-  await ensureCrmSchema();
   const sql = requireSql();
 
   await sql`
@@ -766,7 +811,6 @@ export async function upsertShopRow(shop: Shop) {
 }
 
 export async function upsertBannerRow(banner: PromoBanner) {
-  await ensureCrmSchema();
   const sql = requireSql();
   await sql`
     insert into promo_banners (id, title, image, image_url, image_storage_key, description, is_ad, shop_id, url, expiration_date, updated_at)
@@ -790,13 +834,11 @@ export async function upsertBannerRow(banner: PromoBanner) {
 }
 
 export async function deleteBannerRow(bannerId: string, shopId: string) {
-  await ensureCrmSchema();
   const sql = requireSql();
   await sql`delete from promo_banners where id = ${bannerId} and shop_id = ${shopId}`;
 }
 
 export async function upsertPointCouponRow(coupon: GeneratedCoupon) {
-  await ensureCrmSchema();
   const sql = requireSql();
   await sql`
     insert into point_coupons (code, points, shop_id, shop_name, description, created_at, expires_at, is_used, used_by_customer_id, used_at)
@@ -817,13 +859,11 @@ export async function upsertPointCouponRow(coupon: GeneratedCoupon) {
 }
 
 export async function deletePointCouponRow(code: string, shopId: string) {
-  await ensureCrmSchema();
   const sql = requireSql();
   await sql`delete from point_coupons where upper(code) = upper(${code}) and shop_id = ${shopId} and is_used = false`;
 }
 
 export async function insertAuditLogRow(log: AuditLog) {
-  await ensureCrmSchema();
   const sql = requireSql();
   await sql`
     insert into audit_logs (id, shop_id, shop_name, actor_type, actor_name, actor_id, action, action_label, description, target_type, target_id, customer_id, customer_name, points, status, metadata, created_at)
@@ -838,7 +878,6 @@ export async function insertAuditLogRow(log: AuditLog) {
 }
 
 export async function upsertOnboardingChecklistRow(checklist: ShopOnboardingChecklist) {
-  await ensureCrmSchema();
   const sql = requireSql();
   await sql`
     insert into shop_onboarding_checklists (
@@ -864,7 +903,6 @@ export async function upsertOnboardingChecklistRow(checklist: ShopOnboardingChec
 }
 
 export async function upsertMembershipTiersForShop(shopId: string, tiers: MembershipTier[]) {
-  await ensureCrmSchema();
   const sql = requireSql();
   const payload = JSON.stringify(tiers.map((tier) => ({ ...tier, shopId })));
   await sql`
@@ -945,7 +983,6 @@ async function syncTransactions(rows: Transaction[]) {
 }
 
 export async function deleteTransactionRow(transactionId: string, shopId: string) {
-  await ensureCrmSchema();
   const sql = requireSql();
 
   const rows = await sql`
@@ -1241,7 +1278,6 @@ export async function claimPointCouponOnline(params: OnlinePointClaimParams): Pr
   coupon: GeneratedCoupon;
   transaction: Transaction;
 }> {
-  await ensureCrmSchema();
   const sql = requireSql();
   const couponCode = params.couponCode.trim().toUpperCase();
   const shopId = params.shopId.trim();
@@ -1510,7 +1546,6 @@ export async function redeemRewardOnline(params: OnlineRewardRedeemParams): Prom
   transaction: Transaction;
   reward: Reward;
 }> {
-  await ensureCrmSchema();
   const sql = requireSql();
   const rewardId = params.rewardId.trim();
   const shopId = params.shopId.trim();
@@ -1837,7 +1872,6 @@ export async function handleRewardApprovalOnline(params: OnlineRewardApprovalPar
   customer?: Customer;
   reward?: Reward;
 }> {
-  await ensureCrmSchema();
   const sql = requireSql();
   const transactionId = params.transactionId.trim();
   const shopId = params.shopId.trim();
@@ -2179,7 +2213,6 @@ export async function adjustCustomerPointsOnline(params: OnlineMerchantPointAdju
   customer: Customer;
   transaction: Transaction;
 }> {
-  await ensureCrmSchema();
   const sql = requireSql();
   const customerId = params.customerId.trim();
   const shopId = params.shopId.trim();
@@ -2466,7 +2499,6 @@ export async function persistPointClaim(params: {
   coupon: GeneratedCoupon;
   transaction: Transaction;
 }) {
-  await ensureCrmSchema();
   const sql = requireSql();
   const { customer, coupon, transaction } = params;
 

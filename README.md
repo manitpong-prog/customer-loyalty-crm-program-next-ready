@@ -411,3 +411,12 @@ See `docs/ONLINE_ONLY_AUDIT_FINAL_TH.md` for the final verification checklist.
 - `/api/db/snapshot` returns no-store headers and `initializeDatabase()` calls it with a cache-buster.
 - Merchant back office now has a clear refresh-from-Neon button, and Settings “โหลดค่าล่าสุด” calls a real Neon refresh.
 - Added docs/FRESH_DATA_LOADING_PHASE7F_TH.md.
+
+
+## Phase 7G — LIFF Redirect Loop Fix + Fast Online Loading
+- Added scoped customer-state API for customer pages instead of full snapshot loading.
+- Customer production route no longer blocks initial render on `/api/db/snapshot`.
+- Point claim and reward redeem now update local read cache from API-confirmed rows instead of reloading the whole CRM snapshot.
+- Merchant point-link generation now shows the generated coupon immediately after Neon confirms the write.
+- LIFF redirect URLs are sanitized to prevent nested `liff.state` / `liffRedirectUri` loops.
+- High-frequency online actions no longer run schema ensure on every request; migrations remain the source of schema readiness.

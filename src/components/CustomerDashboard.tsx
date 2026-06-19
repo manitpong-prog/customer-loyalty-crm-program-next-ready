@@ -34,9 +34,10 @@ import {
   getCustomers,
   saveCustomers,
   getRewards,
+  saveRewards,
   getBanners,
   getTransactions,
-  initializeDatabase,
+  replaceLocalCacheFromSnapshot,
   saveTransactions,
   getShops,
   getGeneratedCoupons,
@@ -350,7 +351,7 @@ export default function CustomerDashboard({
     }
   }, [initialCouponCode, clearInitialCouponCode, selectedShopId, isProductionView, customer]);
 
-  // Load latest data from the local read cache after initializeDatabase() refreshes it from Neon.
+  // Load latest data from the local read cache after scoped customer-state refreshes it from Neon.
   // Production customer identity is strict: never fall back to the first customer, because that
   // can show an old tester profile while LIFF/Neon is still loading the current LINE user.
   const loadData = () => {
@@ -401,7 +402,25 @@ export default function CustomerDashboard({
   const refreshCustomerFromNeon = async () => {
     setIsRefreshingFreshData(true);
     try {
-      await initializeDatabase();
+      const params = new URLSearchParams({ shopId: selectedShopId, ts: String(Date.now()) });
+      if (lineIdentity?.customerId) params.set('customerId', lineIdentity.customerId);
+      if (lineIdentity?.lineUserId) params.set('lineUserId', lineIdentity.lineUserId);
+      if (initialCouponCode) params.set('couponCode', initialCouponCode);
+
+      const response = await fetch(`/api/db/customer-state?${params.toString()}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          Pragma: 'no-cache',
+        },
+      });
+      const payload = await response.json().catch(() => null) as { ok?: boolean; data?: Parameters<typeof replaceLocalCacheFromSnapshot>[0]; message?: string } | null;
+
+      if (!response.ok || !payload?.ok || !payload.data) {
+        throw new Error(payload?.message || 'โหลดข้อมูลล่าสุดจากฐานข้อมูลไม่สำเร็จ');
+      }
+
+      replaceLocalCacheFromSnapshot(payload.data);
       loadData();
       onDataChange();
       setLastFreshLoadedAt(new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
@@ -413,6 +432,11 @@ export default function CustomerDashboard({
   useEffect(() => {
     loadData();
   }, [currentCustomerId, selectedShopId, activeTab, lineIdentity?.lineUserId, lineIdentity?.customerId, dataVersion]);
+
+  useEffect(() => {
+    if (!isProductionView) return;
+    void refreshCustomerFromNeon();
+  }, [isProductionView, selectedShopId, lineIdentity?.lineUserId, lineIdentity?.customerId, initialCouponCode]);
 
   useEffect(() => {
     if (!isProductionView || typeof window === 'undefined') return;
@@ -461,7 +485,7 @@ export default function CustomerDashboard({
           if (cancelled) return;
 
           setAutoMemberRefreshAttempt(attempt);
-          await initializeDatabase();
+          await refreshCustomerFromNeon();
 
           if (cancelled) return;
 
@@ -775,13 +799,27 @@ export default function CustomerDashboard({
     confirmedTransaction: Transaction,
   ) => {
     // Keep the UI responsive after Neon confirms the write. These local updates are
-    // cache-only because initializeDatabase() has just refreshed from Neon.
+    // cache-only and use the rows returned by the API, not browser-created data.
+    const nextCustomers = [
+      confirmedCustomer,
+      ...getCustomers().filter((item) => item.id !== confirmedCustomer.id),
+    ];
+    const nextCoupons = [
+      confirmedCoupon,
+      ...getGeneratedCoupons().filter((item) => item.code !== confirmedCoupon.code),
+    ];
+    const nextTransactions = [
+      confirmedTransaction,
+      ...getTransactions().filter((tx) => tx.id !== confirmedTransaction.id),
+    ];
+
+    saveCustomers(nextCustomers, { sync: false });
+    saveGeneratedCoupons(nextCoupons, { sync: false });
+    saveTransactions(nextTransactions, { sync: false });
+
     setCustomer(confirmedCustomer);
     setPendingCoupon(confirmedCoupon);
-    setTransactions((current) => {
-      const withoutDuplicate = current.filter((tx) => tx.id !== confirmedTransaction.id);
-      return [confirmedTransaction, ...withoutDuplicate];
-    });
+    setTransactions(nextTransactions.filter((tx) => tx.userId === confirmedCustomer.id && tx.shopId === selectedShopId));
   };
 
   const handleDeclineDynamicCoupon = () => {
@@ -901,9 +939,8 @@ export default function CustomerDashboard({
         throw new Error(payload?.message || 'บันทึกรับแต้มลงฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
       }
 
-      // Refresh the whole local cache from Neon so customer page and merchant back office
-      // read the same database-confirmed values on the next render/page refresh.
-      await initializeDatabase();
+      // API already wrote Neon and returned the confirmed rows. Update the local read cache
+      // from the confirmed response instead of loading the whole CRM snapshot again.
       handleDataChangeAfterOnlineClaim(payload.customer, payload.coupon, payload.transaction);
 
       setShowCouponConfirm(false);
@@ -1045,18 +1082,21 @@ export default function CustomerDashboard({
         throw new Error(payload?.message || 'แลกรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
       }
 
-      // Refresh local read cache from Neon after the online write succeeds.
-      // Do not save localStorage first, otherwise the browser can become the source of truth again.
-      await initializeDatabase();
+      // API already checked Neon and returned confirmed rows. Update the local read cache
+      // directly from the response instead of loading the whole CRM snapshot again.
+      const confirmedReward = payload.reward || latestReward;
+      saveCustomers([payload.customer, ...getCustomers().filter((item) => item.id !== payload.customer!.id)], { sync: false });
+      saveRewards(getRewards().map((reward) => reward.id === confirmedReward.id ? confirmedReward : reward), { sync: false });
+      saveTransactions([payload.transaction, ...getTransactions().filter((tx) => tx.id !== payload.transaction!.id)], { sync: false });
 
       setCustomer(payload.customer);
-      setSelectedReward(payload.reward || latestReward);
+      setSelectedReward(confirmedReward);
       setLatestRedeemTransaction(payload.transaction);
+      setTransactions((current) => [payload.transaction!, ...current.filter((tx) => tx.id !== payload.transaction!.id)]);
       setIsRedeemSuccess(true);
       setSuccessMessage('ส่งคำขอแลกรางวัลให้ร้านแล้ว กรุณาส่งลิงก์ให้ร้านตรวจสอบ');
       setTimeout(() => setSuccessMessage(""), 4000);
       onDataChange();
-      loadData();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'แลกรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
       setErrorMessage(message);
@@ -1113,7 +1153,6 @@ export default function CustomerDashboard({
         throw new Error(payload?.message || 'บันทึกข้อมูลโปรไฟล์ลงฐานข้อมูลไม่สำเร็จ');
       }
 
-      await initializeDatabase();
       setCustomer(payload.customer);
       setSuccessMessage("บันทึกข้อมูลโปรไฟล์ออนไลน์แล้ว");
       onDataChange();

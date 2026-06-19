@@ -55,12 +55,47 @@ function loadLiffSdk() {
 
 const liffLoginPendingKey = "im_crm_liff_login_pending_v1";
 
+function extractAppParamsFromLiffState(rawState: string | null) {
+  const params = new URLSearchParams();
+  if (!rawState) return params;
+
+  let decoded = rawState;
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch {
+      break;
+    }
+  }
+
+  const queryStart = decoded.indexOf("?");
+  const queryText = decoded.startsWith("?")
+    ? decoded.slice(1)
+    : queryStart >= 0
+      ? decoded.slice(queryStart + 1)
+      : decoded;
+
+  new URLSearchParams(queryText).forEach((value, key) => {
+    if (["tab", "code", "resetLine"].includes(key)) params.set(key, value);
+  });
+
+  return params;
+}
+
 function getCleanRedirectUri() {
   if (typeof window === "undefined") return "";
 
   const url = new URL(window.location.href);
+  const appParams = extractAppParamsFromLiffState(url.searchParams.get("liff.state"));
+
   [
     "liff.state",
+    "liff.referrer",
+    "liffClientId",
+    "liffRedirectUri",
+    "liff.hback",
     "access_token",
     "id_token",
     "state",
@@ -69,6 +104,10 @@ function getCleanRedirectUri() {
     "error",
     "error_description",
   ].forEach((key) => url.searchParams.delete(key));
+
+  appParams.forEach((value, key) => {
+    if (!url.searchParams.has(key)) url.searchParams.set(key, value);
+  });
 
   return url.toString();
 }

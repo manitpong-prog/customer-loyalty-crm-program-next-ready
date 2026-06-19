@@ -37,10 +37,14 @@ function extractQueryParamsFromLiffState(rawState: string | null): URLSearchPara
   if (!rawState) return new URLSearchParams();
 
   let decoded = rawState;
-  try {
-    decoded = decodeURIComponent(rawState);
-  } catch {
-    decoded = rawState;
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch {
+      break;
+    }
   }
 
   const queryStart = decoded.indexOf("?");
@@ -71,7 +75,7 @@ function getEffectiveSearchParams(): URLSearchParams {
 function cleanCustomerEntryQuery() {
   try {
     const url = new URL(window.location.href);
-    ["tab", "code", "resetLine", "liff.state", "liff.referrer"].forEach((key) => url.searchParams.delete(key));
+    ["tab", "code", "resetLine", "liff.state", "liff.referrer", "liffClientId", "liffRedirectUri", "liff.hback", "state", "friendship_status_changed"].forEach((key) => url.searchParams.delete(key));
     window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ""));
   } catch (e) {
     console.error("Failed to clean URL", e);
@@ -158,19 +162,26 @@ export default function App({
         }
       }
 
-      // Bootstrap CRM state from Neon first. If Neon is not configured or unreachable,
-      // the app continues with the local browser cache fallback.
-      const result = await initializeDatabase();
+      // Customer production routes must not block on the full CRM snapshot.
+      // The CustomerDashboard fetches a small shop/customer scoped state after LIFF identity is known.
+      // Merchant/admin/demo still use the full bootstrap because they need a broad management view.
+      if (!isDemoMode && initialRole === "customer") {
+        if (!isMounted) return;
+        setDatabaseLabel("Neon PostgreSQL + Scoped Customer Load");
+        setIsDatabaseBootstrapped(true);
+      } else {
+        const result = await initializeDatabase();
 
-      if (!isMounted) return;
+        if (!isMounted) return;
 
-      setDatabaseLabel(
-        result.source === "neon"
-          ? "Neon PostgreSQL + Fresh Cache"
-          : "LocalStorage Fallback",
-      );
-      setIsDatabaseBootstrapped(true);
-      handleDataChange();
+        setDatabaseLabel(
+          result.source === "neon"
+            ? "Neon PostgreSQL + Fresh Cache"
+            : "LocalStorage Fallback",
+        );
+        setIsDatabaseBootstrapped(true);
+        handleDataChange();
+      }
 
       // Check customer deep-link query parameters.
       // Examples for LINE Rich Menu:

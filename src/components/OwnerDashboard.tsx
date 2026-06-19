@@ -9,7 +9,7 @@ import { Shop, Customer, Reward, Transaction, PromoBanner, AuditLog, ShopOnboard
 import { 
   getShops, saveShops, getCustomers, saveCustomers, 
   getRewards, saveRewards, getTransactions, saveTransactions,
-  getBanners, saveBanners, getGeneratedCoupons,
+  getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons,
   getAuditLogs, addAuditLog, getOrCreateOnboardingChecklist, upsertOnboardingChecklist, getMembershipTiers, saveMembershipTiers, initializeDatabase
 } from '../data/mockData';
 import { shopIdToSlug } from '../lib/shopSlug';
@@ -313,10 +313,14 @@ export default function OwnerDashboard({
       showStatus('กำลังสร้างลิงก์รับแต้มออนไลน์...');
       await postJson('/api/db/point-coupons', { action: 'upsert', coupon: newCoupon, auditLog });
       recordAuditLog(auditLog);
-      await refreshFromNeon();
+      const nextCoupons = [
+        newCoupon,
+        ...getGeneratedCoupons().filter((coupon: any) => coupon.code !== newCoupon.code),
+      ];
+      saveGeneratedCoupons(nextCoupons, { sync: false });
       setGeneratedQRValue(generatedUrl);
       setActiveCoupon(newCoupon);
-      const shopCoupons = getGeneratedCoupons()
+      const shopCoupons = nextCoupons
         .filter((c: any) => c.shopId === selectedShopId)
         .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setGeneratedCouponsList(shopCoupons);
@@ -386,7 +390,9 @@ export default function OwnerDashboard({
       try {
         showStatus('กำลังลบลิงก์รับแต้มออนไลน์...');
         await postJson('/api/db/point-coupons', { action: 'delete', code, shopId: selectedShopId, auditLog });
-        await refreshFromNeon();
+        const nextCoupons = getGeneratedCoupons().filter((coupon: any) => !(coupon.code === code && coupon.shopId === selectedShopId));
+        saveGeneratedCoupons(nextCoupons, { sync: false });
+        setGeneratedCouponsList(nextCoupons.filter((coupon: any) => coupon.shopId === selectedShopId));
         showStatus('✓ ลบข้อมูลรหัสแจกแต้มพิเศษจากฐานข้อมูลแล้ว');
       } catch (error) {
         showStatus(`❌ ${error instanceof Error ? error.message : 'ลบลิงก์รับแต้มไม่สำเร็จ'}`);
