@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { deleteRewardRow, insertAuditLogRow, isDatabaseConfigured, upsertRewardRow } from '../../../../lib/server/crmDb';
-import type { AuditLog, Reward } from '../../../../types';
+import { deleteRewardRow, isDatabaseConfigured, upsertRewardRow } from '../../../../lib/server/crmDb';
+import type { Reward } from '../../../../types';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -16,13 +16,12 @@ function validateReward(reward: Partial<Reward> | null | undefined): reward is R
 
 export async function POST(request: NextRequest) {
   if (!isDatabaseConfigured()) {
-    return NextResponse.json({ ok: false, message: 'Database is not configured. Online-only rewards require Neon.' }, { status: 503 });
+    return NextResponse.json({ ok: true, skipped: true, source: 'local-fallback' });
   }
 
   try {
     const body = await request.json();
     const action = body?.action;
-    const auditLog = body?.auditLog as AuditLog | undefined;
 
     if (action === 'upsert') {
       const reward = body?.reward as Reward | undefined;
@@ -31,7 +30,6 @@ export async function POST(request: NextRequest) {
       }
 
       await upsertRewardRow(reward);
-      if (auditLog?.id) await insertAuditLogRow(auditLog);
       return NextResponse.json({ ok: true, source: 'neon', action, rewardId: reward.id });
     }
 
@@ -44,7 +42,6 @@ export async function POST(request: NextRequest) {
       }
 
       await deleteRewardRow(rewardId, shopId);
-      if (auditLog?.id) await insertAuditLogRow(auditLog);
       return NextResponse.json({ ok: true, source: 'neon', action, rewardId });
     }
 

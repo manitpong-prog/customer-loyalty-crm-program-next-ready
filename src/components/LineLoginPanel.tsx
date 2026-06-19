@@ -55,24 +55,25 @@ function loadLiffSdk() {
 
 const liffLoginPendingKey = "im_crm_liff_login_pending_v1";
 
-const LIFF_CALLBACK_QUERY_KEYS = new Set([
+const liffCallbackQueryKeys = new Set([
   "liff.state",
   "liff.referrer",
   "liffClientId",
   "liffRedirectUri",
   "liff.hback",
-  "state",
-  "friendship_status_changed",
   "access_token",
   "id_token",
+  "state",
+  "friendship_status_changed",
   "error",
   "error_description",
 ]);
 
-function decodeDeep(rawValue: string | null) {
-  if (!rawValue) return "";
-  let decoded = rawValue;
-  for (let i = 0; i < 8; i += 1) {
+function decodeDeep(value: string | null): string {
+  if (!value) return "";
+
+  let decoded = value;
+  for (let index = 0; index < 8; index += 1) {
     try {
       const next = decodeURIComponent(decoded);
       if (next === decoded) break;
@@ -81,11 +82,13 @@ function decodeDeep(rawValue: string | null) {
       break;
     }
   }
+
   return decoded;
 }
 
-function extractQueryParamsFromText(rawText: string) {
+function getQueryParamsFromText(rawText: string): URLSearchParams {
   if (!rawText) return new URLSearchParams();
+
   const queryStart = rawText.indexOf("?");
   const queryText = rawText.startsWith("?")
     ? rawText.slice(1)
@@ -93,65 +96,34 @@ function extractQueryParamsFromText(rawText: string) {
       ? rawText.slice(queryStart + 1)
       : rawText;
   const hashStart = queryText.indexOf("#");
+
   return new URLSearchParams(hashStart >= 0 ? queryText.slice(0, hashStart) : queryText);
 }
 
-function hasLiffCallbackParams(params?: URLSearchParams) {
-  if (typeof window === "undefined") return false;
-  const currentParams = params || new URLSearchParams(window.location.search);
-  return Boolean(
-    currentParams.has("liff.state") ||
-      currentParams.has("liffClientId") ||
-      currentParams.has("liffRedirectUri") ||
-      currentParams.has("liff.hback") ||
-      currentParams.has("friendship_status_changed") ||
-      currentParams.has("error") ||
-      (currentParams.has("state") && currentParams.has("code"))
-  );
-}
-
-function extractAppParamsFromLiffState(rawState: string | null) {
-  const params = new URLSearchParams();
+function getAppParamsFromLiffState(rawState: string | null): URLSearchParams {
+  const appParams = new URLSearchParams();
   const decoded = decodeDeep(rawState);
-  if (!decoded) return params;
+  if (!decoded) return appParams;
 
-  const candidates = [extractQueryParamsFromText(decoded)];
+  const candidates = [getQueryParamsFromText(decoded)];
   const nestedRedirect = candidates[0].get("liffRedirectUri");
-  if (nestedRedirect) candidates.push(extractQueryParamsFromText(decodeDeep(nestedRedirect)));
-
-  for (const candidate of candidates) {
-    const tab = candidate.get("tab");
-    const code = candidate.get("coupon") || candidate.get("couponCode") || candidate.get("claimCode") || candidate.get("code");
-    const resetLine = candidate.get("resetLine");
-    if (tab) params.set("tab", tab);
-    if (code) params.set("code", code);
-    if (resetLine) params.set("resetLine", resetLine);
+  if (nestedRedirect) {
+    candidates.push(getQueryParamsFromText(decodeDeep(nestedRedirect)));
   }
 
-  return params;
-}
+  for (const params of candidates) {
+    const tab = params.get("tab");
+    const code =
+      params.get("coupon") ||
+      params.get("couponCode") ||
+      params.get("claimCode") ||
+      params.get("code");
+    const resetLine = params.get("resetLine");
 
-function getAppParamsFromCurrentUrl() {
-  if (typeof window === "undefined") return new URLSearchParams();
-  const url = new URL(window.location.href);
-  const currentParams = new URLSearchParams(url.search);
-  const cameFromLiffCallback = hasLiffCallbackParams(currentParams);
-  const appParams = new URLSearchParams();
-
-  const directTab = currentParams.get("tab");
-  const directCode =
-    currentParams.get("coupon") ||
-    currentParams.get("couponCode") ||
-    currentParams.get("claimCode") ||
-    (!cameFromLiffCallback ? currentParams.get("code") : null);
-
-  if (directTab) appParams.set("tab", directTab);
-  if (directCode) appParams.set("code", directCode);
-  if (currentParams.get("resetLine")) appParams.set("resetLine", currentParams.get("resetLine") || "1");
-
-  extractAppParamsFromLiffState(currentParams.get("liff.state")).forEach((value, key) => {
-    if (value) appParams.set(key, value);
-  });
+    if (tab) appParams.set("tab", tab);
+    if (code) appParams.set("code", code);
+    if (resetLine) appParams.set("resetLine", resetLine);
+  }
 
   return appParams;
 }
@@ -161,10 +133,26 @@ function getCleanRedirectUri() {
 
   const currentUrl = new URL(window.location.href);
   const cleanUrl = new URL(currentUrl.origin + currentUrl.pathname);
-  const appParams = getAppParamsFromCurrentUrl();
+  const currentParams = new URLSearchParams(currentUrl.search);
+  const appParamsFromLiffState = getAppParamsFromLiffState(currentParams.get("liff.state"));
 
-  appParams.forEach((value, key) => {
-    if (value && !LIFF_CALLBACK_QUERY_KEYS.has(key)) cleanUrl.searchParams.set(key, value);
+  const tab = currentParams.get("tab") || appParamsFromLiffState.get("tab");
+  const resetLine = currentParams.get("resetLine") || appParamsFromLiffState.get("resetLine");
+  const code =
+    currentParams.get("coupon") ||
+    currentParams.get("couponCode") ||
+    currentParams.get("claimCode") ||
+    appParamsFromLiffState.get("code") ||
+    (!currentParams.has("state") ? currentParams.get("code") : null);
+
+  if (tab) cleanUrl.searchParams.set("tab", tab);
+  if (code) cleanUrl.searchParams.set("code", code);
+  if (resetLine) cleanUrl.searchParams.set("resetLine", resetLine);
+
+  Array.from(currentParams.entries()).forEach(([key, value]) => {
+    if (liffCallbackQueryKeys.has(key) || key.startsWith("liff.")) return;
+    if (["tab", "code", "coupon", "couponCode", "claimCode", "resetLine"].includes(key)) return;
+    cleanUrl.searchParams.set(key, value);
   });
 
   return cleanUrl.toString();
@@ -243,27 +231,11 @@ export default function LineLoginPanel({
 
   useEffect(() => {
     const stored = readStoredLineIdentity();
-    if (!stored) return;
-
-    // Merchant can reuse stored identity briefly because owner authorization is
-    // rechecked through /api/line/me.
-    if (context === "merchant") {
+    if (stored) {
       publishIdentity(stored);
       refreshOwnerStatus(stored);
-      return;
     }
-
-    // Customer direct web URLs cannot rely on LIFF callback params. Let the last
-    // verified identity open /customer/{shopSlug} normally in the same browser,
-    // but never publish it during a LIFF/OAuth callback where the current LINE
-    // user is still being resolved.
-    if (!hasLiffCallbackParams()) {
-      publishIdentity(stored);
-      return;
-    }
-
-    setStatusMessage("กำลังตรวจสอบ LINE ID ล่าสุด...");
-  }, [context, publishIdentity, refreshOwnerStatus]);
+  }, [publishIdentity, refreshOwnerStatus]);
 
   const authenticateCurrentLineSession = useCallback(async (options?: { allowRedirect?: boolean; silent?: boolean }) => {
     if (!liffId) {
@@ -288,23 +260,11 @@ export default function LineLoginPanel({
       await window.liff.init({ liffId });
 
       if (!window.liff.isLoggedIn()) {
-        const openedInsideLine = Boolean(window.liff.isInClient?.());
-        const cameFromLiffCallback = hasLiffCallbackParams();
-
-        // Do not start a second silent login while LINE is returning from a callback.
-        // That was the source of deeply nested liff.state / liffRedirectUri URLs.
-        if (cameFromLiffCallback && options?.silent) {
-          clearLiffLoginPending();
+        if (!options?.allowRedirect) {
           return;
         }
 
-        const shouldRedirectToLineLogin = Boolean(options?.allowRedirect || (openedInsideLine && !cameFromLiffCallback));
-
-        if (!shouldRedirectToLineLogin) {
-          return;
-        }
-
-        if (wasLiffLoginPending() && cameFromLiffCallback) {
+        if (wasLiffLoginPending()) {
           clearLiffLoginPending();
           throw new Error(
             "LINE Login กลับมาที่เว็บแล้ว แต่ยังไม่พบ session ของ LINE โปรดตรวจว่า NEXT_PUBLIC_LINE_LIFF_ID ใน Vercel ตรงกับ LIFF ID ที่เปิดอยู่ และกด Redeploy แล้ว",

@@ -30,10 +30,9 @@ export async function GET() {
   }
 
   try {
-    // Runtime schema checks are intentionally opt-in. Running dozens of DDL
-    // statements on every dashboard refresh made merchant/customer pages wait
-    // 30-60 seconds on Vercel + Neon. Migrations already create the schema, so
-    // normal reads should only read current data.
+    // Runtime schema checks are intentionally opt-in. Migrations already create
+    // the production schema. Running schema DDL on every dashboard/customer load
+    // caused slow reads on Vercel + Neon.
     const shouldBootstrap = process.env.ENABLE_RUNTIME_SCHEMA_CHECK === 'true';
     const seedResult = shouldBootstrap
       ? (await ensureCrmSchema(), await seedInitialDataIfEmpty())

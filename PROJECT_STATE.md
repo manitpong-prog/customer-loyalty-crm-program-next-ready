@@ -14,19 +14,18 @@ Customer Loyalty / CRM web app for LINE LIFF pilot. Current pilot shop: `im-stic
 
 ## Latest completed phase in this package
 
-Pilot Hardening package after Phase 6G — Vercel Blob Image Storage
+Phase 6C.5 — Pilot Checklist with Database
 
-## New in Phase 6D
+## New in Phase 6C.5
 
-- Added point rule fields to `Shop`
-- Added `src/lib/pointRules.ts` as the central helper for earning-point calculation
-- Added Neon migration `neon/migrations/003_phase_6d_point_rules.sql`
-- Added point rule columns to `shops`
-- Updated Neon snapshot/sync mapping for new shop fields
-- Added “ตั้งค่ากฎการสะสมแต้ม” card in Merchant Settings
-- Point-link generation now uses per-link expiry minutes in the “รับแต้ม” tab, default 10 minutes
-- Updated purchase/manual earning calculation to use `calculateEarnPoints()`
-- Added docs in `docs/POINT_RULES_PHASE6D_TH.md`
+- Added `ShopOnboardingChecklist` type
+- Added `shop_onboarding_checklists` Neon table
+- Added migration file `neon/migrations/002_phase_6c5_pilot_checklist.sql`
+- Added `onboardingChecklists` entity to local cache + Neon sync
+- Added Pilot Checklist card in Merchant Settings
+- Added auto checklist from existing shop/reward/transaction/coupon data
+- Added manual checklist persisted to Neon
+- Updated README and docs
 
 ## Important routes
 
@@ -34,199 +33,22 @@ Pilot Hardening package after Phase 6G — Vercel Blob Image Storage
 - Customer app: `/customer/{shopSlug}`
 - Admin: `/admin`
 
-## Next recommended work
+## Next recommended phases
 
-1. Run Pilot Hardening checklist end-to-end on the live deployment
-2. Fix only bugs found during real pilot testing
-3. After pilot is stable, consider Point Lots/FIFO and automatic point expiry jobs
+1. Phase 6D — Point Rules Schema and UI
+2. Phase 6E — Membership Tiers table and tier calculation from DB
+3. Phase 6F — Point Expiry foundation
+4. Phase 6G — Real image storage
 
 ## Deployment rule
 
 For DB phases, run SQL migration in Neon first, then deploy code.
 
 
-Phase 6D cleanup: removed duplicate-claim-per-link setting. Coupons are intentionally one-use only. If the earlier 6D migration was already run, use neon/migrations/004_phase_6d_remove_duplicate_claim_setting.sql to drop the old column.
+## Phase 7H3 — Stable Rollback + LIFF Tab Fix
 
-Phase 6D small correction: point-link expiry is no longer configured in Merchant Settings. It is configured per generated point link in the “รับแต้ม” tab as minutes, default 10 minutes.
-
-
-## Latest patch — Reward approval link check
-
-- เพิ่มช่องตรวจสอบลิงก์รับรางวัลในหน้า `อนุมัติรางวัล`
-- รองรับลิงก์ `/merchant/{shopSlug}?merchantTab=approvals&redeem={transactionId}` จากลูกค้า
-- เปิด popup อนุมัติ/ไม่อนุมัติอัตโนมัติเมื่อเข้าจากลิงก์ถูกต้อง
-- แสดง popup แจ้งลิงก์ไม่ถูกต้องเมื่อไม่พบรายการ
-- ไม่ต้องรัน SQL ใหม่สำหรับ patch นี้
-
-## Phase 6E — Membership Tiers with DB
-
-- เพิ่มตาราง `membership_tiers` สำหรับระดับสมาชิกแยกตามร้าน
-- ค่าเริ่มต้น: Member 0, Silver 500, Gold 1,500, Platinum 3,000, VIP 5,000 แต้มสะสมรวม
-- หน้า Merchant → ตั้งค่า มีการ์ด “ตั้งค่าระดับสมาชิก” ให้แก้แต้มขั้นต่ำ/สิทธิ์/เปิดปิดระดับ
-- ลูกค้าใหม่เริ่มต้นที่ `Member`
-- การเพิ่มแต้มจะคำนวณ badge จาก `lifetimePoints` และ tier settings ของร้าน
-- ต้องรัน `neon/migrations/005_phase_6e_membership_tiers.sql` ก่อน deploy
-
-## Latest patch — Membership tier recalculation after point deduction
-
-- แก้ bug หลังปรับลดแต้มแล้ว badge ระดับสมาชิกยังค้างที่ระดับเดิม เช่น lifetimePoints เหลือ 3,000 แต่ยังแสดง Platinum ทั้งที่ Platinum ถูกตั้งไว้ 3,500
-- หน้า Merchant จะ normalize `customer.tier` จาก `lifetimePoints` + `membership_tiers` ล่าสุดตอนโหลดข้อมูล
-- ตารางสมาชิกและ export detail แสดงระดับจากการคำนวณสด ไม่พึ่งค่า `customer.tier` ที่อาจค้างใน cache
-- หน้า Customer แสดง badge/สิทธิ์จากระดับที่คำนวณสดเช่นกัน
-- ไม่ต้องรัน SQL ใหม่สำหรับ patch นี้
-
-
-## Phase 6F — Point Expiry Foundation
-
-เพิ่มฐานข้อมูลวันหมดอายุของแต้มแล้ว โดยใช้ `transactions.points_expires_at` สำหรับรายการรับแต้ม (`earn`) และแสดงแต้มใกล้หมดอายุในหน้าลูกค้า/หลังบ้านร้านค้า เฟสนี้ยังไม่หักแต้มอัตโนมัติ ยังไม่ทำ FIFO และยังไม่ทำ cron job เพื่อให้ปลอดภัยกับข้อมูล Pilot ก่อน
-
-Migration ที่ต้องรันก่อน deploy: `neon/migrations/006_phase_6f_point_expiry_foundation.sql`
-
-
-## Phase 6G — Vercel Blob Image Storage
-
-- เพิ่ม Vercel Blob สำหรับอัปโหลดโลโก้ร้าน รูปของรางวัล และรูปโปรโมชัน
-- เพิ่ม `BLOB_READ_WRITE_TOKEN` ใน `.env.example`
-- เพิ่ม migration `neon/migrations/007_phase_6g_vercel_blob_image_storage.sql`
-- เก็บ URL/storage key ใหม่ แต่ยังคง field รูปเดิมไว้เพื่อ fallback รูปเก่าแบบ data URL
-- เอกสาร: `docs/VERCEL_BLOB_IMAGE_STORAGE_PHASE6G_TH.md`
-
-
-## Pilot Hardening — after Phase 6G
-
-- เพิ่มเอกสาร `docs/PILOT_HARDENING_CHECKLIST_TH.md` สำหรับตรวจระบบก่อนเปิด Pilot จริง
-- ยืนยันสถานะล่าสุดว่า Dashboard/Export และ Reset Tools มีอยู่แล้ว ไม่ต้องทำซ้ำเป็น phase ใหม่
-- สถานะระบบหลักที่ผ่านแล้ว: Pilot Checklist, Point Rules, Reward Approval Link, Membership Tiers, Tier Downgrade Fix, Point Expiry Foundation, Vercel Blob Image Storage
-- ข้อจำกัดที่ตั้งใจคงไว้: ยังไม่ทำ FIFO point lots, ยังไม่หักแต้มหมดอายุอัตโนมัติ, ยังไม่ลบไฟล์เก่าใน Blob อัตโนมัติ
-
-## Pilot Hardening Fix: Point Claim Database Sync
-
-เพิ่ม API `/api/db/point-claim` เพื่อให้การรับแต้มจากลิงก์บันทึกลง Neon แบบยืนยันผล ไม่ใช่ background sync เงียบ ๆ เท่านั้น แก้ปัญหาหน้าเว็บเหมือนรับแต้มสำเร็จ แต่ข้อมูลใน Neon ไม่ขึ้นทันทีหรือไม่ถูกเขียนครบในตาราง `customers`, `point_coupons`, `transactions`.
-
-เอกสาร: `docs/POINT_CLAIM_DATABASE_SYNC_FIX_TH.md`
-
-
-
-## Phase 7A — Online-only Point Claim and Customer Visibility
-
-- ปรับ flow ลูกค้ารับแต้มจากลิงก์ให้เขียน Neon Database สำเร็จก่อนจึงแสดงว่าสำเร็จ
-- `/api/db/point-claim` อ่านคูปองจาก Neon โดยตรง ตรวจคูปอง ใช้คูปอง เพิ่มแต้ม สร้าง transaction และ audit log จากฝั่ง server
-- ฝั่งลูกค้าไม่บันทึกแต้มลง localStorage ก่อน API สำเร็จแล้ว ลดปัญหาหน้าเว็บสำเร็จแต่หลังบ้าน/Neon ไม่เห็นลูกค้าใหม่
-- ยังไม่ refactor ทั้งระบบเป็น online-only ทั้งหมด รอบถัดไปควรทำ Reward Redeem/Approval และ Merchant Point Adjustment แบบ online-only ต่อ
-
-
-## Phase 7B — Online-only Reward Redeem / Approval
-
-- ลูกค้าขอแลกรางวัลผ่าน `/api/db/reward-redeem` และต้องเขียน Neon สำเร็จก่อนจึงแสดงว่าสำเร็จ
-- API ตรวจ reward/customer จาก Neon, หัก `current_points`, สร้าง transaction `redeem` status `pending`, และสร้าง audit log
-- ร้านอนุมัติ/ไม่อนุมัติผ่าน `/api/db/reward-approval` โดยเขียน Neon ก่อน UI สำเร็จ
-- อนุมัติ: transaction เป็น `completed` และลด reward stock
-- ไม่อนุมัติ: transaction เป็น `rejected` และคืนแต้มให้ลูกค้า
-- ไม่ต้องรัน SQL migration ใหม่
-- Phase ถัดไปที่แนะนำ: Phase 7C — Online-only Merchant Point Adjustment
-
-## Phase 7C — Online-only Merchant Point Adjustment
-
-- เพิ่ม `/api/db/point-adjustment` สำหรับปรับแต้มหลังบ้านแบบ Database-first
-- Merchant “บันทึกยอดซื้อ / ให้แต้ม” ต้องเขียน Neon สำเร็จก่อนแสดงผลสำเร็จ
-- Merchant popup “แก้ไขแต้ม (+/-)” ต้องเขียน Neon สำเร็จก่อนแสดงผลสำเร็จ
-- API อัปเดต current/lifetime points, recalculates tier from membership_tiers, inserts transaction, and writes audit log
-- Test link button no longer mutates local points directly; it opens the customer claim flow instead
-- No SQL migration required
-
-## Phase 7D/7E — Online-only Settings / Rewards / Banners + Legacy Sync Reduction
-
-Status: implemented in this package.
-
-Completed:
-- Merchant settings now save through `/api/db/merchant-settings` before UI success.
-- Point rules and customer-facing shop messages are stored in Neon.
-- Membership tiers save through `/api/db/membership-tiers` and recalculate customer tiers in Neon.
-- Pilot checklist saves through `/api/db/onboarding-checklist`.
-- Rewards use `/api/db/rewards` for create/edit/toggle/delete.
-- Promo banners use `/api/db/banners` for create/delete.
-- Point coupons use `/api/db/point-coupons` for create/delete so Phase 7A point claim can read coupons from Neon.
-- LocalStorage remains as UI cache after Neon snapshot, not as the source of truth for these flows.
-
-Required SQL:
-- `neon/migrations/008_phase_7d_online_only_settings_rewards_banners.sql`
-
-Known limitation:
-- Legacy `/api/db/sync` still exists as compatibility fallback and should be removed only after all remaining non-critical flows are converted.
-
-## Pilot Online-only Audit Final
-
-Status: implemented in this package.
-
-Completed:
-- Disabled automatic background `/api/db/sync` from generic `saveStoredData()`; localStorage is now cache/fallback only unless a caller explicitly requests emergency sync.
-- Added `/api/db/customers` for online-only customer profile/manual customer upsert.
-- Added `/api/db/transactions` for online-only transaction deletion.
-- Merchant manual customer creation now writes Neon first before showing success.
-- Customer profile update now writes Neon first before showing success.
-- Merchant transaction deletion now deletes from Neon first before showing success.
-- Platform Admin approve/reject shop now writes Neon through `/api/db/merchant-settings` first.
-- Legacy `/api/db/sync` remains as an emergency compatibility endpoint, but normal pilot flows should not rely on it.
-
-Required SQL:
-- None.
-
-Docs:
-- `docs/ONLINE_ONLY_AUDIT_FINAL_TH.md`
-
-
-## Phase 7F — Fresh Data Loading / No-cache / Customer Identity Fix
-
-- Customer production page now avoids showing a fallback/mock/old cached customer before LINE/Neon confirms the current LINE identity.
-- Customer matching in production is strict by LINE customer id. If not found, the page waits/asks to refresh instead of showing the first cached customer.
-- `/api/db/snapshot` returns no-store headers and `initializeDatabase()` calls it with a cache-buster.
-- Merchant back office now has a clear refresh-from-Neon button, and Settings “โหลดค่าล่าสุด” calls a real Neon refresh.
-- Added docs/FRESH_DATA_LOADING_PHASE7F_TH.md.
-
-
-## Phase 7G — LIFF Redirect Loop Fix + Fast Online Loading
-- Added scoped customer-state API for customer pages instead of full snapshot loading.
-- Customer production route no longer blocks initial render on `/api/db/snapshot`.
-- Point claim and reward redeem now update local read cache from API-confirmed rows instead of reloading the whole CRM snapshot.
-- Merchant point-link generation now shows the generated coupon immediately after Neon confirms the write.
-- LIFF redirect URLs are sanitized to prevent nested `liff.state` / `liffRedirectUri` loops.
-- High-frequency online actions no longer run schema ensure on every request; migrations remain the source of schema readiness.
-
-## Phase 7G Hotfix — LIFF Query / Snapshot Speed
-- Fixed customer deep-link cleanup so app params `tab` and `code` survive LIFF callback cleanup.
-- Adjusted LIFF auto-login guard to reduce redirect loops while still allowing LINE/LIFF opened links to authenticate.
-- Optimized `/api/db/snapshot` by making runtime schema/bootstrap checks opt-in with `ENABLE_RUNTIME_SCHEMA_CHECK=true`.
-- Removed several full snapshot refreshes after merchant actions and updated local read cache from confirmed API responses instead.
-- No SQL migration required.
-
-
-## 2026-06-19 — Phase 7H Customer / LIFF Flow Stabilization Fix
-
-Goal: fix regression where direct customer routes and LIFF `?tab=...` routes could fail or loop, and reduce slow customer loading caused by repeated customer refresh/full snapshot behavior.
-
-Changed files:
-- `src/App.tsx`
-- `src/components/LineLoginPanel.tsx`
-- `src/components/CustomerDashboard.tsx`
-- `src/app/api/line/auth/route.ts`
-- `src/app/api/line/me/route.ts`
-- `src/app/api/line/merchant-owner/route.ts`
-- `src/app/layout.tsx`
-- `docs/PHASE7H_CUSTOMER_LIFF_FLOW_FIX_TH.md`
-- `README.md`
-- `PROJECT_STATE.md`
-
-Summary:
-- Added robust app query extraction from direct URL and nested LIFF state.
-- Treated OAuth callback `code` separately from app coupon `code`.
-- Removed `initializeDatabase()` from `handleLineIdentityChange()` for customer identity flow.
-- Removed the 8-attempt customer auto-refresh loop and replaced it with one guarded scoped customer-state request.
-- Stopped silent LIFF re-login during callback to prevent nested `liff.state` loops.
-- Allowed direct browser customer pages to reuse stored LINE identity only outside LIFF callback.
-- Runtime schema checks in LINE APIs are opt-in through `ENABLE_RUNTIME_SCHEMA_CHECK=true`.
-
-SQL: none.
-
-Validation:
-- `npm run typecheck` passed after installing dependencies locally in sandbox.
-- `npm run build` compiled and finished TypeScript, then sandbox timed out during Next.js `Collecting page data` stage.
+- ใช้ไฟล์ backup ที่ Customer route และแท็บยังเสถียรเป็นฐาน
+- ถอยการ refactor CustomerDashboard/App/LineLoginPanel จาก 7G/7H ที่ทำให้ `/customer/{slug}` และ `?tab=...` พัง
+- เพิ่มเฉพาะ LIFF deep-link parser ที่ปลอดภัย: decode `liff.state` หลายชั้น, เก็บ `tab`/coupon code ของระบบ, แยก LINE OAuth `code` ออกจาก coupon `code`
+- ปรับ `/api/db/snapshot` และ LINE APIs ให้ไม่เรียก `ensureCrmSchema()` ทุก request เว้นแต่ตั้ง `ENABLE_RUNTIME_SCHEMA_CHECK=true`
+- ไม่ต้องรัน SQL ใหม่ และ Production ไม่ควรตั้ง `ENABLE_RUNTIME_SCHEMA_CHECK=true`

@@ -1,16 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Store, QrCode, Users, Plus, Edit, Trash2, Check, X,
   ShoppingBag, Award, PlusCircle, MinusCircle, Search, 
   Image, HelpCircle, Calendar, RefreshCw, AlertCircle, FileText, Copy, UserPlus, ReceiptText, Share2
 } from 'lucide-react';
-import { Shop, Customer, Reward, Transaction, PromoBanner, AuditLog, ShopOnboardingChecklist, PointRoundingMode, MembershipTier } from '../types';
+import { Shop, Customer, Reward, Transaction, PromoBanner, AuditLog, ShopOnboardingChecklist } from '../types';
 import { 
   getShops, saveShops, getCustomers, saveCustomers, 
   getRewards, saveRewards, getTransactions, saveTransactions,
   getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons,
-  getAuditLogs, addAuditLog, getOrCreateOnboardingChecklist, upsertOnboardingChecklist, getMembershipTiers, saveMembershipTiers, initializeDatabase
+  getAuditLogs, addAuditLog, getOrCreateOnboardingChecklist, upsertOnboardingChecklist
 } from '../data/mockData';
 import { shopIdToSlug } from '../lib/shopSlug';
 import {
@@ -21,8 +21,6 @@ import {
   filterTransactionsByShop,
   scopeApprovedShops,
 } from '../lib/shopScope';
-import { calculateEarnPoints, getEarnPointsExpiresAt, getPointRuleSummary, getPointRules, isEarnTransactionNearExpiry } from '../lib/pointRules';
-import { getDefaultMembershipTiersForShop, getMembershipTiersForShop, getTierBadgeClassName, resolveMembershipTier } from '../lib/membershipTiers';
 
 type MerchantTab = 'dashboard' | 'approvals' | 'customers' | 'rewards' | 'promotions' | 'generator' | 'reports' | 'audit' | 'settings';
 
@@ -47,11 +45,6 @@ export default function OwnerDashboard({
   const [activeTab, setActiveTab] = useState<MerchantTab>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const [approvalsSubTab, setApprovalsSubTab] = useState<'queue' | 'history'>('queue');
-  const [redeemVerifyInput, setRedeemVerifyInput] = useState('');
-  const [reviewRedeemId, setReviewRedeemId] = useState<string | null>(null);
-  const [redeemReviewError, setRedeemReviewError] = useState<string | null>(null);
-  const [processingRedeemId, setProcessingRedeemId] = useState<string | null>(null);
-  const handledInitialRedeemParamRef = useRef(false);
   
   // Database States
   const [shops, setShops] = useState<Shop[]>([]);
@@ -61,8 +54,6 @@ export default function OwnerDashboard({
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [onboardingChecklist, setOnboardingChecklist] = useState<ShopOnboardingChecklist | null>(null);
-  const [membershipTiers, setMembershipTiers] = useState<MembershipTier[]>([]);
-  const [tierInputs, setTierInputs] = useState<Record<string, { minLifetimePoints: string; benefitText: string; isActive: boolean }>>({});
 
   // Search Filter / Inputs
   const [searchTerm, setSearchTerm] = useState('');
@@ -78,22 +69,17 @@ export default function OwnerDashboard({
   // Custom QR / Link generator states
   const [generatePurchaseAmount, setGeneratePurchaseAmount] = useState('500');
   const [generateDesc, setGenerateDesc] = useState('ยอดซื้อหน้าร้าน');
-  const [generateLinkExpiryMinutes, setGenerateLinkExpiryMinutes] = useState('10');
   const [generatedQRValue, setGeneratedQRValue] = useState('');
+  const [expiryMinutes, setExpiryMinutes] = useState('15');
   const [activeCoupon, setActiveCoupon] = useState<any | null>(null);
   const [generatedCouponsList, setGeneratedCouponsList] = useState<any[]>([]);
   const [copiedLink, setCopiedLink] = useState(false);
   const [shopPointRateInput, setShopPointRateInput] = useState('10');
-  const [shopPointRoundingModeInput, setShopPointRoundingModeInput] = useState<PointRoundingMode>('floor');
-  const [shopMinimumPurchaseInput, setShopMinimumPurchaseInput] = useState('1');
-  const [shopPointExpiryDaysInput, setShopPointExpiryDaysInput] = useState('365');
-  const [shopPointExpiryReminderDaysInput, setShopPointExpiryReminderDaysInput] = useState('30');
   const [shopNameInput, setShopNameInput] = useState('');
   const [shopDescriptionInput, setShopDescriptionInput] = useState('');
   const [shopCategoryInput, setShopCategoryInput] = useState('');
   const [shopPhoneInput, setShopPhoneInput] = useState('');
   const [shopLogoInput, setShopLogoInput] = useState('');
-  const [shopLogoStorageKeyInput, setShopLogoStorageKeyInput] = useState('');
   const [shopWelcomeInput, setShopWelcomeInput] = useState('');
   const [shopContactInput, setShopContactInput] = useState('');
   const [shopShareMessageInput, setShopShareMessageInput] = useState('');
@@ -114,124 +100,133 @@ export default function OwnerDashboard({
   const shopLogoImageMaxBytes = 2 * 1024 * 1024;
   const shopLogoImageAllowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
 
-  type MerchantImageKind = 'shop-logo' | 'reward-image' | 'promo-banner';
+  const handleShopLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
 
-  const validateImageDimensions = (file: File, options: { minWidth: number; minHeight: number; squareRecommended?: boolean }) => new Promise<{ width: number; height: number }>((resolve, reject) => {
-    const objectUrl = URL.createObjectURL(file);
-    const previewImage = new window.Image();
-    previewImage.onload = () => {
-      const width = previewImage.naturalWidth;
-      const height = previewImage.naturalHeight;
-      URL.revokeObjectURL(objectUrl);
-      if (width < options.minWidth || height < options.minHeight) {
-        reject(new Error(`รูปค่อนข้างเล็ก (${width}×${height}px) ขั้นต่ำที่แนะนำคือ ${options.minWidth}×${options.minHeight}px`));
+    if (!shopLogoImageAllowedTypes.includes(file.type)) {
+      showStatus('❌ รองรับเฉพาะไฟล์ JPG, PNG หรือ WEBP เท่านั้น');
+      input.value = '';
+      return;
+    }
+
+    if (file.size > shopLogoImageMaxBytes) {
+      showStatus('❌ ไฟล์โลโก้ใหญ่เกินไป กรุณาใช้ไฟล์ไม่เกิน 2 MB');
+      input.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (!result) {
+        showStatus('❌ อ่านไฟล์โลโก้ไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง');
+        input.value = '';
         return;
       }
-      if (options.squareRecommended) {
+
+      const previewImage = new window.Image();
+      previewImage.onload = () => {
+        const width = previewImage.naturalWidth;
+        const height = previewImage.naturalHeight;
+        setShopLogoInput(result);
+
+        if (width < 300 || height < 300) {
+          showStatus(`⚠️ อัปโหลดโลโก้แล้ว แต่รูปค่อนข้างเล็ก (${width}×${height}px) แนะนำ 512×512px`);
+          return;
+        }
+
         const ratio = width / height;
         if (ratio < 0.85 || ratio > 1.15) {
-          showStatus(`⚠️ รูปไม่ใช่สี่เหลี่ยมจัตุรัส (${width}×${height}px) แต่ยังอัปโหลดได้`);
+          showStatus(`⚠️ อัปโหลดโลโก้แล้ว (${width}×${height}px) แนะนำให้ใช้รูปสี่เหลี่ยมจัตุรัส 512×512px`);
+          return;
         }
-      }
-      resolve({ width, height });
-    };
-    previewImage.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('ตรวจสอบขนาดรูปไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง'));
-    };
-    previewImage.src = objectUrl;
-  });
 
-  const uploadMerchantImage = async (file: File, kind: MerchantImageKind, options: { minWidth: number; minHeight: number; squareRecommended?: boolean }) => {
+        showStatus(`✓ อัปโหลดโลโก้ร้านแล้ว (${width}×${height}px)`);
+      };
+      previewImage.onerror = () => {
+        setShopLogoInput(result);
+        showStatus('✓ อัปโหลดโลโก้ร้านแล้ว');
+      };
+      previewImage.src = result;
+    };
+
+    reader.onerror = () => {
+      showStatus('❌ อ่านไฟล์โลโก้ไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง');
+      input.value = '';
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  const handleRewardImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    if (!file) return;
+
     if (!rewardImageAllowedTypes.includes(file.type)) {
-      throw new Error('รองรับเฉพาะไฟล์ JPG, PNG หรือ WEBP เท่านั้น');
+      showStatus('❌ รองรับเฉพาะไฟล์ JPG, PNG หรือ WEBP เท่านั้น');
+      input.value = '';
+      return;
     }
 
     if (file.size > rewardImageMaxBytes) {
-      throw new Error('ไฟล์รูปใหญ่เกินไป กรุณาใช้ไฟล์ไม่เกิน 2 MB');
+      showStatus('❌ ไฟล์รูปใหญ่เกินไป กรุณาใช้ไฟล์ไม่เกิน 2 MB');
+      input.value = '';
+      return;
     }
 
-    const dimensions = await validateImageDimensions(file, options);
-    const formData = new FormData();
-    formData.set('file', file);
-    formData.set('shopId', selectedShopId);
-    formData.set('kind', kind);
+    const reader = new FileReader();
 
-    const response = await fetch('/api/storage/upload', {
-      method: 'POST',
-      body: formData,
-    });
-    const payload = await response.json().catch(() => ({}));
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      if (!result) {
+        showStatus('❌ อ่านไฟล์รูปไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง');
+        input.value = '';
+        return;
+      }
 
-    if (!response.ok || !payload?.ok || !payload?.url) {
-      throw new Error(payload?.message || 'อัปโหลดรูปไม่สำเร็จ');
-    }
+      const previewImage = new window.Image();
+      previewImage.onload = () => {
+        const width = previewImage.naturalWidth;
+        const height = previewImage.naturalHeight;
+        setNewRewImage(result);
 
-    return {
-      url: String(payload.url),
-      storageKey: String(payload.storageKey || ''),
-      width: dimensions.width,
-      height: dimensions.height,
+        if (width < 600 || height < 600) {
+          showStatus(`⚠️ อัปโหลดรูปแล้ว แต่รูปค่อนข้างเล็ก (${width}×${height}px) แนะนำ 800×800px`);
+          return;
+        }
+
+        const ratio = width / height;
+        if (ratio < 0.85 || ratio > 1.15) {
+          showStatus(`⚠️ อัปโหลดรูปแล้ว (${width}×${height}px) แนะนำให้ใช้รูปสี่เหลี่ยมจัตุรัส 800×800px`);
+          return;
+        }
+
+        showStatus(`✓ อัปโหลดรูปของรางวัลแล้ว (${width}×${height}px)`);
+      };
+      previewImage.onerror = () => {
+        setNewRewImage(result);
+        showStatus('✓ อัปโหลดรูปของรางวัลแล้ว');
+      };
+      previewImage.src = result;
     };
-  };
 
-  const handleShopLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) return;
-
-    try {
-      showStatus('กำลังอัปโหลดโลโก้ร้านไป Vercel Blob...');
-      const uploaded = await uploadMerchantImage(file, 'shop-logo', { minWidth: 300, minHeight: 300, squareRecommended: true });
-      setShopLogoInput(uploaded.url);
-      setShopLogoStorageKeyInput(uploaded.storageKey);
-      showStatus(`✓ อัปโหลดโลโก้ร้านไป Vercel Blob แล้ว (${uploaded.width}×${uploaded.height}px) อย่าลืมกดบันทึกตั้งค่าร้านค้า`);
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'อัปโหลดโลโก้ร้านไม่สำเร็จ'}`);
+    reader.onerror = () => {
+      showStatus('❌ อ่านไฟล์รูปไม่ได้ กรุณาลองเลือกรูปใหม่อีกครั้ง');
       input.value = '';
-    }
+    };
+
+    reader.readAsDataURL(file);
   };
 
-  const handleRewardImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) return;
-
-    try {
-      showStatus('กำลังอัปโหลดรูปของรางวัลไป Vercel Blob...');
-      const uploaded = await uploadMerchantImage(file, 'reward-image', { minWidth: 600, minHeight: 600, squareRecommended: true });
-      setNewRewImage(uploaded.url);
-      setNewRewStorageKey(uploaded.storageKey);
-      showStatus(`✓ อัปโหลดรูปของรางวัลไป Vercel Blob แล้ว (${uploaded.width}×${uploaded.height}px)`);
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'อัปโหลดรูปของรางวัลไม่สำเร็จ'}`);
-      input.value = '';
-    }
-  };
-
-  const handleBannerImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    if (!file) return;
-
-    try {
-      showStatus('กำลังอัปโหลดรูปโปรโมชันไป Vercel Blob...');
-      const uploaded = await uploadMerchantImage(file, 'promo-banner', { minWidth: 600, minHeight: 300 });
-      setNewBannerImage(uploaded.url);
-      setNewBannerStorageKey(uploaded.storageKey);
-      showStatus(`✓ อัปโหลดรูปโปรโมชันไป Vercel Blob แล้ว (${uploaded.width}×${uploaded.height}px)`);
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'อัปโหลดรูปโปรโมชันไม่สำเร็จ'}`);
-      input.value = '';
-    }
-  };
-
-  const generateNewCouponAndLink = async () => {
+  const generateNewCouponAndLink = () => {
     const activeShop = shops.length > 0 ? shops.find(s => s.id === selectedShopId) : getShops().find(s => s.id === selectedShopId);
-    const activePointRules = getPointRules(activeShop);
-    const currentPointsRate = activePointRules.pointsRate;
+    const currentPointsRate = Math.max(1, activeShop?.pointsRate || 10);
     const purchaseAmountText = String(generatePurchaseAmount).trim();
-
+    const expiryMinutesText = String(expiryMinutes).trim();
 
     if (!purchaseAmountText) {
       showStatus('❌ กรุณาใส่ยอดซื้อก่อนสร้างลิงก์รับแต้ม');
@@ -244,10 +239,22 @@ export default function OwnerDashboard({
       return;
     }
 
-    const couponPoints = calculateEarnPoints(purchaseAmount, activeShop);
+    if (!expiryMinutesText) {
+      showStatus('❌ กรุณาใส่เวลาหมดอายุของลิงก์');
+      return;
+    }
+
+    const parsedExpiryMinutes = Number(expiryMinutesText);
+    if (!Number.isFinite(parsedExpiryMinutes) || parsedExpiryMinutes <= 0) {
+      showStatus('❌ กรุณาใส่เวลาหมดอายุเป็นตัวเลข 1 - 60 นาที');
+      return;
+    }
+
+    const boundedExpiryMinutes = Math.max(1, Math.min(60, Math.floor(parsedExpiryMinutes)));
+    const couponPoints = Math.floor(purchaseAmount / currentPointsRate);
 
     if (couponPoints <= 0) {
-      showStatus(`❌ ยอดซื้อยังไม่ถึงกฎแจกแต้มของร้าน (${activePointRules.minimumPurchaseForPoints.toLocaleString('th-TH')} บาทขั้นต่ำ / ${currentPointsRate.toLocaleString('th-TH')} บาท = 1 แต้ม)`);
+      showStatus(`❌ ยอดซื้อยังไม่ถึงอัตราแจกแต้มของร้าน (${currentPointsRate} บาท = 1 แต้ม)`);
       return;
     }
 
@@ -256,22 +263,9 @@ export default function OwnerDashboard({
     const randomHex = Math.random().toString(36).substring(2, 7).toUpperCase();
     const uniqueCode = `CPN-${shopAbbr}-${couponPoints}-${randomHex}`;
 
-    const linkExpiryMinutesText = String(generateLinkExpiryMinutes).trim();
-    if (!linkExpiryMinutesText) {
-      showStatus('❌ กรุณาใส่จำนวนนาทีหมดอายุของลิงก์รับแต้ม');
-      return;
-    }
-
-    const linkExpiryMinutes = Number(linkExpiryMinutesText);
-    if (!Number.isFinite(linkExpiryMinutes) || linkExpiryMinutes <= 0) {
-      showStatus('❌ กรุณาใส่นาทีหมดอายุลิงก์เป็นตัวเลขที่มากกว่า 0');
-      return;
-    }
-
-    const safeLinkExpiryMinutes = Math.floor(linkExpiryMinutes);
     const coupons = getGeneratedCoupons();
 
-    const expiresAt = new Date(Date.now() + safeLinkExpiryMinutes * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + boundedExpiryMinutes * 60 * 1000).toISOString();
 
     const newCoupon = {
       code: uniqueCode,
@@ -281,53 +275,34 @@ export default function OwnerDashboard({
       description: generateDesc || `ยอดซื้อ ${purchaseAmount.toLocaleString('th-TH')} บาท`,
       purchaseAmount,
       pointsRate: currentPointsRate,
-      pointRoundingMode: activePointRules.pointRoundingMode,
-      minimumPurchaseForPoints: activePointRules.minimumPurchaseForPoints,
-      pointLinkExpiryMinutes: safeLinkExpiryMinutes,
       createdAt: new Date().toISOString(),
       expiresAt: expiresAt,
       isUsed: false
     };
 
+    coupons.push(newCoupon);
+    saveGeneratedCoupons(coupons);
+
     // Construct LIFF URL first so customer opens inside LINE when available.
     const generatedUrl = buildCustomerClaimUrl(uniqueCode);
-    const auditLog = {
-      id: `audit_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      shopId: selectedShopId,
-      shopName: activeShop?.name || activeShopDetail?.name || selectedShopId,
-      actorType: 'owner' as const,
-      actorName: 'เจ้าของร้าน',
-      actorId: 'merchant-owner',
+
+    recordAuditLog({
       action: 'point_link_created',
       actionLabel: 'สร้างลิงก์รับแต้ม',
       description: `สร้างลิงก์รับแต้ม ${couponPoints.toLocaleString('th-TH')} แต้ม จากยอดซื้อ ${purchaseAmount.toLocaleString('th-TH')} บาท`,
       targetType: 'coupon',
       targetId: uniqueCode,
       points: couponPoints,
-      status: 'success' as const,
-      metadata: { purchaseAmount, ...activePointRules, pointLinkExpiryMinutes: safeLinkExpiryMinutes, expiresAt, url: generatedUrl },
-      createdAt: new Date().toISOString(),
-    };
+      metadata: { purchaseAmount, pointsRate: currentPointsRate, expiresAt, url: generatedUrl },
+    });
 
-    try {
-      showStatus('กำลังสร้างลิงก์รับแต้มออนไลน์...');
-      await postJson('/api/db/point-coupons', { action: 'upsert', coupon: newCoupon, auditLog });
-      recordAuditLog(auditLog);
-      const nextCoupons = [
-        newCoupon,
-        ...getGeneratedCoupons().filter((coupon: any) => coupon.code !== newCoupon.code),
-      ];
-      saveGeneratedCoupons(nextCoupons, { sync: false });
-      setGeneratedQRValue(generatedUrl);
-      setActiveCoupon(newCoupon);
-      const shopCoupons = nextCoupons
-        .filter((c: any) => c.shopId === selectedShopId)
-        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      setGeneratedCouponsList(shopCoupons);
-      showStatus('✓ สร้างลิงก์รับแต้มออนไลน์แล้ว');
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'สร้างลิงก์รับแต้มไม่สำเร็จ'}`);
-    }
+    setGeneratedQRValue(generatedUrl);
+    setActiveCoupon(newCoupon);
+
+    // Refresh generated coupons list
+    const shopCoupons = coupons.filter((c: any) => c.shopId === selectedShopId);
+    shopCoupons.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    setGeneratedCouponsList(shopCoupons);
   };
 
   const handleShareClaimLink = async (url: string, points: number, code?: string) => {
@@ -377,9 +352,12 @@ export default function OwnerDashboard({
     showStatus(code ? `✓ เปิด LINE สำหรับแชร์รหัส ${code}` : '✓ เปิด LINE สำหรับแชร์ลิงก์แล้ว');
   };
 
-  const handleDeleteGeneratedCoupon = async (code: string) => {
+  const handleDeleteGeneratedCoupon = (code: string) => {
     if (confirm(`คุณแน่ใจต้องการลบรหัสคูปอง ${code} ถาวรใช่หรือไม่? หลังจากลบแล้ว คูปองหรือลิงก์สะสมแต้มนี้จะไม่สามารถถูกนำมาสแกนหรือใช้งานได้อีกทุกกรณี`)) {
-      const auditLog = recordAuditLog({
+      const coupons = getGeneratedCoupons();
+      const filtered = coupons.filter((c: any) => c.code.toUpperCase() !== code.toUpperCase());
+      saveGeneratedCoupons(filtered);
+      recordAuditLog({
         action: 'point_link_deleted',
         actionLabel: 'ลบลิงก์รับแต้ม',
         description: `ลบรหัสรับแต้ม ${code} ออกจากระบบ`,
@@ -387,16 +365,8 @@ export default function OwnerDashboard({
         targetId: code,
         status: 'warning',
       });
-      try {
-        showStatus('กำลังลบลิงก์รับแต้มออนไลน์...');
-        await postJson('/api/db/point-coupons', { action: 'delete', code, shopId: selectedShopId, auditLog });
-        const nextCoupons = getGeneratedCoupons().filter((coupon: any) => !(coupon.code === code && coupon.shopId === selectedShopId));
-        saveGeneratedCoupons(nextCoupons, { sync: false });
-        setGeneratedCouponsList(nextCoupons.filter((coupon: any) => coupon.shopId === selectedShopId));
-        showStatus('✓ ลบข้อมูลรหัสแจกแต้มพิเศษจากฐานข้อมูลแล้ว');
-      } catch (error) {
-        showStatus(`❌ ${error instanceof Error ? error.message : 'ลบลิงก์รับแต้มไม่สำเร็จ'}`);
-      }
+      showStatus('✓ ลบข้อมูลรหัสแจกแต้มพิเศษสำเร็จอย่างถาวร');
+      loadData();
     }
   };
 
@@ -408,17 +378,13 @@ export default function OwnerDashboard({
   const [newRewStock, setNewRewStock] = useState('20');
   const [newRewDesc, setNewRewDesc] = useState('');
   const [newRewImage, setNewRewImage] = useState('');
-  const [newRewStorageKey, setNewRewStorageKey] = useState('');
 
   // Manual point adjusting modal states
   const [statusMsg, setStatusMsg] = useState('');
-  const [isRefreshingFromNeon, setIsRefreshingFromNeon] = useState(false);
-  const [lastFreshLoadedAt, setLastFreshLoadedAt] = useState('');
   const [selectedCustForAdjust, setSelectedCustForAdjust] = useState<Customer | null>(null);
   const [adjustPoints, setAdjustPoints] = useState('20');
   const [adjustType, setAdjustType] = useState<'add' | 'deduct'>('add');
   const [adjustReason, setAdjustReason] = useState('ปรับแต้มโดยร้านค้า');
-  const [adjustSaving, setAdjustSaving] = useState(false);
 
   // Real merchant workflow states: create members and record purchases.
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -428,43 +394,25 @@ export default function OwnerDashboard({
   const [selectedSaleCustomerId, setSelectedSaleCustomerId] = useState('');
   const [saleAmount, setSaleAmount] = useState('100');
   const [saleReason, setSaleReason] = useState('บันทึกยอดซื้อหน้าร้าน');
-  const [recordPurchaseSaving, setRecordPurchaseSaving] = useState(false);
 
   // Promotion Banner creation states
   const [showBannerModal, setShowBannerModal] = useState(false);
   const [newBannerTitle, setNewBannerTitle] = useState('');
   const [newBannerDesc, setNewBannerDesc] = useState('');
   const [newBannerImage, setNewBannerImage] = useState('');
-  const [newBannerStorageKey, setNewBannerStorageKey] = useState('');
   const [newBannerExp, setNewBannerExp] = useState('2026-06-30');
 
   // Load latest data on focus or change
   const loadData = () => {
     const allShops = getShops();
     const allTransactions = getTransactions();
-    const allMembershipTiers = getMembershipTiers();
-    const selectedShopMembershipTiers = getMembershipTiersForShop(allMembershipTiers, selectedShopId);
-    const allCustomers = getCustomers();
-    const normalizedCustomers = allCustomers.map((customer) => {
-      const belongsToSelectedShop = customer.shopIds?.includes(selectedShopId) || allTransactions.some((tx) => tx.userId === customer.id && tx.shopId === selectedShopId);
-      if (!belongsToSelectedShop) return customer;
-
-      const resolvedTier = resolveMembershipTier(customer.lifetimePoints, selectedShopMembershipTiers);
-      return customer.tier === resolvedTier ? customer : { ...customer, tier: resolvedTier };
-    });
-
-    if (normalizedCustomers.some((customer, index) => customer.tier !== allCustomers[index]?.tier)) {
-      saveCustomers(normalizedCustomers, { sync: false });
-    }
-
     setShops(scopeApprovedShops(allShops, selectedShopId, isProductionView));
-    setCustomers(filterCustomersByShop(normalizedCustomers, selectedShopId, allTransactions, true));
+    setCustomers(filterCustomersByShop(getCustomers(), selectedShopId, allTransactions, true));
     setRewards(filterRewardsByShop(getRewards(), selectedShopId));
     setBanners(filterBannersByShop(getBanners(), selectedShopId, false));
     setTransactions(filterTransactionsByShop(allTransactions, selectedShopId));
     setAuditLogs(getAuditLogs().filter((log) => log.shopId === selectedShopId));
     setOnboardingChecklist(getOrCreateOnboardingChecklist(selectedShopId));
-    setMembershipTiers(selectedShopMembershipTiers);
 
     try {
       const shopCoupons = filterCouponsByShop(getGeneratedCoupons(), selectedShopId);
@@ -481,36 +429,18 @@ export default function OwnerDashboard({
 
   useEffect(() => {
     if (!activeShopDetail) return;
-    const pointRules = getPointRules(activeShopDetail);
-    setShopPointRateInput(String(pointRules.pointsRate));
-    setShopPointRoundingModeInput(pointRules.pointRoundingMode);
-    setShopMinimumPurchaseInput(String(pointRules.minimumPurchaseForPoints));
-    setShopPointExpiryDaysInput(String(pointRules.pointExpiryDays));
-    setShopPointExpiryReminderDaysInput(String(pointRules.pointExpiryReminderDays));
+    setShopPointRateInput(String(activeShopDetail.pointsRate || 10));
     setShopNameInput(activeShopDetail.name || '');
     setShopDescriptionInput(activeShopDetail.description || '');
     setShopCategoryInput(activeShopDetail.category || '');
     setShopPhoneInput(activeShopDetail.phone || '');
-    setShopLogoInput(activeShopDetail.logoUrl || activeShopDetail.logo || '');
-    setShopLogoStorageKeyInput(activeShopDetail.logoStorageKey || '');
+    setShopLogoInput(activeShopDetail.logo || '');
     setShopWelcomeInput(activeShopDetail.welcomeMessage || `ยินดีต้อนรับสู่ ${activeShopDetail.name || 'ร้านค้า'} สะสมแต้มและแลกของรางวัลได้จากหน้านี้`);
     setShopContactInput(activeShopDetail.contactText || activeShopDetail.phone || '');
     setShopShareMessageInput(activeShopDetail.shareMessageTemplate || `รับแต้มจาก {shop} จำนวน {points} แต้ม\nกดรับแต้มที่นี่: {url}`);
     setShopRichMenuContactUrlInput(activeShopDetail.richMenuContactUrl || '');
     setShopIsActiveInput(activeShopDetail.isActive !== false);
-  }, [activeShopDetail?.id, activeShopDetail?.name, activeShopDetail?.description, activeShopDetail?.category, activeShopDetail?.phone, activeShopDetail?.logo, activeShopDetail?.logoUrl, activeShopDetail?.logoStorageKey, activeShopDetail?.pointsRate, activeShopDetail?.pointRoundingMode, activeShopDetail?.minimumPurchaseForPoints, activeShopDetail?.pointExpiryDays, activeShopDetail?.pointExpiryReminderDays, activeShopDetail?.isActive, activeShopDetail?.welcomeMessage, activeShopDetail?.contactText, activeShopDetail?.shareMessageTemplate, activeShopDetail?.richMenuContactUrl]);
-
-  useEffect(() => {
-    const nextInputs: Record<string, { minLifetimePoints: string; benefitText: string; isActive: boolean }> = {};
-    membershipTiers.forEach((tier) => {
-      nextInputs[tier.id] = {
-        minLifetimePoints: String(tier.minLifetimePoints),
-        benefitText: tier.benefitText || '',
-        isActive: tier.isActive,
-      };
-    });
-    setTierInputs(nextInputs);
-  }, [membershipTiers]);
+  }, [activeShopDetail?.id, activeShopDetail?.name, activeShopDetail?.description, activeShopDetail?.category, activeShopDetail?.phone, activeShopDetail?.logo, activeShopDetail?.pointsRate, activeShopDetail?.isActive, activeShopDetail?.welcomeMessage, activeShopDetail?.contactText, activeShopDetail?.shareMessageTemplate, activeShopDetail?.richMenuContactUrl]);
 
   useEffect(() => {
     if (customers.length > 0 && !customers.some((customer) => customer.id === selectedSaleCustomerId)) {
@@ -518,112 +448,20 @@ export default function OwnerDashboard({
     }
   }, [customers, selectedSaleCustomerId]);
 
-  useEffect(() => {
-    if (handledInitialRedeemParamRef.current || typeof window === 'undefined') return;
-
-    const collectParams = () => {
-      const directParams = new URLSearchParams(window.location.search);
-      const mergedParams = new URLSearchParams(directParams.toString());
-      const rawLiffState = directParams.get('liff.state');
-
-      if (rawLiffState) {
-        try {
-          const decodedState = decodeURIComponent(rawLiffState);
-          const queryStart = decodedState.indexOf('?');
-          const queryText = decodedState.startsWith('?') ? decodedState.slice(1) : queryStart >= 0 ? decodedState.slice(queryStart + 1) : decodedState;
-          new URLSearchParams(queryText).forEach((value, key) => {
-            if (!mergedParams.has(key)) mergedParams.set(key, value);
-          });
-        } catch {
-          // Keep direct params if LIFF state is malformed.
-        }
-      }
-
-      return mergedParams;
-    };
-
-    const params = collectParams();
-    const merchantTab = params.get('merchantTab');
-    const redeemId = params.get('redeem');
-
-    if (merchantTab === 'approvals' || redeemId) {
-      setActiveTab('approvals');
-      setApprovalsSubTab('queue');
-    }
-
-    if (!redeemId) {
-      handledInitialRedeemParamRef.current = true;
-      return;
-    }
-
-    handledInitialRedeemParamRef.current = true;
-    void openRedeemReviewById(redeemId, 'link');
-
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('merchantTab');
-      url.searchParams.delete('redeem');
-      window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
-    } catch {
-      // Non-critical.
-    }
-  }, [selectedShopId]);
-
-  const pointRules = getPointRules(activeShopDetail);
-  const pointRuleSummary = getPointRuleSummary(activeShopDetail);
-  const pointsRate = pointRules.pointsRate;
-  const calculatedSalePoints = calculateEarnPoints(Number(saleAmount) || 0, activeShopDetail);
-  const calculatedGeneratePoints = calculateEarnPoints(Number(generatePurchaseAmount) || 0, activeShopDetail);
-  const activeMembershipTiers = getMembershipTiersForShop(membershipTiers, selectedShopId);
+  const pointsRate = Math.max(1, activeShopDetail?.pointsRate || 10);
+  const calculatedSalePoints = Math.max(0, Math.floor((Number(saleAmount) || 0) / pointsRate));
+  const calculatedGeneratePoints = Math.max(0, Math.floor((Number(generatePurchaseAmount) || 0) / pointsRate));
 
   const getTierForLifetime = (lifetimePoints: number): Customer['tier'] => {
-    return resolveMembershipTier(lifetimePoints, activeMembershipTiers);
-  };
-
-  const getDisplayTierForCustomer = (customer: Customer): Customer['tier'] => {
-    return resolveMembershipTier(customer.lifetimePoints, activeMembershipTiers);
+    if (lifetimePoints >= 1000) return 'Platinum';
+    if (lifetimePoints >= 300) return 'Gold';
+    return 'Silver';
   };
 
   const showStatus = (text: string) => {
     setStatusMsg(text);
     setTimeout(() => setStatusMsg(''), 3000);
   };
-
-  const postJson = async <T,>(url: string, body: unknown): Promise<T> => {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.ok === false) {
-      throw new Error(payload?.message || 'บันทึกข้อมูลออนไลน์ไม่สำเร็จ');
-    }
-    return payload as T;
-  };
-
-  const refreshFromNeon = async () => {
-    setIsRefreshingFromNeon(true);
-    try {
-      await initializeDatabase();
-      onDataChange();
-      loadData();
-      setLastFreshLoadedAt(new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-    } finally {
-      setIsRefreshingFromNeon(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!isProductionView || typeof window === 'undefined') return;
-
-    const handleFocus = () => {
-      void refreshFromNeon();
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [isProductionView, selectedShopId]);
 
   const getStatusClassName = () => {
     if (statusMsg.startsWith('❌')) return 'border-rose-200 bg-rose-50 text-rose-800 shadow-rose-100';
@@ -668,17 +506,17 @@ export default function OwnerDashboard({
     return log;
   };
 
-  const updateOnboardingChecklist = async (patch: Partial<ShopOnboardingChecklist>, successMessage?: string) => {
+  const updateOnboardingChecklist = (patch: Partial<ShopOnboardingChecklist>, successMessage?: string) => {
     const base = onboardingChecklist || getOrCreateOnboardingChecklist(selectedShopId);
-    const nextChecklist = {
+    const nextChecklist = upsertOnboardingChecklist({
       ...base,
       ...patch,
       shopId: selectedShopId,
       id: base.id || `onboarding_${selectedShopId}`,
-      updatedAt: new Date().toISOString(),
-    };
+    });
 
-    const auditLog = recordAuditLog({
+    setOnboardingChecklist(nextChecklist);
+    recordAuditLog({
       action: 'pilot_checklist_updated',
       actionLabel: 'อัปเดต Pilot Checklist',
       description: 'บันทึกสถานะความพร้อมก่อนเปิดร้านจริง',
@@ -686,21 +524,13 @@ export default function OwnerDashboard({
       targetId: nextChecklist.id,
       metadata: patch as Record<string, unknown>,
     });
-
-    try {
-      await postJson('/api/db/onboarding-checklist', { checklist: nextChecklist, auditLog });
-      upsertOnboardingChecklist(nextChecklist);
-      setOnboardingChecklist(nextChecklist);
-      if (successMessage) showStatus(successMessage);
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึก Pilot Checklist ไม่สำเร็จ'}`);
-    }
+    if (successMessage) showStatus(successMessage);
   };
 
   const getPilotChecklistData = () => {
     const shop = activeShopDetail;
     const hasShopName = Boolean(shop?.name?.trim());
-    const hasShopLogo = Boolean((shop?.logoUrl || shop?.logo || '').trim());
+    const hasShopLogo = Boolean(shop?.logo?.trim());
     const hasContact = Boolean(shop?.phone?.trim() || shop?.contactText?.trim() || shop?.richMenuContactUrl?.trim());
     const hasPointRate = Math.max(1, Number(shop?.pointsRate || 0)) > 0;
     const hasReward = rewards.length > 0;
@@ -810,7 +640,7 @@ export default function OwnerDashboard({
     'เบอร์โทร': customer.phone || '',
     'แต้มคงเหลือ': customer.currentPoints,
     'แต้มสะสมทั้งหมด': customer.lifetimePoints,
-    'ระดับสมาชิก': getDisplayTierForCustomer(customer),
+    'ระดับสมาชิก': customer.tier,
     'วันที่สมัคร': formatReportDate(customer.createdAt),
   }));
 
@@ -876,7 +706,7 @@ export default function OwnerDashboard({
     'แต้มที่ใช้': reward.pointsCost,
     'สต็อกคงเหลือ': reward.stock,
     'สถานะการแสดงผล': reward.isAvailable ? 'เปิดให้แลก' : 'ซ่อนอยู่',
-    'ลิงก์รูปภาพ': reward.imageUrl || reward.image,
+    'ลิงก์รูปภาพ': reward.image,
   }));
 
   const buildPromoReportRows = () => banners.map((banner, index) => ({
@@ -887,7 +717,7 @@ export default function OwnerDashboard({
     'ประเภท': banner.isAd ? 'โฆษณาแพลตฟอร์ม' : 'โปรโมชันร้านค้า',
     'หมดอายุ': formatReportDate(banner.expirationDate),
     'ลิงก์': banner.url || '',
-    'ลิงก์รูปภาพ': banner.imageUrl || banner.image,
+    'ลิงก์รูปภาพ': banner.image,
   }));
 
   const buildAuditReportRows = () => [...auditLogs]
@@ -971,50 +801,25 @@ export default function OwnerDashboard({
     return { value: Math.floor(parsedValue), error: '' };
   };
 
-  const getValidatedPointRules = () => {
-    const rateText = String(shopPointRateInput).trim();
-    const minimumText = String(shopMinimumPurchaseInput).trim();
-    const pointExpiryText = String(shopPointExpiryDaysInput).trim();
-    const reminderText = String(shopPointExpiryReminderDaysInput).trim();
-
-    if (!rateText) return { value: null as ReturnType<typeof getPointRules> | null, error: '❌ กรุณาใส่จำนวนเงินก่อนบันทึกอัตราแต้ม' };
-    const parsedRate = Number(rateText);
-    if (!Number.isFinite(parsedRate) || parsedRate <= 0) return { value: null, error: '❌ กรุณาใส่อัตราแต้มเป็นตัวเลขที่มากกว่า 0' };
-
-    if (!minimumText) return { value: null, error: '❌ กรุณาใส่ยอดซื้อขั้นต่ำที่จะได้แต้ม' };
-    const parsedMinimum = Number(minimumText);
-    if (!Number.isFinite(parsedMinimum) || parsedMinimum < 0) return { value: null, error: '❌ กรุณาใส่ยอดซื้อขั้นต่ำเป็นตัวเลข 0 ขึ้นไป' };
-
-    if (!pointExpiryText) return { value: null, error: '❌ กรุณาใส่จำนวนวันหมดอายุของแต้ม' };
-    const parsedPointExpiry = Number(pointExpiryText);
-    if (!Number.isFinite(parsedPointExpiry) || parsedPointExpiry <= 0) return { value: null, error: '❌ กรุณาใส่จำนวนวันหมดอายุแต้มเป็นตัวเลขมากกว่า 0' };
-
-    if (!reminderText) return { value: null, error: '❌ กรุณาใส่จำนวนวันแจ้งเตือนก่อนแต้มหมดอายุ' };
-    const parsedReminder = Number(reminderText);
-    if (!Number.isFinite(parsedReminder) || parsedReminder < 0) return { value: null, error: '❌ กรุณาใส่จำนวนวันแจ้งเตือนเป็นตัวเลข 0 ขึ้นไป' };
-
-    return {
-      value: {
-        pointsRate: Math.floor(parsedRate),
-        pointRoundingMode: shopPointRoundingModeInput,
-        minimumPurchaseForPoints: Math.floor(parsedMinimum),
-        pointExpiryDays: Math.floor(parsedPointExpiry),
-        pointExpiryReminderDays: Math.floor(parsedReminder),
-      },
-      error: '',
-    };
-  };
-
   const getValidatedPointRate = () => {
-    const validated = getValidatedPointRules();
-    return { value: validated.value?.pointsRate ?? null, error: validated.error };
+    const rateText = String(shopPointRateInput).trim();
+    if (!rateText) {
+      return { value: null as number | null, error: '❌ กรุณาใส่จำนวนเงินก่อนบันทึกอัตราแต้ม' };
+    }
+
+    const parsedRate = Number(rateText);
+    if (!Number.isFinite(parsedRate) || parsedRate <= 0) {
+      return { value: null as number | null, error: '❌ กรุณาใส่อัตราแต้มเป็นตัวเลขที่มากกว่า 0' };
+    }
+
+    return { value: Math.floor(parsedRate), error: '' };
   };
 
-  const handleSaveShopPointRate = async (e: React.FormEvent | React.MouseEvent<HTMLButtonElement>) => {
+  const handleSaveShopPointRate = (e: React.FormEvent | React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
 
-    const { value: nextPointRules, error } = getValidatedPointRules();
-    if (error || nextPointRules === null) {
+    const { value: nextRate, error } = getValidatedPointRate();
+    if (error || nextRate === null) {
       showStatus(error);
       return;
     }
@@ -1028,105 +833,24 @@ export default function OwnerDashboard({
     }
 
     const updatedShops = allShops.map((shop) => (
-      shop.id === selectedShopId ? { ...shop, ...nextPointRules } : shop
+      shop.id === selectedShopId ? { ...shop, pointsRate: nextRate } : shop
     ));
 
-    const nextShop = updatedShops.find((shop) => shop.id === selectedShopId);
-    if (!nextShop) return;
-    const auditLog = recordAuditLog({
-      action: 'shop_point_rules_updated',
-      actionLabel: 'แก้กฎสะสมแต้ม',
-      description: `บันทึกกฎสะสมแต้มใหม่: ${nextPointRules.pointsRate} บาท = 1 แต้ม / ${nextPointRules.pointRoundingMode === 'nearest' ? 'ปัดเศษใกล้สุด' : 'ปัดเศษลง'}`,
+    saveShops(updatedShops);
+    recordAuditLog({
+      action: 'shop_point_rate_updated',
+      actionLabel: 'แก้อัตราแต้ม',
+      description: `บันทึกอัตราแจกแต้มใหม่: ${nextRate} บาท = 1 แต้ม`,
       targetType: 'shop',
       targetId: selectedShopId,
-      metadata: { previousRules: getPointRules(targetShop), nextRules: nextPointRules },
+      metadata: { previousRate: targetShop.pointsRate, nextRate },
     });
-    try {
-      showStatus('กำลังบันทึกกฎสะสมแต้มออนไลน์...');
-      await postJson('/api/db/merchant-settings', { shop: nextShop, auditLog });
-      saveShops(updatedShops, { sync: false });
-      onDataChange();
-      loadData();
-      showStatus(`✓ บันทึกกฎสะสมแต้มออนไลน์แล้ว: ${nextPointRules.pointsRate} บาท = 1 แต้ม`);
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกกฎสะสมแต้มไม่สำเร็จ'}`);
-    }
+    showStatus(`✓ บันทึกอัตราแจกแต้มแล้ว: ${nextRate} บาท = 1 แต้ม`);
+    onDataChange();
+    loadData();
   };
 
-
-  const updateTierInput = (tierId: string, patch: Partial<{ minLifetimePoints: string; benefitText: string; isActive: boolean }>) => {
-    setTierInputs((current) => ({
-      ...current,
-      [tierId]: {
-        minLifetimePoints: current[tierId]?.minLifetimePoints ?? '0',
-        benefitText: current[tierId]?.benefitText ?? '',
-        isActive: current[tierId]?.isActive ?? true,
-        ...patch,
-      },
-    }));
-  };
-
-  const handleSaveMembershipTiers = async () => {
-    const now = new Date().toISOString();
-    const shopTiers = activeMembershipTiers.length > 0 ? activeMembershipTiers : getDefaultMembershipTiersForShop(selectedShopId);
-    const nextShopTiers: MembershipTier[] = [];
-
-    for (const tier of shopTiers) {
-      const input = tierInputs[tier.id];
-      const minText = String(input?.minLifetimePoints ?? tier.minLifetimePoints).trim();
-      const parsedMin = tier.name === 'Member' ? 0 : Number(minText);
-
-      if (!Number.isFinite(parsedMin) || parsedMin < 0) {
-        showStatus(`❌ กรุณาใส่แต้มขั้นต่ำของระดับ ${tier.name} เป็นตัวเลข 0 ขึ้นไป`);
-        return;
-      }
-
-      nextShopTiers.push({
-        ...tier,
-        minLifetimePoints: tier.name === 'Member' ? 0 : Math.floor(parsedMin),
-        benefitText: (input?.benefitText ?? tier.benefitText ?? '').trim(),
-        isActive: tier.name === 'Member' ? true : Boolean(input?.isActive ?? tier.isActive),
-        updatedAt: now,
-      });
-    }
-
-    const activeThresholds = nextShopTiers
-      .filter((tier) => tier.isActive)
-      .map((tier) => tier.minLifetimePoints);
-    const duplicatedThreshold = activeThresholds.some((value, index) => activeThresholds.indexOf(value) !== index);
-    if (duplicatedThreshold) {
-      showStatus('❌ แต้มขั้นต่ำของระดับที่เปิดใช้งานอยู่ต้องไม่ซ้ำกัน');
-      return;
-    }
-
-    const allTiers = getMembershipTiers();
-    const nextAllTiers = [
-      ...allTiers.filter((tier) => tier.shopId !== selectedShopId),
-      ...nextShopTiers,
-    ].sort((a, b) => a.shopId.localeCompare(b.shopId) || a.sortOrder - b.sortOrder);
-
-    const auditLog = recordAuditLog({
-      action: 'membership_tiers_updated',
-      actionLabel: 'แก้ไขระดับสมาชิก',
-      description: `บันทึกระดับสมาชิก ${nextShopTiers.length} ระดับของร้าน ${activeShopDetail?.name || selectedShopId}`,
-      targetType: 'membership_tiers',
-      targetId: selectedShopId,
-      metadata: { tiers: nextShopTiers.map((tier) => ({ name: tier.name, minLifetimePoints: tier.minLifetimePoints, isActive: tier.isActive })) },
-    });
-
-    try {
-      showStatus('กำลังบันทึกระดับสมาชิกออนไลน์...');
-      await postJson('/api/db/membership-tiers', { shopId: selectedShopId, tiers: nextShopTiers, auditLog });
-      saveMembershipTiers(nextAllTiers, { sync: false });
-      onDataChange();
-      loadData();
-      showStatus('✓ บันทึกระดับสมาชิกออนไลน์แล้ว และอัปเดต badge ลูกค้าตามแต้มสะสมรวม');
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกระดับสมาชิกไม่สำเร็จ'}`);
-    }
-  };
-
-  const handleSaveShopSettings = async (e: React.FormEvent) => {
+  const handleSaveShopSettings = (e: React.FormEvent) => {
     e.preventDefault();
 
     const allShops = getShops();
@@ -1143,8 +867,8 @@ export default function OwnerDashboard({
       return;
     }
 
-    const { value: nextPointRules, error } = getValidatedPointRules();
-    if (error || nextPointRules === null) {
+    const { value: nextRate, error } = getValidatedPointRate();
+    if (error || nextRate === null) {
       showStatus(error);
       return;
     }
@@ -1167,9 +891,7 @@ export default function OwnerDashboard({
             category: nextCategory,
             phone: nextPhone,
             logo: nextLogo,
-            logoUrl: nextLogo.startsWith('http') ? nextLogo : undefined,
-            logoStorageKey: shopLogoStorageKeyInput || undefined,
-            ...nextPointRules,
+            pointsRate: nextRate,
             isActive: shopIsActiveInput,
             welcomeMessage: nextWelcome,
             contactText: nextContact,
@@ -1179,26 +901,18 @@ export default function OwnerDashboard({
         : shop
     ));
 
-    const nextShop = updatedShops.find((shop) => shop.id === selectedShopId);
-    if (!nextShop) return;
-    const auditLog = recordAuditLog({
+    saveShops(updatedShops);
+    recordAuditLog({
       action: 'shop_settings_updated',
       actionLabel: 'แก้ไขตั้งค่าร้าน',
       description: `บันทึกข้อมูลร้าน “${nextName}” และการตั้งค่าหน้าลูกค้า`,
       targetType: 'shop',
       targetId: selectedShopId,
-      metadata: { previousName: targetShop.name, nextName, nextPointRules, isActive: shopIsActiveInput },
+      metadata: { previousName: targetShop.name, nextName, nextRate, isActive: shopIsActiveInput },
     });
-    try {
-      showStatus('กำลังบันทึกตั้งค่าร้านค้าออนไลน์...');
-      await postJson('/api/db/merchant-settings', { shop: nextShop, auditLog });
-      saveShops(updatedShops, { sync: false });
-      onDataChange();
-      loadData();
-      showStatus('✓ บันทึกตั้งค่าร้านค้าออนไลน์สำเร็จแล้ว');
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกตั้งค่าร้านค้าไม่สำเร็จ'}`);
-    }
+    showStatus('✓ บันทึกตั้งค่าร้านค้าสำเร็จแล้ว');
+    onDataChange();
+    loadData();
   };
 
   const handleCopyText = async (text: string, label = 'ข้อความ') => {
@@ -1215,7 +929,7 @@ export default function OwnerDashboard({
     }
   };
 
-  const handleCreateCustomer = async (e: React.FormEvent) => {
+  const handleCreateCustomer = (e: React.FormEvent) => {
     e.preventDefault();
 
     const trimmedName = newCustomerName.trim();
@@ -1243,44 +957,36 @@ export default function OwnerDashboard({
       avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(trimmedName)}&background=f59e0b&color=111827`,
       currentPoints: 0,
       lifetimePoints: 0,
-      tier: 'Member',
+      tier: 'Silver',
       createdAt: new Date().toISOString(),
       shopIds: [selectedShopId],
     };
 
-    const auditLog = recordAuditLog({
-      action: 'customer_created_online',
-      actionLabel: 'เพิ่มสมาชิกแบบออนไลน์',
+    saveCustomers([...allCustomers, newCustomer]);
+    recordAuditLog({
+      action: 'customer_created',
+      actionLabel: 'เพิ่มสมาชิก',
       description: `เพิ่มสมาชิกใหม่ ${newCustomer.name}`,
       targetType: 'customer',
       targetId: newCustomer.id,
       customerId: newCustomer.id,
       customerName: newCustomer.name,
     });
-
-    try {
-      showStatus('กำลังเพิ่มสมาชิกออนไลน์...');
-      const payload = await postJson<{ customer?: Customer }>('/api/db/customers', { action: 'upsert', customer: newCustomer, auditLog });
-      const confirmedCustomer = payload.customer || newCustomer;
-      saveCustomers([...allCustomers.filter((customer) => customer.id !== confirmedCustomer.id), confirmedCustomer], { sync: false });
-      onDataChange();
-      loadData();
-      setSelectedSaleCustomerId(confirmedCustomer.id);
-      setNewCustomerName('');
-      setNewCustomerPhone('');
-      setNewCustomerLineName('');
-      setShowCustomerModal(false);
-      showStatus(`✓ เพิ่มสมาชิก ${confirmedCustomer.name} ลงฐานข้อมูลออนไลน์แล้ว`);
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'เพิ่มสมาชิกไม่สำเร็จ'}`);
-    }
+    setSelectedSaleCustomerId(newCustomer.id);
+    setNewCustomerName('');
+    setNewCustomerPhone('');
+    setNewCustomerLineName('');
+    setShowCustomerModal(false);
+    showStatus(`✓ เพิ่มสมาชิก ${newCustomer.name} ให้ร้านนี้เรียบร้อยแล้ว`);
+    onDataChange();
+    loadData();
   };
 
-  const handleRecordPurchase = async (e: React.FormEvent) => {
+  const handleRecordPurchase = (e: React.FormEvent) => {
     e.preventDefault();
-    if (recordPurchaseSaving) return;
 
-    const customer = customers.find((item) => item.id === selectedSaleCustomerId) || getCustomers().find((item) => item.id === selectedSaleCustomerId);
+    const allCustomers = getCustomers();
+    const customer = allCustomers.find((item) => item.id === selectedSaleCustomerId);
 
     if (!customer) {
       showStatus('❌ กรุณาเลือกสมาชิกก่อนบันทึกยอดซื้อ');
@@ -1300,49 +1006,59 @@ export default function OwnerDashboard({
     }
 
     if (calculatedSalePoints <= 0) {
-      showStatus(`❌ ยอดซื้อยังไม่ถึงกฎแจกแต้มของร้าน (${pointRuleSummary.minimumText} / ${pointRuleSummary.earnText})`);
+      showStatus(`❌ ยอดซื้อยังไม่ถึงอัตราแจกแต้มของร้าน (${pointsRate} บาท = 1 แต้ม)`);
       return;
     }
 
-    try {
-      setRecordPurchaseSaving(true);
-      showStatus('กำลังบันทึกยอดซื้อและแต้มลงฐานข้อมูลออนไลน์...');
+    const updatedCustomers = allCustomers.map((item) => {
+      if (item.id !== customer.id) return item;
 
-      const reason = `${saleReason || 'บันทึกยอดซื้อหน้าร้าน'}: ยอดซื้อ ${saleAmountValue.toLocaleString('th-TH')} บาท`;
-      const response = await fetch('/api/db/point-adjustment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerId: customer.id,
-          shopId: selectedShopId,
-          adjustmentType: 'add',
-          points: calculatedSalePoints,
-          reason,
-        }),
-      });
+      const nextLifetime = item.lifetimePoints + calculatedSalePoints;
+      const nextShopIds = Array.from(new Set([...(item.shopIds || []), selectedShopId]));
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || 'บันทึกยอดซื้อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
-      }
+      return {
+        ...item,
+        currentPoints: item.currentPoints + calculatedSalePoints,
+        lifetimePoints: nextLifetime,
+        tier: getTierForLifetime(nextLifetime),
+        shopIds: nextShopIds,
+      };
+    });
 
-      if (payload?.customer) {
-        saveCustomers([payload.customer, ...getCustomers().filter((item) => item.id !== payload.customer.id)], { sync: false });
-      }
-      if (payload?.transaction) {
-        saveTransactions([payload.transaction, ...getTransactions().filter((item) => item.id !== payload.transaction.id)], { sync: false });
-      }
-      showStatus(`✓ บันทึกยอดซื้อออนไลน์สำเร็จ เพิ่ม ${calculatedSalePoints.toLocaleString('th-TH')} แต้มให้ ${customer.name}`);
-      onDataChange();
-      loadData();
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกยอดซื้อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'}`);
-    } finally {
-      setRecordPurchaseSaving(false);
-    }
+    saveCustomers(updatedCustomers);
+
+    const newTx: Transaction = {
+      id: `tx_${Date.now()}`,
+      userId: customer.id,
+      userName: customer.name,
+      userPhone: customer.phone,
+      shopId: selectedShopId,
+      shopName: activeShopDetail?.name || selectedShopId,
+      type: 'earn',
+      points: calculatedSalePoints,
+      description: `${saleReason || 'บันทึกยอดซื้อหน้าร้าน'}: ยอดซื้อ ${saleAmountValue.toLocaleString('th-TH')} บาท`,
+      status: 'completed',
+      createdAt: new Date().toISOString(),
+    };
+
+    saveTransactions([newTx, ...getTransactions()]);
+    recordAuditLog({
+      action: 'purchase_points_recorded',
+      actionLabel: 'บันทึกยอดซื้อ / ให้แต้ม',
+      description: `บันทึกยอดซื้อ ${saleAmountValue.toLocaleString('th-TH')} บาท และให้ +${calculatedSalePoints.toLocaleString('th-TH')} แต้มแก่ ${customer.name}`,
+      targetType: 'transaction',
+      targetId: newTx.id,
+      customerId: customer.id,
+      customerName: customer.name,
+      points: calculatedSalePoints,
+      metadata: { saleAmount: saleAmountValue, pointsRate },
+    });
+    showStatus(`✓ บันทึกยอดซื้อสำเร็จ: +${calculatedSalePoints} แต้มให้ ${customer.name}`);
+    onDataChange();
+    loadData();
   };
 
-  const handleToggleRewardAvailability = async (rewardId: string) => {
+  const handleToggleRewardAvailability = (rewardId: string) => {
     const allRewards = getRewards();
     const reward = allRewards.find((item) => item.id === rewardId && item.shopId === selectedShopId);
     if (!reward) return;
@@ -1354,9 +1070,8 @@ export default function OwnerDashboard({
       return item;
     });
 
-    const nextReward = updatedRewards.find((item) => item.id === rewardId && item.shopId === selectedShopId);
-    if (!nextReward) return;
-    const auditLog = recordAuditLog({
+    saveRewards(updatedRewards);
+    recordAuditLog({
       action: reward.isAvailable ? 'reward_hidden' : 'reward_shown',
       actionLabel: reward.isAvailable ? 'ซ่อนของรางวัล' : 'เปิดแสดงของรางวัล',
       description: `${reward.isAvailable ? 'ปิดการแสดง' : 'เปิดให้ลูกค้าเห็น'}ของรางวัล “${reward.name}”`,
@@ -1364,20 +1079,13 @@ export default function OwnerDashboard({
       targetId: reward.id,
       status: reward.isAvailable ? 'warning' : 'success',
     });
-    try {
-      showStatus('กำลังบันทึกสถานะของรางวัลออนไลน์...');
-      await postJson('/api/db/rewards', { action: 'upsert', reward: nextReward, auditLog });
-      saveRewards(updatedRewards, { sync: false });
-      onDataChange();
-      loadData();
-      showStatus(reward.isAvailable ? '✓ ปิดการแสดงของรางวัลนี้แล้ว' : '✓ เปิดให้ลูกค้าเห็นของรางวัลนี้แล้ว');
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกสถานะของรางวัลไม่สำเร็จ'}`);
-    }
+    showStatus(reward.isAvailable ? '✓ ปิดการแสดงของรางวัลนี้แล้ว' : '✓ เปิดให้ลูกค้าเห็นของรางวัลนี้แล้ว');
+    onDataChange();
+    loadData();
   };
 
   // 1. APPROVE CUSTOMER REWARD CLAIM
-  const handleApproveRedeem = async (txId: string, options?: { skipConfirm?: boolean; closeModal?: boolean }) => {
+  const handleApproveRedeem = (txId: string) => {
     const allTxs = getTransactions();
     const tx = allTxs.find(t => t.id === txId && t.shopId === selectedShopId);
 
@@ -1396,7 +1104,8 @@ export default function OwnerDashboard({
       return;
     }
 
-    const matchedReward = getRewards().find(r => r.id === tx.rewardId && r.shopId === selectedShopId);
+    const allRewards = getRewards();
+    const matchedReward = allRewards.find(r => r.id === tx.rewardId && r.shopId === selectedShopId);
     const rewardName = matchedReward?.name || tx.description.replace('ขอแลกรางวัล: ', '');
 
     if (matchedReward && matchedReward.stock <= 0) {
@@ -1404,47 +1113,52 @@ export default function OwnerDashboard({
       return;
     }
 
-    if (!options?.skipConfirm) {
-      const confirmed = confirm(`ยืนยันอนุมัติรายการแลกรางวัลนี้ใช่ไหม?\n\nลูกค้า: ${tx.userName}\nของรางวัล: ${rewardName}\nใช้แต้ม: ${tx.points.toLocaleString('th-TH')} แต้ม\n\nหลังอนุมัติ ระบบจะลดสต็อกของรางวัล 1 ชิ้น`);
-      if (!confirmed) return;
-    }
+    const confirmed = confirm(`ยืนยันอนุมัติรายการแลกรางวัลนี้ใช่ไหม?
 
-    setProcessingRedeemId(txId);
-    try {
-      const response = await fetch('/api/db/reward-approval', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transactionId: txId,
-          shopId: selectedShopId,
-          action: 'approve',
-        }),
+ลูกค้า: ${tx.userName}
+ของรางวัล: ${rewardName}
+ใช้แต้ม: ${tx.points.toLocaleString('th-TH')} แต้ม
+
+หลังอนุมัติ ระบบจะลดสต็อกของรางวัล 1 ชิ้น`);
+    if (!confirmed) return;
+
+    if (matchedReward) {
+      const updatedRewards = allRewards.map(r => {
+        if (r.id === tx.rewardId && r.shopId === selectedShopId) {
+          return { ...r, stock: Math.max(0, r.stock - 1) };
+        }
+        return r;
       });
-
-      const payload = await response.json().catch(() => null) as { ok?: boolean; message?: string; transaction?: Transaction; reward?: Reward } | null;
-      if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || 'อนุมัติรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
-      }
-
-      if (payload?.transaction) {
-        saveTransactions(getTransactions().map((item) => item.id === payload.transaction!.id ? payload.transaction! : item), { sync: false });
-      }
-      if (payload?.reward) {
-        saveRewards(getRewards().map((item) => item.id === payload.reward!.id ? payload.reward! : item), { sync: false });
-      }
-      showStatus(`✓ อนุมัติให้ของรางวัล “${payload.reward?.name || rewardName}” กับ ${tx.userName} แล้ว`);
-      if (options?.closeModal) setReviewRedeemId(null);
-      onDataChange();
-      loadData();
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'อนุมัติรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'}`);
-    } finally {
-      setProcessingRedeemId(null);
+      saveRewards(updatedRewards);
     }
+
+    const updatedTxs = allTxs.map(t => {
+      if (t.id === txId && t.shopId === selectedShopId) {
+        return { ...t, status: 'completed' as const };
+      }
+      return t;
+    });
+    saveTransactions(updatedTxs);
+
+    recordAuditLog({
+      action: 'reward_redeem_approved',
+      actionLabel: 'อนุมัติรางวัล',
+      description: `อนุมัติของรางวัล “${rewardName}” ให้ ${tx.userName}`,
+      targetType: 'transaction',
+      targetId: tx.id,
+      customerId: tx.userId,
+      customerName: tx.userName,
+      points: -Math.abs(tx.points),
+      metadata: { rewardId: tx.rewardId, rewardName },
+    });
+
+    showStatus(`✓ อนุมัติให้ของรางวัล “${rewardName}” กับ ${tx.userName} แล้ว`);
+    onDataChange();
+    loadData();
   };
 
   // 2. REJECT CUSTOMER REWARD CLAIM (refunds points)
-  const handleRejectRedeem = async (txId: string, options?: { skipConfirm?: boolean; closeModal?: boolean }) => {
+  const handleRejectRedeem = (txId: string) => {
     const allTxs = getTransactions();
     const tx = allTxs.find(t => t.id === txId && t.shopId === selectedShopId);
 
@@ -1459,168 +1173,114 @@ export default function OwnerDashboard({
     }
 
     const rewardName = tx.description.replace('ขอแลกรางวัล: ', '');
-    if (!options?.skipConfirm) {
-      const confirmed = confirm(`ยืนยันปฏิเสธรายการแลกรางวัลนี้ใช่ไหม?\n\nลูกค้า: ${tx.userName}\nของรางวัล: ${rewardName}\nแต้มที่จะคืน: ${tx.points.toLocaleString('th-TH')} แต้ม\n\nหลังปฏิเสธ ระบบจะคืนแต้มให้ลูกค้าทันที`);
-      if (!confirmed) return;
-    }
+    const confirmed = confirm(`ยืนยันปฏิเสธรายการแลกรางวัลนี้ใช่ไหม?
 
-    setProcessingRedeemId(txId);
-    try {
-      const response = await fetch('/api/db/reward-approval', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transactionId: txId,
-          shopId: selectedShopId,
-          action: 'reject',
-        }),
-      });
+ลูกค้า: ${tx.userName}
+ของรางวัล: ${rewardName}
+แต้มที่จะคืน: ${tx.points.toLocaleString('th-TH')} แต้ม
 
-      const payload = await response.json().catch(() => null) as { ok?: boolean; message?: string; transaction?: Transaction; customer?: Customer } | null;
-      if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || 'ปฏิเสธรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+หลังปฏิเสธ ระบบจะคืนแต้มให้ลูกค้าทันที`);
+    if (!confirmed) return;
+
+    const allCustomers = getCustomers();
+    const updatedCustomers = allCustomers.map(c => {
+      if (c.id === tx.userId) {
+        return { ...c, currentPoints: c.currentPoints + tx.points };
       }
+      return c;
+    });
+    saveCustomers(updatedCustomers);
 
-      if (payload?.transaction) {
-        saveTransactions(getTransactions().map((item) => item.id === payload.transaction!.id ? payload.transaction! : item), { sync: false });
+    const updatedTxs = allTxs.map(t => {
+      if (t.id === txId && t.shopId === selectedShopId) {
+        const alreadyHasRefundNote = t.description.includes('คืนแต้มแล้ว');
+        return {
+          ...t,
+          status: 'rejected' as const,
+          description: alreadyHasRefundNote ? t.description : `${t.description} (ร้านปฏิเสธ - คืนแต้มแล้ว)`,
+        };
       }
-      if (payload?.customer) {
-        saveCustomers([payload.customer, ...getCustomers().filter((item) => item.id !== payload.customer!.id)], { sync: false });
-      }
-      showStatus(`✕ ปฏิเสธรายการแล้ว และคืน ${tx.points.toLocaleString('th-TH')} แต้มให้ ${tx.userName} แล้ว`);
-      if (options?.closeModal) setReviewRedeemId(null);
-      onDataChange();
-      loadData();
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'ปฏิเสธรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'}`);
-    } finally {
-      setProcessingRedeemId(null);
-    }
+      return t;
+    });
+    saveTransactions(updatedTxs);
+
+    recordAuditLog({
+      action: 'reward_redeem_rejected',
+      actionLabel: 'ปฏิเสธรางวัล / คืนแต้ม',
+      description: `ปฏิเสธรายการแลก “${rewardName}” และคืน ${tx.points.toLocaleString('th-TH')} แต้มให้ ${tx.userName}`,
+      targetType: 'transaction',
+      targetId: tx.id,
+      customerId: tx.userId,
+      customerName: tx.userName,
+      points: tx.points,
+      status: 'warning',
+    });
+
+    showStatus(`✕ ปฏิเสธรายการแล้ว และคืน ${tx.points.toLocaleString('th-TH')} แต้มให้ ${tx.userName} แล้ว`);
+    onDataChange();
+    loadData();
   };
 
-  const getCleanRewardName = (tx?: Transaction | null) => {
-    if (!tx) return 'ของรางวัล';
-    return tx.description.replace('ขอแลกรางวัล: ', '').replace(' (ร้านปฏิเสธ - คืนแต้มแล้ว)', '') || 'ของรางวัล';
-  };
-
-  const extractRedeemIdFromText = (rawText: string) => {
-    const trimmed = rawText.trim();
-    if (!trimmed) return '';
-
-    try {
-      const parsedUrl = new URL(trimmed);
-      const redeemId = parsedUrl.searchParams.get('redeem');
-      if (redeemId) return redeemId.trim();
-
-      const liffState = parsedUrl.searchParams.get('liff.state');
-      if (liffState) {
-        const decodedState = decodeURIComponent(liffState);
-        const queryStart = decodedState.indexOf('?');
-        const queryText = decodedState.startsWith('?') ? decodedState.slice(1) : queryStart >= 0 ? decodedState.slice(queryStart + 1) : decodedState;
-        const stateParams = new URLSearchParams(queryText);
-        const stateRedeemId = stateParams.get('redeem');
-        if (stateRedeemId) return stateRedeemId.trim();
-      }
-    } catch {
-      // Not a URL. Treat it as a raw transaction id below.
-    }
-
-    const directMatch = trimmed.match(/tx_[A-Za-z0-9_-]+/);
-    if (directMatch?.[0]) return directMatch[0];
-    return trimmed;
-  };
-
-  const findRedeemTransactionInCache = (txId: string) => {
-    return getTransactions().find((item) => item.id === txId && item.shopId === selectedShopId && item.type === 'redeem');
-  };
-
-  const openRedeemReviewById = async (txId: string, source: 'link' | 'manual' | 'list' = 'manual') => {
-    const cleanTxId = txId.trim();
-
-    if (!cleanTxId) {
-      setRedeemReviewError('กรุณาวางลิงก์รับรางวัล หรือรหัสรายการแลกรางวัลก่อนตรวจสอบ');
-      return;
-    }
-
-    let tx = findRedeemTransactionInCache(cleanTxId);
-
-    // Phase 7B: reward requests are written to Neon first. If the merchant page
-    // has been open since before the customer redeemed, refresh from Neon once
-    // before declaring the link invalid.
-    if (!tx) {
-      try {
-        setRedeemReviewError(null);
-        await refreshFromNeon();
-        tx = findRedeemTransactionInCache(cleanTxId);
-      } catch {
-        // The invalid-link message below is clearer for the merchant than a raw network error.
-      }
-    }
-
-    if (!tx) {
-      setReviewRedeemId(null);
-      setRedeemReviewError('ลิงก์ไม่ถูกต้อง หรือไม่พบรายการแลกรางวัลของร้านนี้ กรุณาตรวจสอบว่าลูกค้าส่งลิงก์ล่าสุดมาให้ถูกต้อง');
-      recordAuditLog({
-        action: 'reward_redeem_link_invalid',
-        actionLabel: 'ตรวจลิงก์รับรางวัลไม่สำเร็จ',
-        description: `ตรวจลิงก์รับรางวัลไม่พบรายการ (${cleanTxId})`,
-        targetType: 'transaction',
-        targetId: cleanTxId,
-        status: 'warning',
-        metadata: { source },
-      });
-      return;
-    }
-
-    setRedeemReviewError(null);
-    setReviewRedeemId(tx.id);
-    setRedeemVerifyInput(source === 'manual' ? redeemVerifyInput : getMerchantRedeemUrlForTransaction(tx));
-    setActiveTab('approvals');
-    setApprovalsSubTab(tx.status === 'pending' ? 'queue' : 'history');
-  };
-
-  const handleVerifyRedeemLink = () => {
-    const txId = extractRedeemIdFromText(redeemVerifyInput);
-    void openRedeemReviewById(txId, 'manual');
-  };
-
-  const getMerchantRedeemUrlForTransaction = (tx: Transaction) => {
-    const slug = shopIdToSlug(tx.shopId || selectedShopId);
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    return `${origin}/merchant/${slug}?merchantTab=approvals&redeem=${encodeURIComponent(tx.id)}`;
-  };
-
-  const closeRedeemReviewModal = () => {
-    setReviewRedeemId(null);
-    setRedeemReviewError(null);
-  };
-
-  // 3. OPEN GENERATED LINK TEST WITHOUT LOCAL POINT MUTATION
+  // 3. GENERATED LINK SIMULATION (Adds points to current user context immediately!)
   const simulateCustomerScanned = () => {
-    if (!activeCoupon?.code || !generatedQRValue) {
-      showStatus('❌ กรุณาสร้างลิงก์รับแต้มก่อนเปิดลิงก์ทดสอบ');
+    const allCustomers = getCustomers();
+    const scopedCustomers = filterCustomersByShop(allCustomers, selectedShopId, getTransactions(), true);
+    // Pick the first member scoped to the active shop only.
+    const victim = scopedCustomers[0];
+    if (!victim) {
+      showStatus('❌ ยังไม่มีลูกค้าให้ทดสอบรับแต้ม');
       return;
     }
 
-    if (onTriggerSimulatedLink) {
-      onTriggerSimulatedLink(activeCoupon.code);
-      showStatus('✓ เปิดหน้าลูกค้าพร้อมรหัสรับแต้มแล้ว ให้กดยืนยันเพื่อบันทึกออนไลน์');
-      return;
-    }
+    const updatedCusts = allCustomers.map(c => {
+      if (c.id === victim.id) {
+        const newPts = c.currentPoints + calculatedGeneratePoints;
+        const newLifetime = c.lifetimePoints + calculatedGeneratePoints;
+        const newTier = getTierForLifetime(newLifetime);
 
-    if (typeof window !== 'undefined') {
-      window.open(generatedQRValue, '_blank', 'noopener,noreferrer');
-      showStatus('✓ เปิดลิงก์ทดสอบแล้ว ให้ลูกค้ากดยืนยันเพื่อบันทึกออนไลน์');
-    }
+        return { ...c, currentPoints: newPts, lifetimePoints: newLifetime, tier: newTier, shopIds: Array.from(new Set([...(c.shopIds || []), selectedShopId])) };
+      }
+      return c;
+    });
+    saveCustomers(updatedCusts);
+
+    const newTx: Transaction = {
+      id: `tx_${Date.now()}`,
+      userId: victim.id,
+      userName: victim.name,
+      userPhone: victim.phone,
+      shopId: selectedShopId,
+      shopName: shops.find(s => s.id === selectedShopId)?.name || 'Koffee Craft',
+      type: 'earn',
+      points: calculatedGeneratePoints,
+      description: `รับแต้มจากลิงก์ของร้าน: ${generateDesc || `ยอดซื้อ ${Number(generatePurchaseAmount || 0).toLocaleString('th-TH')} บาท`}`,
+      status: 'completed',
+      createdAt: new Date().toISOString()
+    };
+
+    saveTransactions([newTx, ...getTransactions()]);
+    recordAuditLog({
+      action: 'test_points_claimed',
+      actionLabel: 'ทดสอบรับแต้ม',
+      description: `ทดสอบรับแต้ม +${calculatedGeneratePoints.toLocaleString('th-TH')} ให้ลูกค้า ${victim.name}`,
+      targetType: 'transaction',
+      targetId: newTx.id,
+      customerId: victim.id,
+      customerName: victim.name,
+      points: calculatedGeneratePoints,
+      metadata: { source: 'merchant-simulation' },
+    });
+    showStatus(`✓ ทดสอบรับแต้มสำเร็จ มอบ +${calculatedGeneratePoints} ให้ลูกค้า ${victim.name} เรียบร้อยแล้ว`);
+    onDataChange();
+    loadData();
   };
-
-
 
   // 4. MANUAL ADJUST POINTS FOR สมาชิก
-  const handleManualAdjustPoints = async (e: React.FormEvent) => {
+  const handleManualAdjustPoints = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedCustForAdjust || adjustSaving) return;
+    if (!selectedCustForAdjust) return;
 
+    const allCustomers = getCustomers();
     const parsedAdjustPoints = parsePositiveIntegerInput(adjustPoints, 'จำนวนแต้ม');
     if (parsedAdjustPoints.error || parsedAdjustPoints.value === null) {
       showStatus(parsedAdjustPoints.error);
@@ -1629,49 +1289,57 @@ export default function OwnerDashboard({
 
     const adjustPointsValue = parsedAdjustPoints.value;
     const finalAmount = adjustType === 'add' ? adjustPointsValue : -adjustPointsValue;
-
-    // Quick local validation for better UX. Neon validates again before writing.
+    
+    // Validate deduction
     if (adjustType === 'deduct' && selectedCustForAdjust.currentPoints < adjustPointsValue) {
       showStatus('❌ แต้มไม่พอสำหรับการหักรายการนี้');
       return;
     }
 
-    try {
-      setAdjustSaving(true);
-      showStatus('กำลังบันทึกการปรับแต้มลงฐานข้อมูลออนไลน์...');
+    const updatedCusts = allCustomers.map(c => {
+      if (c.id === selectedCustForAdjust.id) {
+        const finalPts = Math.max(0, c.currentPoints + finalAmount);
+        const finalLifetime = Math.max(0, c.lifetimePoints + finalAmount);
+        const newTier = getTierForLifetime(finalLifetime);
 
-      const response = await fetch('/api/db/point-adjustment', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerId: selectedCustForAdjust.id,
-          shopId: selectedShopId,
-          adjustmentType: adjustType,
-          points: adjustPointsValue,
-          reason: adjustReason,
-        }),
-      });
+        return { ...c, currentPoints: finalPts, lifetimePoints: finalLifetime, tier: newTier, shopIds: Array.from(new Set([...(c.shopIds || []), selectedShopId])) };
+      }
+      return c;
+    });
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload?.ok) {
-        throw new Error(payload?.message || 'ปรับแต้มไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
-      }
+    saveCustomers(updatedCusts);
 
-      if (payload?.customer) {
-        saveCustomers([payload.customer, ...getCustomers().filter((item) => item.id !== payload.customer.id)], { sync: false });
-      }
-      if (payload?.transaction) {
-        saveTransactions([payload.transaction, ...getTransactions().filter((item) => item.id !== payload.transaction.id)], { sync: false });
-      }
-      setSelectedCustForAdjust(null);
-      showStatus(`✓ ปรับแต้มลูกค้า ${selectedCustForAdjust.name} จำนวน ${finalAmount > 0 ? '+' : ''}${finalAmount} แต้ม สำเร็จและบันทึกออนไลน์แล้ว`);
-      onDataChange();
-      loadData();
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'ปรับแต้มไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'}`);
-    } finally {
-      setAdjustSaving(false);
-    }
+    // Record system adjustment transaction
+    const newTx: Transaction = {
+      id: `tx_${Date.now()}`,
+      userId: selectedCustForAdjust.id,
+      userName: selectedCustForAdjust.name,
+      userPhone: selectedCustForAdjust.phone,
+      shopId: selectedShopId,
+      shopName: shops.find(s => s.id === selectedShopId)?.name || 'Koffee Craft',
+      type: adjustType === 'add' ? 'earn' : 'redeem',
+      points: adjustPointsValue,
+      description: `ปรับแต้มโดยร้าน: ${adjustReason}`,
+      status: 'completed',
+      createdAt: new Date().toISOString()
+    };
+
+    saveTransactions([newTx, ...getTransactions()]);
+    recordAuditLog({
+      action: adjustType === 'add' ? 'manual_points_added' : 'manual_points_deducted',
+      actionLabel: adjustType === 'add' ? 'ปรับเพิ่มแต้ม' : 'ปรับลดแต้ม',
+      description: `${adjustType === 'add' ? 'เพิ่ม' : 'ลด'}แต้ม ${adjustPointsValue.toLocaleString('th-TH')} แต้ม ให้ ${selectedCustForAdjust.name}: ${adjustReason}`,
+      targetType: 'transaction',
+      targetId: newTx.id,
+      customerId: selectedCustForAdjust.id,
+      customerName: selectedCustForAdjust.name,
+      points: finalAmount,
+      status: adjustType === 'add' ? 'success' : 'warning',
+    });
+    setSelectedCustForAdjust(null);
+    showStatus(`✓ ปรับแต้มลูกค้า ${selectedCustForAdjust.name} จำนวน ${finalAmount > 0 ? '+' : ''}${finalAmount} แต้ม สำเร็จ!`);
+    onDataChange();
+    loadData();
   };
 
   // 5. MANAGING REWARDS (Add/Edit)
@@ -1682,7 +1350,6 @@ export default function OwnerDashboard({
     setNewRewStock('20');
     setNewRewDesc('');
     setNewRewImage('');
-    setNewRewStorageKey('');
     setShowRewardModal(true);
   };
 
@@ -1692,12 +1359,11 @@ export default function OwnerDashboard({
     setNewRewPoints(String(reward.pointsCost));
     setNewRewStock(String(reward.stock));
     setNewRewDesc(reward.description);
-    setNewRewImage(reward.imageUrl || reward.image);
-    setNewRewStorageKey(reward.imageStorageKey || '');
+    setNewRewImage(reward.image);
     setShowRewardModal(true);
   };
 
-  const saveRewardForm = async (e: React.FormEvent) => {
+  const saveRewardForm = (e: React.FormEvent) => {
     e.preventDefault();
     const allRewards = getRewards();
 
@@ -1723,53 +1389,53 @@ export default function OwnerDashboard({
     const rewardStockValue = parsedRewardStock.value;
     const rewardDescription = newRewDesc.trim() || 'ไม่มีเงื่อนไขเพิ่มเติม';
 
-    const rewardToPersist: Reward = editingReward
-      ? {
-          ...editingReward,
-          name: trimmedRewardName,
-          pointsCost: rewardPointsValue,
-          stock: rewardStockValue,
-          description: rewardDescription,
-          image: newRewImage || defaultRewardImage,
-          imageUrl: newRewImage && newRewImage.startsWith('http') ? newRewImage : undefined,
-          imageStorageKey: newRewStorageKey || undefined,
+    if (editingReward) {
+      // Edit
+      const updated = allRewards.map(r => {
+        if (r.id === editingReward.id) {
+          return {
+            ...r,
+            name: trimmedRewardName,
+            pointsCost: rewardPointsValue,
+            stock: rewardStockValue,
+            description: rewardDescription,
+            image: newRewImage || defaultRewardImage
+          };
         }
-      : {
-          id: `rew_${Date.now()}`,
-          name: trimmedRewardName,
-          pointsCost: rewardPointsValue,
-          stock: rewardStockValue,
-          description: rewardDescription,
-          image: newRewImage || defaultRewardImage,
-          imageUrl: newRewImage && newRewImage.startsWith('http') ? newRewImage : undefined,
-          imageStorageKey: newRewStorageKey || undefined,
-          isAvailable: true,
-          shopId: selectedShopId,
-        };
-
-    const auditLog = recordAuditLog({
-      action: editingReward ? 'reward_updated' : 'reward_created',
-      actionLabel: editingReward ? 'แก้ไขของรางวัล' : 'เพิ่มของรางวัล',
-      description: editingReward ? `แก้ไขของรางวัล “${trimmedRewardName}”` : `เพิ่มของรางวัลใหม่ “${rewardToPersist.name}”`,
-      targetType: 'reward',
-      targetId: rewardToPersist.id,
-      metadata: { pointsCost: rewardPointsValue, stock: rewardStockValue },
-    });
-
-    try {
-      showStatus(editingReward ? 'กำลังบันทึกของรางวัลออนไลน์...' : 'กำลังเพิ่มของรางวัลออนไลน์...');
-      await postJson('/api/db/rewards', { action: 'upsert', reward: rewardToPersist, auditLog });
-      if (editingReward) {
-        saveRewards(allRewards.map((reward) => reward.id === rewardToPersist.id ? rewardToPersist : reward), { sync: false });
-      } else {
-        saveRewards([...allRewards, rewardToPersist], { sync: false });
-      }
-      onDataChange();
-      loadData();
-      showStatus(editingReward ? '✓ อัปเดตรายการของรางวัลออนไลน์สำเร็จ' : '✓ เพิ่มของรางวัลออนไลน์สำเร็จ');
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกของรางวัลไม่สำเร็จ'}`);
-      return;
+        return r;
+      });
+      saveRewards(updated);
+      recordAuditLog({
+        action: 'reward_updated',
+        actionLabel: 'แก้ไขของรางวัล',
+        description: `แก้ไขของรางวัล “${trimmedRewardName}”`,
+        targetType: 'reward',
+        targetId: editingReward.id,
+        metadata: { pointsCost: rewardPointsValue, stock: rewardStockValue },
+      });
+      showStatus('✓ อัปเดตรายการสินค้าของรางวัลสำเร็จ');
+    } else {
+      // Add
+      const newRew: Reward = {
+        id: `rew_${Date.now()}`,
+        name: trimmedRewardName,
+        pointsCost: rewardPointsValue,
+        stock: rewardStockValue,
+        description: rewardDescription,
+        image: newRewImage || defaultRewardImage,
+        isAvailable: true,
+        shopId: selectedShopId
+      };
+      saveRewards([...allRewards, newRew]);
+      recordAuditLog({
+        action: 'reward_created',
+        actionLabel: 'เพิ่มของรางวัล',
+        description: `เพิ่มของรางวัลใหม่ “${newRew.name}”`,
+        targetType: 'reward',
+        targetId: newRew.id,
+        metadata: { pointsCost: rewardPointsValue, stock: rewardStockValue },
+      });
+      showStatus('✓ บันทึกเปิดตัวสินค้าของรางวัลใหม่สำเร็จ');
     }
 
     setShowRewardModal(false);
@@ -1778,10 +1444,12 @@ export default function OwnerDashboard({
     loadData();
   };
 
-  const handleDeleteReward = async (rewId: string) => {
+  const handleDeleteReward = (rewId: string) => {
     if (confirm('คุณต้องการยกเลิกและลบบาร์นี้ถาวรจากฐานสตรีมมิ่งเลยใช่หรือไม่?')) {
       const rewardToDelete = getRewards().find(r => r.id === rewId);
-      const auditLog = recordAuditLog({
+      const filtered = getRewards().filter(r => r.id !== rewId);
+      saveRewards(filtered);
+      recordAuditLog({
         action: 'reward_deleted',
         actionLabel: 'ลบของรางวัล',
         description: `ลบของรางวัล “${rewardToDelete?.name || rewId}”`,
@@ -1789,23 +1457,18 @@ export default function OwnerDashboard({
         targetId: rewId,
         status: 'danger',
       });
-      try {
-        showStatus('กำลังลบของรางวัลออนไลน์...');
-        await postJson('/api/db/rewards', { action: 'delete', rewardId: rewId, shopId: selectedShopId, auditLog });
-        saveRewards(getRewards().filter((reward) => !(reward.id === rewId && reward.shopId === selectedShopId)), { sync: false });
-        onDataChange();
-        loadData();
-        showStatus('✓ ลบสินค้าของรางวัลจากฐานข้อมูลแล้ว');
-      } catch (error) {
-        showStatus(`❌ ${error instanceof Error ? error.message : 'ลบของรางวัลไม่สำเร็จ'}`);
-      }
+      showStatus('✓ ลบสินค้าของรางวัลเรียบร้อยแล้ว');
+      onDataChange();
+      loadData();
     }
   };
 
-  const handleDeleteBanner = async (bannerId: string) => {
+  const handleDeleteBanner = (bannerId: string) => {
     if (confirm('คุณแน่ใจต้องการลบแคมเปญโปรโมชั่นนี้ออกจากการแสดงผลอย่างถาวรใช่หรือไม่?')) {
       const bannerToDelete = getBanners().find(b => b.id === bannerId);
-      const auditLog = recordAuditLog({
+      const filtered = getBanners().filter(b => b.id !== bannerId);
+      saveBanners(filtered);
+      recordAuditLog({
         action: 'promotion_deleted',
         actionLabel: 'ลบโปรโมชัน',
         description: `ลบโปรโมชัน “${bannerToDelete?.title || bannerId}”`,
@@ -1813,25 +1476,20 @@ export default function OwnerDashboard({
         targetId: bannerId,
         status: 'danger',
       });
-      try {
-        showStatus('กำลังลบโปรโมชันออนไลน์...');
-        await postJson('/api/db/banners', { action: 'delete', bannerId, shopId: selectedShopId, auditLog });
-        saveBanners(getBanners().filter((banner) => !(banner.id === bannerId && banner.shopId === selectedShopId)), { sync: false });
-        onDataChange();
-        loadData();
-        showStatus('✓ ลบแคมเปญโปรโมชั่นจากฐานข้อมูลแล้ว');
-      } catch (error) {
-        showStatus(`❌ ${error instanceof Error ? error.message : 'ลบโปรโมชันไม่สำเร็จ'}`);
-      }
+      showStatus('✓ ลบแคมเปญโปรโมชั่นสำเร็จ');
+      onDataChange();
+      loadData();
     }
   };
 
-  const handleDeleteTransactionPermanently = async (txId: string) => {
+  const handleDeleteTransactionPermanently = (txId: string) => {
     if (confirm('คุณต้องการลบรายงานประวัติประวัติธุรกรรมนี้ถาวรจากฐานสตรีมมิ่งเลยใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้')) {
       const txToDelete = getTransactions().find(t => t.id === txId);
-      const auditLog = recordAuditLog({
-        action: 'transaction_deleted_online',
-        actionLabel: 'ลบประวัติธุรกรรมแบบออนไลน์',
+      const filtered = getTransactions().filter(t => t.id !== txId);
+      saveTransactions(filtered);
+      recordAuditLog({
+        action: 'transaction_deleted',
+        actionLabel: 'ลบประวัติธุรกรรม',
         description: `ลบประวัติธุรกรรม ${txId}${txToDelete ? ` (${txToDelete.description})` : ''}`,
         targetType: 'transaction',
         targetId: txId,
@@ -1840,21 +1498,13 @@ export default function OwnerDashboard({
         points: txToDelete?.type === 'earn' ? txToDelete.points : txToDelete ? -Math.abs(txToDelete.points) : undefined,
         status: 'danger',
       });
-
-      try {
-        showStatus('กำลังลบประวัติธุรกรรมออนไลน์...');
-        await postJson('/api/db/transactions', { action: 'delete', transactionId: txId, shopId: selectedShopId, auditLog });
-        saveTransactions(getTransactions().filter((transaction) => !(transaction.id === txId && transaction.shopId === selectedShopId)), { sync: false });
-        onDataChange();
-        loadData();
-        showStatus('✓ ลบข้อมูลประวัติธุรกรรมจากฐานข้อมูลออนไลน์แล้ว');
-      } catch (error) {
-        showStatus(`❌ ${error instanceof Error ? error.message : 'ลบประวัติธุรกรรมไม่สำเร็จ'}`);
-      }
+      showStatus('✓ ลบข้อมูลประวัติธุรกรรมถาวรเรียบร้อยแล้ว');
+      onDataChange();
+      loadData();
     }
   };
 
-  const handleCreatePromoBanner = async (e: React.FormEvent) => {
+  const handleCreatePromoBanner = (e: React.FormEvent) => {
     e.preventDefault();
     const allBanners = getBanners();
     const newBan: PromoBanner = {
@@ -1862,13 +1512,12 @@ export default function OwnerDashboard({
       title: newBannerTitle,
       description: newBannerDesc || 'โปรโมชันพิเศษสำหรับสมาชิก',
       image: newBannerImage || 'https://images.unsplash.com/photo-1517142089942-ba376ce32a2e?w=400',
-      imageUrl: newBannerImage && newBannerImage.startsWith('http') ? newBannerImage : undefined,
-      imageStorageKey: newBannerStorageKey || undefined,
       expirationDate: new Date(newBannerExp || '2026-06-30').toISOString(),
       shopId: selectedShopId,
       isAd: false
     };
-    const auditLog = recordAuditLog({
+    saveBanners([...allBanners, newBan]);
+    recordAuditLog({
       action: 'promotion_created',
       actionLabel: 'สร้างโปรโมชัน',
       description: `สร้างโปรโมชัน “${newBan.title}”`,
@@ -1876,23 +1525,17 @@ export default function OwnerDashboard({
       targetId: newBan.id,
       metadata: { expirationDate: newBan.expirationDate },
     });
+    showStatus('✓ สร้างโปรโมชันเรียบร้อยแล้ว');
+    setShowBannerModal(false);
+    
+    // Reset states
+    setNewBannerTitle('');
+    setNewBannerDesc('');
+    setNewBannerImage('');
+    setNewBannerExp('2026-06-30');
 
-    try {
-      showStatus('กำลังสร้างโปรโมชันออนไลน์...');
-      await postJson('/api/db/banners', { action: 'upsert', banner: newBan, auditLog });
-      saveBanners([...allBanners, newBan], { sync: false });
-      onDataChange();
-      loadData();
-      showStatus('✓ สร้างโปรโมชันออนไลน์เรียบร้อยแล้ว');
-      setShowBannerModal(false);
-      setNewBannerTitle('');
-      setNewBannerDesc('');
-      setNewBannerImage('');
-      setNewBannerStorageKey('');
-      setNewBannerExp('2026-06-30');
-    } catch (error) {
-      showStatus(`❌ ${error instanceof Error ? error.message : 'สร้างโปรโมชันไม่สำเร็จ'}`);
-    }
+    onDataChange();
+    loadData();
   };
 
   const rewardRedeems = transactions
@@ -1902,17 +1545,8 @@ export default function OwnerDashboard({
   const completedRedeems = rewardRedeems.filter(t => t.status === 'completed');
   const rejectedRedeems = rewardRedeems.filter(t => t.status === 'rejected');
   const pendingRedeemPoints = pendingRedeems.reduce((sum, tx) => sum + tx.points, 0);
-  const reviewRedeemTx = reviewRedeemId ? transactions.find((tx) => tx.id === reviewRedeemId && tx.type === 'redeem') || getTransactions().find((tx) => tx.id === reviewRedeemId && tx.shopId === selectedShopId && tx.type === 'redeem') : null;
-  const reviewRedeemReward = reviewRedeemTx?.rewardId ? rewards.find((reward) => reward.id === reviewRedeemTx.rewardId) || getRewards().find((reward) => reward.id === reviewRedeemTx.rewardId && reward.shopId === selectedShopId) : null;
-  const reviewRedeemCustomer = reviewRedeemTx ? customers.find((customer) => customer.id === reviewRedeemTx.userId) || getCustomers().find((customer) => customer.id === reviewRedeemTx.userId) : null;
-  const reviewRedeemRewardName = getCleanRewardName(reviewRedeemTx);
-  const reviewRedeemStockDanger = Boolean(reviewRedeemReward && reviewRedeemReward.stock <= 0);
   const earnTransactions = transactions.filter(t => t.type === 'earn' && t.status === 'completed');
   const totalPointsIssued = earnTransactions.reduce((sum, tx) => sum + tx.points, 0);
-  const pointExpiryReminderDays = getPointRules(activeShopDetail).pointExpiryReminderDays;
-  const getCustomerNearExpiryPoints = (customerId: string) => transactions
-    .filter((transaction) => transaction.userId === customerId && isEarnTransactionNearExpiry(transaction, activeShopDetail))
-    .reduce((sum, transaction) => sum + transaction.points, 0);
   const availableRewards = rewards.filter(reward => reward.isAvailable);
   const usableCoupons = generatedCouponsList.filter((coupon: any) => !coupon.isUsed && new Date(coupon.expiresAt) > new Date());
   const latestActivities = [...transactions].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 5);
@@ -2048,20 +1682,7 @@ export default function OwnerDashboard({
         {/* Compact top menu / shop switch */}
         <div className="shrink-0 flex items-center justify-end gap-2.5">
           {isProductionView ? (
-            <>
-              <button
-                type="button"
-                onClick={refreshFromNeon}
-                disabled={isRefreshingFromNeon}
-                className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
-                title={lastFreshLoadedAt ? `โหลดล่าสุด ${lastFreshLoadedAt}` : 'ดึงข้อมูลล่าสุดจาก Neon'}
-              >
-                <span className="inline-flex items-center gap-1">
-                  <RefreshCw className={`h-3.5 w-3.5 ${isRefreshingFromNeon ? 'animate-spin' : ''}`} />
-                  รีเฟรช
-                </span>
-              </button>
-              <button
+            <button
               type="button"
               onClick={() => setMenuOpen((value) => !value)}
               aria-expanded={menuOpen}
@@ -2075,7 +1696,6 @@ export default function OwnerDashboard({
                 </span>
               )}
             </button>
-            </>
           ) : (
             <>
               <span className="text-xs text-slate-500 font-black whitespace-nowrap">เปลี่ยนร้านทดสอบ:</span>
@@ -2316,7 +1936,7 @@ export default function OwnerDashboard({
                           <input
                             type="checkbox"
                             checked={Boolean(pilotChecklist.manual[item.key])}
-                            onChange={(event) => { void updateOnboardingChecklist({ [item.key]: event.target.checked } as Partial<ShopOnboardingChecklist>, event.target.checked ? `✓ บันทึกแล้ว: ${item.label}` : `✓ ยกเลิกแล้ว: ${item.label}`); }}
+                            onChange={(event) => updateOnboardingChecklist({ [item.key]: event.target.checked } as Partial<ShopOnboardingChecklist>, event.target.checked ? `✓ บันทึกแล้ว: ${item.label}` : `✓ ยกเลิกแล้ว: ${item.label}`)}
                             className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-400"
                           />
                           <div>
@@ -2338,7 +1958,7 @@ export default function OwnerDashboard({
                     />
                     <button
                       type="button"
-                      onClick={() => { void updateOnboardingChecklist({ notes: onboardingChecklist?.notes || '' }, '✓ บันทึกหมายเหตุ Pilot Checklist แล้ว'); }}
+                      onClick={() => updateOnboardingChecklist({ notes: onboardingChecklist?.notes || '' }, '✓ บันทึกหมายเหตุ Pilot Checklist แล้ว')}
                       className="w-full rounded-2xl bg-slate-950 px-4 py-3 text-xs font-black text-white transition hover:bg-slate-800 active:scale-95"
                     >
                       บันทึกหมายเหตุ Checklist
@@ -2455,7 +2075,6 @@ export default function OwnerDashboard({
                             type="button"
                             onClick={() => {
                               setShopLogoInput('');
-                              setShopLogoStorageKeyInput('');
                               showStatus('✓ ล้างรูปโลโก้ร้านแล้ว อย่าลืมกดบันทึกตั้งค่าร้านค้า');
                             }}
                             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-700 transition hover:bg-slate-100 active:scale-95"
@@ -2471,93 +2090,29 @@ export default function OwnerDashboard({
               </div>
 
               <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 space-y-4">
-                <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-black text-amber-700 uppercase tracking-[0.18em]">Phase 6D</p>
-                    <h5 className="text-base font-black text-slate-950 mt-1">ตั้งค่ากฎการสะสมแต้ม</h5>
-                    <p className="text-[10px] text-slate-600 font-medium mt-1">ค่าตรงนี้บันทึกลงฐานข้อมูลจริง และถูกใช้ตอนคำนวณแต้มจากยอดซื้อ/ลิงก์รับแต้ม</p>
-                  </div>
-                  <div className="rounded-2xl bg-white border border-amber-200 px-4 py-3 text-[10px] font-bold text-amber-900 min-w-[220px]">
-                    <p className="font-black text-amber-800">กฎปัจจุบัน</p>
-                    <p className="mt-1">{pointRuleSummary.earnText}</p>
-                    <p>{pointRuleSummary.roundingText} • {pointRuleSummary.minimumText}</p>
-                    <p>{pointRuleSummary.linkExpiryText}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-600">ยอดซื้อกี่บาท = 1 แต้ม</label>
+                <div className="flex flex-col md:flex-row md:items-end gap-3">
+                  <div className="flex-1 space-y-1.5">
+                    <p className="text-[10px] font-black text-amber-700">อัตราแจกแต้ม</p>
+                    <label className="text-xs font-bold text-slate-700 block">ลูกค้าซื้อครบกี่บาท = 1 แต้ม</label>
                     <input
                       type="number"
-                      inputMode="numeric"
+                      inputMode="decimal"
                       min={1}
                       value={shopPointRateInput}
                       onChange={(e) => setShopPointRateInput(e.target.value)}
-                      placeholder="เช่น 10"
+                      placeholder="เช่น 100"
                       className="w-full bg-white border border-amber-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
                     />
+                    <p className="text-[10px] text-slate-600 font-medium">ตอนนี้ระบบคำนวณจากยอดซื้อ: ทุก {pointsRate} บาท = 1 แต้ม</p>
                   </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-600">ปัดเศษแต้มแบบไหน</label>
-                    <select
-                      value={shopPointRoundingModeInput}
-                      onChange={(e) => setShopPointRoundingModeInput(e.target.value as PointRoundingMode)}
-                      className="w-full bg-white border border-amber-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
-                    >
-                      <option value="floor">ปัดเศษลง</option>
-                      <option value="nearest">ปัดเศษใกล้สุด</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-600">ยอดซื้อขั้นต่ำที่จะได้แต้ม</label>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      value={shopMinimumPurchaseInput}
-                      onChange={(e) => setShopMinimumPurchaseInput(e.target.value)}
-                      placeholder="เช่น 1"
-                      className="w-full bg-white border border-amber-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-600">แต้มมีอายุกี่วัน</label>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={1}
-                      value={shopPointExpiryDaysInput}
-                      onChange={(e) => setShopPointExpiryDaysInput(e.target.value)}
-                      placeholder="เช่น 365"
-                      className="w-full bg-white border border-amber-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-600">แจ้งเตือนแต้มใกล้หมดอายุก่อนกี่วัน</label>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      min={0}
-                      value={shopPointExpiryReminderDaysInput}
-                      onChange={(e) => setShopPointExpiryReminderDaysInput(e.target.value)}
-                      placeholder="เช่น 30"
-                      className="w-full bg-white border border-amber-200 rounded-2xl px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-amber-300"
-                    />
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSaveShopPointRate}
+                    className="bg-white hover:bg-amber-100 text-amber-800 border border-amber-200 font-black text-xs rounded-2xl px-4 py-3 transition active:scale-95"
+                  >
+                    บันทึกเฉพาะอัตราแต้ม
+                  </button>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={handleSaveShopPointRate}
-                  className="w-full bg-white hover:bg-amber-100 text-amber-800 border border-amber-200 font-black text-xs rounded-2xl px-4 py-3 transition active:scale-95"
-                >
-                  บันทึกเฉพาะกฎสะสมแต้ม
-                </button>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2618,87 +2173,13 @@ export default function OwnerDashboard({
                 </button>
                 <button
                   type="button"
-                  onClick={refreshFromNeon}
-                  disabled={isRefreshingFromNeon}
-                  className="md:w-44 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-sm rounded-2xl px-5 py-3.5 transition active:scale-95 disabled:opacity-60"
+                  onClick={() => loadData()}
+                  className="md:w-44 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-sm rounded-2xl px-5 py-3.5 transition active:scale-95"
                 >
-                  {isRefreshingFromNeon ? 'กำลังโหลด...' : 'โหลดจากฐานข้อมูล'}
+                  โหลดค่าล่าสุด
                 </button>
               </div>
             </form>
-
-            <div className="rounded-3xl border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-white p-5 shadow-sm space-y-4">
-              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-black text-violet-700 uppercase tracking-[0.22em]">Phase 6E</p>
-                  <h4 className="text-xl font-black text-slate-950 mt-1">ตั้งค่าระดับสมาชิก</h4>
-                  <p className="text-xs text-slate-500 font-medium mt-1">ใช้แต้มสะสมรวมตลอดอายุสมาชิกในการอัปเกรดระดับ รอบนี้ล็อกชื่อระดับไว้ก่อนเพื่อให้ badge และรายงานไม่สับสน</p>
-                </div>
-                <div className="rounded-2xl border border-violet-200 bg-white px-4 py-3 text-xs font-bold text-violet-800">
-                  {activeMembershipTiers.filter((tier) => tier.isActive).length}/{activeMembershipTiers.length} ระดับเปิดใช้งาน
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-3">
-                {activeMembershipTiers.map((tier) => {
-                  const input = tierInputs[tier.id] || { minLifetimePoints: String(tier.minLifetimePoints), benefitText: tier.benefitText || '', isActive: tier.isActive };
-                  return (
-                    <div key={tier.id} className={`rounded-3xl border p-4 ${input.isActive ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-200 opacity-80'}`}>
-                      <div className="grid grid-cols-1 lg:grid-cols-[150px_180px_1fr_120px] gap-3 lg:items-center">
-                        <div>
-                          <span className={`inline-flex rounded-full px-3 py-1 text-[10px] font-black uppercase ${getTierBadgeClassName(tier.name)}`}>{tier.name}</span>
-                          {tier.name === 'Member' && <p className="mt-1 text-[10px] font-bold text-slate-500">ระดับเริ่มต้น ปิดไม่ได้</p>}
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-600">แต้มสะสมรวมขั้นต่ำ</label>
-                          <input
-                            type="number"
-                            min={0}
-                            disabled={tier.name === 'Member'}
-                            value={tier.name === 'Member' ? '0' : input.minLifetimePoints}
-                            onChange={(event) => updateTierInput(tier.id, { minLifetimePoints: event.target.value })}
-                            className="w-full rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm font-black text-slate-950 outline-none focus:ring-2 focus:ring-violet-300 disabled:bg-slate-100 disabled:text-slate-500"
-                          />
-                        </div>
-                        <div className="space-y-1.5">
-                          <label className="text-[10px] font-black text-slate-600">ตัวอย่างสิทธิ์ / คำอธิบาย</label>
-                          <input
-                            type="text"
-                            value={input.benefitText}
-                            onChange={(event) => updateTierInput(tier.id, { benefitText: event.target.value })}
-                            placeholder="เช่น ได้สิทธิ์โปรโมชันพิเศษ"
-                            className="w-full rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm font-medium text-slate-950 outline-none focus:ring-2 focus:ring-violet-300"
-                          />
-                        </div>
-                        <label className="flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-xs font-black text-slate-700">
-                          <input
-                            type="checkbox"
-                            disabled={tier.name === 'Member'}
-                            checked={tier.name === 'Member' ? true : Boolean(input.isActive)}
-                            onChange={(event) => updateTierInput(tier.id, { isActive: event.target.checked })}
-                            className="h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-400 disabled:opacity-50"
-                          />
-                          เปิดใช้
-                        </label>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="rounded-2xl border border-violet-100 bg-white p-4">
-                <p className="text-xs font-black text-slate-950">เกณฑ์เริ่มต้นที่แนะนำ</p>
-                <p className="mt-1 text-[11px] font-medium text-slate-500">Member 0 • Silver 500 • Gold 1,500 • Platinum 3,000 • VIP 5,000 แต้มสะสมรวม</p>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleSaveMembershipTiers}
-                className="w-full rounded-2xl bg-violet-700 px-4 py-3 text-xs font-black text-white transition hover:bg-violet-800 active:scale-95"
-              >
-                บันทึกระดับสมาชิก
-              </button>
-            </div>
 
             <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-4">
               <div>
@@ -2975,36 +2456,6 @@ export default function OwnerDashboard({
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-col lg:flex-row lg:items-end gap-3">
-                <div className="flex-1">
-                  <label className="text-[11px] font-black text-slate-700">ตรวจสอบลิงก์รับรางวัลจากลูกค้า</label>
-                  <p className="mt-1 text-[11px] text-slate-500 font-medium leading-relaxed">
-                    วางลิงก์ที่ลูกค้าส่งมา เช่น /merchant/{customerSlug}?merchantTab=approvals&amp;redeem=... หรือวางรหัสรายการ tx_... แล้วกดตรวจสอบ
-                  </p>
-                  <input
-                    value={redeemVerifyInput}
-                    onChange={(event) => setRedeemVerifyInput(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        handleVerifyRedeemLink();
-                      }
-                    }}
-                    placeholder="วางลิงก์รับรางวัล หรือรหัส tx_..."
-                    className="mt-2 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold text-slate-800 outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-100"
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={handleVerifyRedeemLink}
-                  className="shrink-0 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black px-5 py-3 text-xs transition active:scale-95 flex items-center justify-center gap-2"
-                >
-                  <Search className="w-4 h-4" /> ตรวจสอบลิงก์
-                </button>
-              </div>
-            </div>
-
             {/* Sub-Tabs Switches */}
             <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 gap-1.5 self-start w-fit max-w-full overflow-x-auto">
               <button
@@ -3078,18 +2529,17 @@ export default function OwnerDashboard({
                             <button 
                               type="button"
                               onClick={() => handleApproveRedeem(t.id)}
-                              disabled={stockDanger || processingRedeemId === t.id}
+                              disabled={stockDanger}
                               className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-black px-3 py-2.5 rounded-2xl text-xs transition cursor-pointer disabled:cursor-not-allowed active:scale-95 flex items-center justify-center gap-1.5"
                             >
-                              <Check className="w-4 h-4" /> {processingRedeemId === t.id ? 'กำลังบันทึก...' : 'อนุมัติให้ของแล้ว'}
+                              <Check className="w-4 h-4" /> อนุมัติให้ของแล้ว
                             </button>
                             <button 
                               type="button"
                               onClick={() => handleRejectRedeem(t.id)}
-                              disabled={processingRedeemId === t.id}
-                              className="bg-white border border-rose-200 hover:bg-rose-50 disabled:bg-slate-100 disabled:text-slate-400 text-rose-700 font-black px-3 py-2.5 rounded-2xl text-xs transition cursor-pointer disabled:cursor-not-allowed active:scale-95 flex items-center justify-center gap-1.5"
+                              className="bg-white border border-rose-200 hover:bg-rose-50 text-rose-700 font-black px-3 py-2.5 rounded-2xl text-xs transition cursor-pointer active:scale-95 flex items-center justify-center gap-1.5"
                             >
-                              <X className="w-4 h-4" /> {processingRedeemId === t.id ? 'กำลังบันทึก...' : 'ปฏิเสธและคืนแต้ม'}
+                              <X className="w-4 h-4" /> ปฏิเสธและคืนแต้ม
                             </button>
                           </div>
                         </div>
@@ -3240,13 +2690,13 @@ export default function OwnerDashboard({
                 />
               </div>
               <div className="lg:col-span-2 flex flex-col justify-end gap-1">
-                <span className="text-[10px] text-slate-500 font-bold text-center">คำนวณ: {pointRuleSummary.earnText} / {pointRuleSummary.roundingText}</span>
+                <span className="text-[10px] text-slate-500 font-bold text-center">คำนวณ: {pointsRate} บาท = 1 แต้ม</span>
                 <button
                   type="submit"
-                  disabled={customers.length === 0 || recordPurchaseSaving}
+                  disabled={customers.length === 0}
                   className="bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 disabled:text-slate-500 text-neutral-950 font-black text-xs px-3 py-2 rounded-xl flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
                 >
-                  <ReceiptText className="w-3.5 h-3.5" /> {recordPurchaseSaving ? 'กำลังบันทึก...' : `บันทึก +${calculatedSalePoints} แต้ม`}
+                  <ReceiptText className="w-3.5 h-3.5" /> บันทึก +{calculatedSalePoints} แต้ม
                 </button>
               </div>
             </form>
@@ -3277,16 +2727,11 @@ export default function OwnerDashboard({
                         </div>
                       </td>
                       <td className="py-3.5">
-                        {(() => {
-                          const resolvedTier = getDisplayTierForCustomer(c);
-                          return (
-                            <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${getTierBadgeClassName(resolvedTier)}`}>
-                              {resolvedTier}
-                            </span>
-                          );
-                        })()}
+                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${c.tier === 'Platinum' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' : c.tier === 'Gold' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
+                          {c.tier}
+                        </span>
                       </td>
-                      <td className="py-3.5 font-bold font-mono text-amber-700 text-sm">{c.currentPoints} แต้ม<div className="mt-0.5 text-[9px] font-semibold text-rose-500">ใกล้หมดอายุ {getCustomerNearExpiryPoints(c.id).toLocaleString('th-TH')} แต้ม</div></td>
+                      <td className="py-3.5 font-bold font-mono text-amber-700 text-sm">{c.currentPoints} แต้ม</td>
                       <td className="py-3.5 font-mono text-slate-700">{c.lifetimePoints} แต้ม</td>
                       <td className="py-3.5 font-mono text-slate-500">{new Date(c.createdAt).toLocaleDateString('th-TH')}</td>
                       <td className="py-3.5 text-right font-medium">
@@ -3334,9 +2779,8 @@ export default function OwnerDashboard({
                     <p className="text-[10px] text-slate-600">ลูกค้าปัจจุบัน: {selectedCustForAdjust.name}</p>
                   </div>
 
-                  <div className="bg-neutral-950 p-2.5 rounded-lg text-[10px] text-center text-neutral-400 space-y-1">
-                    <p>มีแต้มปัจจุบันสะสมอยู่: <span className="font-mono text-yellow-400 font-bold">{selectedCustForAdjust.currentPoints} แต้ม</span></p>
-                    <p>แต้มใกล้หมดอายุใน {pointExpiryReminderDays.toLocaleString('th-TH')} วัน: <span className="font-mono text-rose-300 font-bold">{getCustomerNearExpiryPoints(selectedCustForAdjust.id).toLocaleString('th-TH')} แต้ม</span></p>
+                  <div className="bg-neutral-950 p-2.5 rounded-lg text-[10px] text-center text-neutral-400">
+                    มีแต้มปัจจุบันสะสมอยู่: <span className="font-mono text-yellow-400 font-bold">{selectedCustForAdjust.currentPoints} แต้ม</span>
                   </div>
 
                   <div className="space-y-3">
@@ -3391,17 +2835,15 @@ export default function OwnerDashboard({
                     <button 
                       type="button"
                       onClick={() => setSelectedCustForAdjust(null)}
-                      disabled={adjustSaving}
-                      className="flex-1 bg-neutral-800 hover:bg-neutral-750 text-xs py-2 rounded-lg disabled:opacity-60"
+                      className="flex-1 bg-neutral-800 hover:bg-neutral-750 text-xs py-2 rounded-lg"
                     >
                       ยกเลิก
                     </button>
                     <button 
                       type="submit"
-                      disabled={adjustSaving}
-                      className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-neutral-950 font-bold text-xs py-2 rounded-lg transition disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-neutral-950 font-bold text-xs py-2 rounded-lg transition"
                     >
-                      {adjustSaving ? 'กำลังบันทึก...' : 'ตกลงแก้ไข'}
+                      ตกลงแก้ไข
                     </button>
                   </div>
                 </form>
@@ -3496,7 +2938,7 @@ export default function OwnerDashboard({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {rewards.map(rew => (
                 <div key={rew.id} className="bg-white border border-slate-200 p-3.5 rounded-2xl flex gap-3 shadow-sm">
-                  <img src={rew.imageUrl || rew.image} alt={rew.name} className="w-20 h-20 rounded-xl object-cover flex-shrink-0" referrerPolicy="no-referrer" />
+                  <img src={rew.image} alt={rew.name} className="w-20 h-20 rounded-xl object-cover flex-shrink-0" referrerPolicy="no-referrer" />
                   <div className="flex-1 flex flex-col justify-between min-w-0">
                     <div className="space-y-0.5">
                       <h4 className="text-xs font-bold text-slate-900 truncate">{rew.name}</h4>
@@ -3634,7 +3076,7 @@ export default function OwnerDashboard({
                         {newRewImage && (
                           <button
                             type="button"
-                            onClick={() => { setNewRewImage(''); setNewRewStorageKey(''); }}
+                            onClick={() => setNewRewImage('')}
                             className="text-[10px] font-bold text-neutral-400 hover:text-rose-300 underline underline-offset-2"
                           >
                             ล้างรูปนี้แล้วเลือกรูปใหม่
@@ -3695,7 +3137,7 @@ export default function OwnerDashboard({
             <div className="space-y-3.5">
               {banners.map((ban, idx) => (
                 <div key={idx} className="bg-neutral-950 border border-neutral-850 p-4 rounded-2xl flex flex-col md:flex-row gap-4 items-start md:items-center">
-                  <img src={ban.imageUrl || ban.image} alt={ban.title} className="w-full md:w-36 h-20 object-cover rounded-xl border border-neutral-800" referrerPolicy="no-referrer" />
+                  <img src={ban.image} alt={ban.title} className="w-full md:w-36 h-20 object-cover rounded-xl border border-neutral-800" referrerPolicy="no-referrer" />
                   <div className="flex-grow space-y-1">
                     <div className="flex justify-between items-start">
                       <h4 className="text-xs font-bold text-neutral-100">{ban.title}</h4>
@@ -3747,38 +3189,16 @@ export default function OwnerDashboard({
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <label className="text-[10.5px] text-neutral-400 block font-sans">รูปภาพโปรโมชัน</label>
-                      <div className="rounded-2xl border border-dashed border-neutral-700 bg-neutral-950/70 p-3 space-y-3">
-                        {newBannerImage && (
-                          <img
-                            src={newBannerImage}
-                            alt="ตัวอย่างรูปโปรโมชัน"
-                            className="w-full h-28 object-cover rounded-xl border border-neutral-800"
-                            referrerPolicy="no-referrer"
-                          />
-                        )}
-                        <input
-                          type="file"
-                          accept="image/jpeg,image/png,image/webp"
-                          onChange={handleBannerImageUpload}
-                          className="block w-full text-[10px] text-neutral-400 file:mr-3 file:rounded-lg file:border-0 file:bg-yellow-500 file:px-3 file:py-2 file:text-[10px] file:font-black file:text-neutral-950 hover:file:bg-yellow-400"
-                        />
-                        <input 
-                          type="url"
-                          value={newBannerImage}
-                          onChange={(e) => {
-                            setNewBannerImage(e.target.value);
-                            setNewBannerStorageKey('');
-                          }}
-                          placeholder="หรือวาง URL รูปภาพ เช่น https://..."
-                          className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg outline-none font-sans"
-                          required
-                        />
-                        <p className="text-[9px] text-neutral-500 leading-relaxed">
-                          แนะนำ JPG/PNG/WEBP ไม่เกิน 2 MB ระบบจะอัปโหลดไฟล์ไป Vercel Blob และเก็บเป็น URL จริง
-                        </p>
-                      </div>
+                    <div className="space-y-1">
+                      <label className="text-[10.5px] text-neutral-400 block font-sans">ลิงก์รูปภาพโปรโมชัน</label>
+                      <input 
+                        type="url"
+                        value={newBannerImage}
+                        onChange={(e) => setNewBannerImage(e.target.value)}
+                        placeholder="https://images.unsplash.com/..."
+                        className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg outline-none font-sans"
+                        required
+                      />
                     </div>
 
                     <div className="grid grid-cols-1 gap-3">
@@ -3852,7 +3272,7 @@ export default function OwnerDashboard({
                     placeholder="เช่น 500"
                     className="w-full bg-neutral-900 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 outline-none font-sans"
                   />
-                  <p className="text-[9.5px] text-neutral-400 font-medium">คำนวณจากกฎร้าน: {pointRuleSummary.earnText} / {pointRuleSummary.roundingText} → ลูกค้าจะได้รับ +{calculatedGeneratePoints} แต้ม</p>
+                  <p className="text-[9.5px] text-neutral-400 font-medium">คำนวณจากอัตราร้าน: {pointsRate} บาท = 1 แต้ม → ลูกค้าจะได้รับ +{calculatedGeneratePoints} แต้ม</p>
                 </div>
 
                 <div className="space-y-1 font-sans">
@@ -3867,18 +3287,24 @@ export default function OwnerDashboard({
                   />
                 </div>
 
+                {/* Expiry minute input bounded 1 to 60 */}
                 <div className="space-y-1 font-sans">
-                  <label className="text-[10px] text-slate-600 block font-sans">ลิงก์รับแต้มหมดอายุในกี่นาที</label>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    value={generateLinkExpiryMinutes}
-                    onChange={(e) => setGenerateLinkExpiryMinutes(e.target.value)}
-                    placeholder="เช่น 10"
-                    className="w-full bg-neutral-900 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg focus:ring-1 focus:ring-yellow-500 outline-none font-sans"
-                  />
-                  <p className="text-[9px] text-neutral-500 italic block mt-1 font-sans">ค่าเริ่มต้น 10 นาที และลิงก์นี้ใช้ได้ครั้งเดียวต่อคูปอง</p>
+                  <label className="text-[10px] text-slate-600 block font-sans font-medium">
+                    กำหนดเวลาหมดอายุของลิงก์แอปพลิเคชัน (1 - 60 นาที):
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="number"
+                      inputMode="numeric"
+                      min={1}
+                      max={60}
+                      value={expiryMinutes}
+                      onChange={(e) => setExpiryMinutes(e.target.value)}
+                      className="w-24 bg-neutral-900 border border-neutral-850 text-xs text-white px-3 py-2 rounded-lg outline-none text-center font-mono focus:border-yellow-500 transition duration-150"
+                    />
+                    <span className="text-xs text-neutral-300 font-sans">นาที (นับจากเวลาที่สถิติกำหนดไว้)</span>
+                  </div>
+                  <p className="text-[9px] text-neutral-500 italic block mt-1 font-sans">ลิงก์นี้ใช้ได้ครั้งเดียวและมีวันหมดอายุ เพื่อป้องกันการรับแต้มซ้ำ</p>
                 </div>
 
                 <div className="bg-neutral-900/60 rounded-xl p-3 text-[10px] text-slate-600 space-y-2 border border-neutral-800/40">
@@ -4079,142 +3505,6 @@ export default function OwnerDashboard({
         )}
 
       </div>
-
-      <AnimatePresence>
-        {(reviewRedeemTx || redeemReviewError) && (
-          <motion.div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            role="dialog"
-            aria-modal="true"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 18, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 18, scale: 0.98 }}
-              transition={{ duration: 0.18, ease: 'easeOut' }}
-              className="w-full max-w-lg rounded-3xl bg-white shadow-2xl border border-slate-200 overflow-hidden"
-            >
-              {redeemReviewError ? (
-                <div className="p-5 space-y-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-11 h-11 rounded-2xl bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
-                      <AlertCircle className="w-5 h-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-black text-rose-600 uppercase tracking-[0.22em]">Invalid reward link</p>
-                      <h3 className="text-lg font-black text-slate-950 mt-1">ลิงก์ไม่ถูกต้อง</h3>
-                      <p className="text-sm text-slate-600 font-medium leading-relaxed mt-2">{redeemReviewError}</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={closeRedeemReviewModal}
-                    className="w-full rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black py-3 text-sm transition active:scale-95"
-                  >
-                    ปิด
-                  </button>
-                </div>
-              ) : reviewRedeemTx ? (
-                <div className="p-5 space-y-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-[10px] font-black text-amber-700 uppercase tracking-[0.22em]">Reward approval check</p>
-                      <h3 className="text-lg font-black text-slate-950 mt-1">ตรวจสอบคำขอแลกรางวัล</h3>
-                      <p className="text-[11px] text-slate-500 font-mono mt-1 break-all">{reviewRedeemTx.id}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={closeRedeemReviewModal}
-                      className="w-9 h-9 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-500 flex items-center justify-center transition"
-                      aria-label="ปิด"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 space-y-3 text-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[10px] font-black text-slate-500">ของรางวัล</p>
-                        <p className="font-black text-slate-950 mt-1">{reviewRedeemRewardName}</p>
-                      </div>
-                      {reviewRedeemTx.status === 'pending' ? (
-                        <span className="rounded-full bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1 text-[10px] font-black">รออนุมัติ</span>
-                      ) : reviewRedeemTx.status === 'completed' ? (
-                        <span className="rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 px-2.5 py-1 text-[10px] font-black">อนุมัติแล้ว</span>
-                      ) : (
-                        <span className="rounded-full bg-rose-100 text-rose-800 border border-rose-200 px-2.5 py-1 text-[10px] font-black">ปฏิเสธแล้ว</span>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded-2xl bg-white border border-slate-200 p-3 col-span-2 sm:col-span-1">
-                        <p className="text-[10px] font-black text-slate-500">ลูกค้า</p>
-                        <p className="font-black text-slate-950 mt-1">{reviewRedeemTx.userName}</p>
-                        <p className="text-[11px] text-slate-600 mt-0.5">{reviewRedeemTx.userPhone || '-'}</p>
-                        {reviewRedeemCustomer && <p className="text-[11px] text-slate-500 mt-0.5">แต้มคงเหลือ: {reviewRedeemCustomer.currentPoints.toLocaleString('th-TH')} แต้ม</p>}
-                      </div>
-                      <div className="rounded-2xl bg-white border border-slate-200 p-3 col-span-2 sm:col-span-1">
-                        <p className="text-[10px] font-black text-slate-500">แต้ม / สต็อก</p>
-                        <p className="font-black text-rose-700 mt-1">-{reviewRedeemTx.points.toLocaleString('th-TH')} แต้ม</p>
-                        <p className={`text-[11px] font-bold mt-0.5 ${reviewRedeemStockDanger ? 'text-rose-700' : 'text-slate-600'}`}>
-                          คงเหลือ: {reviewRedeemReward ? `${reviewRedeemReward.stock} ชิ้น` : 'ไม่พบข้อมูลสต็อก'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <p className="text-[11px] text-slate-500 font-mono">ขอแลกเมื่อ: {new Date(reviewRedeemTx.createdAt).toLocaleString('th-TH')}</p>
-
-                    {reviewRedeemStockDanger && reviewRedeemTx.status === 'pending' && (
-                      <div className="rounded-2xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700">
-                        ของรางวัลนี้หมดสต็อกแล้ว ต้องเพิ่มสต็อกก่อนจึงจะอนุมัติได้
-                      </div>
-                    )}
-
-                    {reviewRedeemTx.status !== 'pending' && (
-                      <div className="rounded-2xl bg-slate-100 border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700">
-                        รายการนี้ถูกดำเนินการไปแล้ว จึงไม่สามารถอนุมัติหรือปฏิเสธซ้ำได้
-                      </div>
-                    )}
-                  </div>
-
-                  {reviewRedeemTx.status === 'pending' ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleApproveRedeem(reviewRedeemTx.id, { skipConfirm: true, closeModal: true })}
-                        disabled={reviewRedeemStockDanger || processingRedeemId === reviewRedeemTx.id}
-                        className="rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 text-white font-black py-3 text-sm transition active:scale-95 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                      >
-                        <Check className="w-4 h-4" /> {processingRedeemId === reviewRedeemTx.id ? 'กำลังบันทึก...' : 'อนุมัติ'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRejectRedeem(reviewRedeemTx.id, { skipConfirm: true, closeModal: true })}
-                        disabled={processingRedeemId === reviewRedeemTx.id}
-                        className="rounded-2xl bg-white border border-rose-200 hover:bg-rose-50 disabled:bg-slate-100 disabled:text-slate-400 text-rose-700 font-black py-3 text-sm transition active:scale-95 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                      >
-                        <X className="w-4 h-4" /> {processingRedeemId === reviewRedeemTx.id ? 'กำลังบันทึก...' : 'ไม่อนุมัติ'}
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={closeRedeemReviewModal}
-                      className="w-full rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black py-3 text-sm transition active:scale-95"
-                    >
-                      ปิด
-                    </button>
-                  )}
-                </div>
-              ) : null}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur border-t border-slate-200 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] px-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
         <div className="grid grid-cols-5 gap-1 max-w-md mx-auto">

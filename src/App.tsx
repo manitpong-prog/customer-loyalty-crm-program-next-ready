@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import {
   initializeDatabase,
   getShops,
+  getCustomers,
   getTransactions,
 } from "./data/mockData";
 import CustomerDashboard from "./components/CustomerDashboard";
@@ -32,25 +33,25 @@ type AppMode = "demo" | "customer" | "merchant" | "admin";
 type CustomerTab = "home" | "rewards" | "code" | "history" | "profile";
 
 
-const LIFF_CALLBACK_QUERY_KEYS = new Set([
+const LIFF_SYSTEM_QUERY_KEYS = new Set([
   "liff.state",
   "liff.referrer",
   "liffClientId",
   "liffRedirectUri",
   "liff.hback",
   "state",
-  "friendship_status_changed",
   "access_token",
   "id_token",
+  "friendship_status_changed",
   "error",
   "error_description",
 ]);
 
-function decodeLiffState(rawState: string | null): string {
-  if (!rawState) return "";
+function decodeDeep(value: string | null): string {
+  if (!value) return "";
 
-  let decoded = rawState;
-  for (let i = 0; i < 8; i += 1) {
+  let decoded = value;
+  for (let index = 0; index < 8; index += 1) {
     try {
       const next = decodeURIComponent(decoded);
       if (next === decoded) break;
@@ -63,48 +64,49 @@ function decodeLiffState(rawState: string | null): string {
   return decoded;
 }
 
-function extractQueryParamsFromText(rawText: string): URLSearchParams {
+function getQueryParamsFromText(rawText: string): URLSearchParams {
   if (!rawText) return new URLSearchParams();
 
-  const trimmed = rawText.trim();
-  const queryStart = trimmed.indexOf("?");
-  const queryText = trimmed.startsWith("?")
-    ? trimmed.slice(1)
+  const queryStart = rawText.indexOf("?");
+  const queryText = rawText.startsWith("?")
+    ? rawText.slice(1)
     : queryStart >= 0
-      ? trimmed.slice(queryStart + 1)
-      : trimmed;
-
+      ? rawText.slice(queryStart + 1)
+      : rawText;
   const hashStart = queryText.indexOf("#");
-  const cleanQuery = hashStart >= 0 ? queryText.slice(0, hashStart) : queryText;
 
-  return new URLSearchParams(cleanQuery);
+  return new URLSearchParams(hashStart >= 0 ? queryText.slice(0, hashStart) : queryText);
 }
 
-function extractAppParamsFromLiffState(rawState: string | null): URLSearchParams {
-  const extracted = new URLSearchParams();
-  const decoded = decodeLiffState(rawState);
-  if (!decoded) return extracted;
+function extractQueryParamsFromLiffState(rawState: string | null): URLSearchParams {
+  const appParams = new URLSearchParams();
+  const decoded = decodeDeep(rawState);
+  if (!decoded) return appParams;
 
-  const candidates = [extractQueryParamsFromText(decoded)];
+  const candidates = [getQueryParamsFromText(decoded)];
   const nestedRedirect = candidates[0].get("liffRedirectUri");
   if (nestedRedirect) {
-    candidates.push(extractQueryParamsFromText(decodeLiffState(nestedRedirect)));
+    candidates.push(getQueryParamsFromText(decodeDeep(nestedRedirect)));
   }
 
   for (const params of candidates) {
     const tab = params.get("tab");
-    const appCode = params.get("coupon") || params.get("couponCode") || params.get("claimCode") || params.get("code");
+    const couponCode =
+      params.get("coupon") ||
+      params.get("couponCode") ||
+      params.get("claimCode") ||
+      params.get("code");
     const resetLine = params.get("resetLine");
 
-    if (tab) extracted.set("tab", tab);
-    if (appCode) extracted.set("code", appCode);
-    if (resetLine) extracted.set("resetLine", resetLine);
+    if (tab) appParams.set("tab", tab);
+    if (couponCode) appParams.set("code", couponCode);
+    if (resetLine) appParams.set("resetLine", resetLine);
   }
 
-  return extracted;
+  return appParams;
 }
 
-function hasLiffCallbackParams(params: URLSearchParams): boolean {
+function isLineCallbackQuery(params: URLSearchParams): boolean {
   return Boolean(
     params.has("liff.state") ||
       params.has("liffClientId") ||
@@ -118,58 +120,40 @@ function hasLiffCallbackParams(params: URLSearchParams): boolean {
 
 function getEffectiveSearchParams(): URLSearchParams {
   const directParams = new URLSearchParams(window.location.search);
-  const liffParams = extractAppParamsFromLiffState(directParams.get("liff.state"));
-  const isLiffCallback = hasLiffCallbackParams(directParams);
+  const liffParams = extractQueryParamsFromLiffState(directParams.get("liff.state"));
+  const isLineCallback = isLineCallbackQuery(directParams);
   const merged = new URLSearchParams();
 
-  const directTab = directParams.get("tab");
-  const directAppCode =
+  const tab = directParams.get("tab") || liffParams.get("tab");
+  const resetLine = directParams.get("resetLine") || liffParams.get("resetLine");
+  const code =
     directParams.get("coupon") ||
     directParams.get("couponCode") ||
     directParams.get("claimCode") ||
-    (!isLiffCallback ? directParams.get("code") : null);
-  const directResetLine = directParams.get("resetLine");
+    (!isLineCallback ? directParams.get("code") : null) ||
+    liffParams.get("code");
 
-  if (directTab) merged.set("tab", directTab);
-  if (directAppCode) merged.set("code", directAppCode);
-  if (directResetLine) merged.set("resetLine", directResetLine);
-
-  liffParams.forEach((value, key) => {
-    if (value) merged.set(key, value);
-  });
+  if (tab) merged.set("tab", tab);
+  if (code) merged.set("code", code);
+  if (resetLine) merged.set("resetLine", resetLine);
 
   return merged;
 }
 
-function cleanCustomerEntryQuery(effectiveParams?: URLSearchParams) {
+function cleanCustomerEntryQuery() {
   try {
     const url = new URL(window.location.href);
     const currentParams = new URLSearchParams(url.search);
-    const isLiffCallback = hasLiffCallbackParams(currentParams);
-    const appTab = effectiveParams?.get("tab") || currentParams.get("tab");
-    const appCode =
-      effectiveParams?.get("code") ||
-      currentParams.get("coupon") ||
-      currentParams.get("couponCode") ||
-      currentParams.get("claimCode") ||
-      (!isLiffCallback ? currentParams.get("code") : null);
 
     Array.from(currentParams.keys()).forEach((key) => {
-      if (LIFF_CALLBACK_QUERY_KEYS.has(key) || key.startsWith("liff.")) {
+      if (LIFF_SYSTEM_QUERY_KEYS.has(key) || key.startsWith("liff.")) {
         url.searchParams.delete(key);
       }
     });
 
-    // LINE OAuth also uses `code`; keep only app-owned coupon codes.
-    if (isLiffCallback) url.searchParams.delete("code");
-    url.searchParams.delete("coupon");
-    url.searchParams.delete("couponCode");
-    url.searchParams.delete("claimCode");
-    url.searchParams.delete("resetLine");
-
-    if (appTab) url.searchParams.set("tab", appTab);
-    if (appCode) url.searchParams.set("code", appCode);
-
+    // Keep the original stable behavior: after the app has consumed tab/code once,
+    // clear app entry params so refreshes and tab clicks do not re-trigger the same deep link.
+    ["tab", "code", "coupon", "couponCode", "claimCode", "resetLine"].forEach((key) => url.searchParams.delete(key));
     window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ""));
   } catch (e) {
     console.error("Failed to clean URL", e);
@@ -198,7 +182,6 @@ export default function App({
   const [initialCustomerTab, setInitialCustomerTab] = useState<CustomerTab>("home");
   const [databaseLabel, setDatabaseLabel] = useState("กำลังเชื่อมต่อข้อมูล...");
   const [lineIdentity, setLineIdentity] = useState<LineIdentity | null>(null);
-  const [isDatabaseBootstrapped, setIsDatabaseBootstrapped] = useState(isDemoMode);
 
   // Triggered when static storage modifies of children
   const handleDataChange = () => {
@@ -220,10 +203,16 @@ export default function App({
       return sameIdentity ? previous : identity;
     });
 
-    // LINE login creates/updates the customer membership through /api/line/auth.
-    // Do not call initializeDatabase() here: customer pages must use the scoped
-    // /api/db/customer-state loader only. Re-loading the full CRM snapshot here
-    // caused slow loads and refresh loops on LIFF deep links.
+    // LINE login can create or update customer membership in Neon.
+    // Refresh the local cache only when the LINE customer is not already present.
+    // This prevents an infinite remount loop when the panel restores the same identity from localStorage.
+    if (identity.customerId) {
+      const hasLineCustomerInCache = getCustomers().some((customer) => customer.id === identity.customerId);
+      if (!hasLineCustomerInCache) {
+        await initializeDatabase();
+        handleDataChange();
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -250,26 +239,18 @@ export default function App({
         }
       }
 
-      // Customer production routes must not block on the full CRM snapshot.
-      // The CustomerDashboard fetches a small shop/customer scoped state after LIFF identity is known.
-      // Merchant/admin/demo still use the full bootstrap because they need a broad management view.
-      if (!isDemoMode && initialRole === "customer") {
-        if (!isMounted) return;
-        setDatabaseLabel("Neon PostgreSQL + Scoped Customer Load");
-        setIsDatabaseBootstrapped(true);
-      } else {
-        const result = await initializeDatabase();
+      // Bootstrap CRM state from Neon first. If Neon is not configured or unreachable,
+      // the app continues with the local browser cache fallback.
+      const result = await initializeDatabase();
 
-        if (!isMounted) return;
+      if (!isMounted) return;
 
-        setDatabaseLabel(
-          result.source === "neon"
-            ? "Neon PostgreSQL + Fresh Cache"
-            : "LocalStorage Fallback",
-        );
-        setIsDatabaseBootstrapped(true);
-        handleDataChange();
-      }
+      setDatabaseLabel(
+        result.source === "neon"
+          ? "Neon PostgreSQL + Local Cache"
+          : "LocalStorage Fallback",
+      );
+      handleDataChange();
 
       // Check customer deep-link query parameters.
       // Examples for LINE Rich Menu:
@@ -293,7 +274,7 @@ export default function App({
 
       if (code || tabParam || shouldResetLine || hasLiffState) {
         // Clean entry parameters after bootstrap to avoid re-triggering on refresh.
-        cleanCustomerEntryQuery(searchParams);
+        cleanCustomerEntryQuery();
       }
     };
 
@@ -431,20 +412,7 @@ export default function App({
         </header>
       )}
 
-      {!isDemoMode && !isDatabaseBootstrapped && (
-        <main className="flex-1 flex items-center justify-center bg-slate-50 p-6">
-          <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
-              <Activity className="h-6 w-6 animate-pulse" />
-            </div>
-            <h2 className="mt-4 text-sm font-black text-slate-950">กำลังโหลดข้อมูลล่าสุดจากฐานข้อมูล</h2>
-            <p className="mt-2 text-xs leading-5 text-slate-500">ระบบจะไม่แสดงข้อมูลจาก cache เก่าก่อนโหลด Neon สำเร็จ เพื่อป้องกันชื่อ รูป และคะแนนค้างจากเครื่องเดิม</p>
-          </div>
-        </main>
-      )}
-
       {/* Main Body View Layouts Grid Render */}
-      {(isDemoMode || isDatabaseBootstrapped) && (
       <main
         className={`${isDemoMode ? "flex-1 max-w-7xl mx-auto w-full p-4 sm:p-6 md:p-8 flex flex-col justify-center" : activeRole === "customer" ? "flex-1 w-full bg-slate-50" : "flex-1 max-w-7xl mx-auto w-full p-4 sm:p-6 md:p-8 flex flex-col"}`}
       >
@@ -502,7 +470,6 @@ export default function App({
           </div>
         )}
       </main>
-      )}
 
       {/* Modern minimal footer bar */}
       {isDemoMode && (

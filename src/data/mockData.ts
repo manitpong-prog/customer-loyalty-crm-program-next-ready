@@ -1,5 +1,4 @@
-import { Shop, Customer, Reward, PromoBanner, Transaction, AuditLog, ShopOnboardingChecklist, MembershipTier } from '../types';
-import { getDefaultMembershipTiersForShops } from '../lib/membershipTiers';
+import { Shop, Customer, Reward, PromoBanner, Transaction, AuditLog, ShopOnboardingChecklist } from '../types';
 
 export const INITIAL_SHOPS: Shop[] = [
   {
@@ -87,7 +86,7 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=60',
     currentPoints: 480,
     lifetimePoints: 1280,
-    tier: 'Silver',
+    tier: 'Platinum',
     createdAt: '2026-01-11T10:00:00Z',
   },
   {
@@ -99,7 +98,7 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=60',
     currentPoints: 240,
     lifetimePoints: 540,
-    tier: 'Silver',
+    tier: 'Gold',
     createdAt: '2026-02-20T14:22:00Z',
   },
   {
@@ -123,7 +122,7 @@ export const INITIAL_CUSTOMERS: Customer[] = [
     avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&auto=format&fit=crop&q=60',
     currentPoints: 310,
     lifetimePoints: 810,
-    tier: 'Silver',
+    tier: 'Gold',
     createdAt: '2026-04-18T16:40:00Z',
   }
 ];
@@ -354,8 +353,7 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
 ];
 
 // Client-side cache helpers.
-// Phase 7 final audit: Neon is the source of truth for business data.
-// localStorage is kept only as a read cache/UI fallback after API routes confirm writes.
+// Neon is accessed only through Next.js API routes. The browser keeps a local cache so the existing prototype UI can remain fast and mostly unchanged.
 const KEYS = {
   SHOPS: 'crm_platforms_shops',
   CUSTOMERS: 'crm_platform_customers',
@@ -365,11 +363,10 @@ const KEYS = {
   COUPONS: 'crm_platform_generated_coupons',
   AUDIT_LOGS: 'crm_platform_audit_logs',
   ONBOARDING_CHECKLISTS: 'crm_platform_onboarding_checklists',
-  MEMBERSHIP_TIERS: 'crm_platform_membership_tiers',
 } as const;
 
 type SyncableKey = (typeof KEYS)[keyof typeof KEYS];
-type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons' | 'auditLogs' | 'onboardingChecklists' | 'membershipTiers';
+type CrmEntity = 'shops' | 'customers' | 'rewards' | 'banners' | 'transactions' | 'coupons' | 'auditLogs' | 'onboardingChecklists';
 
 export type DatabaseBootstrapResult = {
   source: 'neon' | 'local-fallback' | 'error-fallback';
@@ -398,73 +395,10 @@ const KEY_TO_ENTITY: Partial<Record<SyncableKey, CrmEntity>> = {
   [KEYS.COUPONS]: 'coupons',
   [KEYS.AUDIT_LOGS]: 'auditLogs',
   [KEYS.ONBOARDING_CHECKLISTS]: 'onboardingChecklists',
-  [KEYS.MEMBERSHIP_TIERS]: 'membershipTiers',
 };
 
 function canUseStorage() {
   return typeof window !== 'undefined' && Boolean(window.localStorage);
-}
-
-async function syncEntityToNeon<T>(key: SyncableKey, data: T): Promise<void> {
-  if (typeof window === 'undefined') return;
-
-  const entity = KEY_TO_ENTITY[key];
-  if (!entity) return;
-
-  const response = await window.fetch('/api/db/sync', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entity, rows: data }),
-  });
-
-  let payload: { message?: string } | null = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
-
-  if (!response.ok || payload?.message) {
-    throw new Error(payload?.message || `Could not sync ${entity} to Neon.`);
-  }
-}
-
-export async function syncPointClaimDataToNeon(params: {
-  customers: Customer[];
-  coupons: GeneratedCoupon[];
-  transactions: Transaction[];
-}): Promise<void> {
-  // Customer rows must be persisted before coupon/transaction rows because
-  // point_coupons.used_by_customer_id and transactions.user_id reference customers.id.
-  // The legacy fire-and-forget sync can race here, especially in LINE in-app browser.
-  await syncEntityToNeon(KEYS.CUSTOMERS, params.customers);
-  await syncEntityToNeon(KEYS.COUPONS, params.coupons);
-  await syncEntityToNeon(KEYS.TRANSACTIONS, params.transactions);
-}
-
-export async function persistPointClaimToNeon(params: {
-  customer: Customer;
-  coupon: GeneratedCoupon;
-  transaction: Transaction;
-}): Promise<void> {
-  if (typeof window === 'undefined') return;
-
-  const response = await window.fetch('/api/db/point-claim', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
-
-  let payload: { message?: string; skipped?: boolean } | null = null;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
-
-  if (!response.ok || payload?.message) {
-    throw new Error(payload?.message || 'บันทึกรับแต้มลง Neon ไม่สำเร็จ');
-  }
 }
 
 function queueNeonSync<T>(key: SyncableKey, data: T) {
@@ -473,16 +407,14 @@ function queueNeonSync<T>(key: SyncableKey, data: T) {
   const entity = KEY_TO_ENTITY[key];
   if (!entity) return;
 
-  // Emergency legacy path only. Normal pilot flows must call dedicated API routes
-  // and wait for Neon before showing success. This function is no longer called
-  // automatically by saveStoredData().
+  // Fire-and-forget: the UI remains responsive while the server persists the latest full list to Neon.
   window.fetch('/api/db/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ entity, rows: data }),
     keepalive: true,
   }).catch((error) => {
-    console.warn(`[crm-db] Emergency legacy sync failed for ${entity}.`, error);
+    console.warn(`[crm-db] Could not sync ${entity} to Neon. Local cache is still updated.`, error);
   });
 }
 
@@ -506,7 +438,7 @@ export function saveStoredData<T>(key: SyncableKey, data: T, options: { sync?: b
 
   try {
     window.localStorage.setItem(key, JSON.stringify(data));
-    if (options.sync === true) {
+    if (options.sync !== false) {
       queueNeonSync(key, data);
     }
   } catch (e) {
@@ -543,12 +475,9 @@ function seedLocalStorageIfEmpty() {
   if (!window.localStorage.getItem(KEYS.ONBOARDING_CHECKLISTS)) {
     saveStoredData(KEYS.ONBOARDING_CHECKLISTS, [], { sync: false });
   }
-  if (!window.localStorage.getItem(KEYS.MEMBERSHIP_TIERS)) {
-    saveStoredData(KEYS.MEMBERSHIP_TIERS, getDefaultMembershipTiersForShops(INITIAL_SHOPS.map((shop) => shop.id)), { sync: false });
-  }
 }
 
-export function replaceLocalCacheFromSnapshot(snapshot: {
+function replaceLocalCacheFromSnapshot(snapshot: {
   shops?: Shop[];
   customers?: Customer[];
   rewards?: Reward[];
@@ -557,7 +486,6 @@ export function replaceLocalCacheFromSnapshot(snapshot: {
   coupons?: GeneratedCoupon[];
   auditLogs?: AuditLog[];
   onboardingChecklists?: ShopOnboardingChecklist[];
-  membershipTiers?: MembershipTier[];
 }) {
   saveStoredData(KEYS.SHOPS, snapshot.shops || INITIAL_SHOPS, { sync: false });
   saveStoredData(KEYS.CUSTOMERS, snapshot.customers || INITIAL_CUSTOMERS, { sync: false });
@@ -567,7 +495,6 @@ export function replaceLocalCacheFromSnapshot(snapshot: {
   saveStoredData(KEYS.COUPONS, snapshot.coupons || [], { sync: false });
   saveStoredData(KEYS.AUDIT_LOGS, snapshot.auditLogs || [], { sync: false });
   saveStoredData(KEYS.ONBOARDING_CHECKLISTS, snapshot.onboardingChecklists || [], { sync: false });
-  saveStoredData(KEYS.MEMBERSHIP_TIERS, snapshot.membershipTiers || getDefaultMembershipTiersForShops((snapshot.shops || INITIAL_SHOPS).map((shop) => shop.id)), { sync: false });
 }
 
 export async function initializeDatabase(): Promise<DatabaseBootstrapResult> {
@@ -578,14 +505,7 @@ export async function initializeDatabase(): Promise<DatabaseBootstrapResult> {
   seedLocalStorageIfEmpty();
 
   try {
-    const snapshotUrl = `/api/db/snapshot?ts=${Date.now()}`;
-    const response = await fetch(snapshotUrl, {
-      cache: 'no-store',
-      headers: {
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        Pragma: 'no-cache',
-      },
-    });
+    const response = await fetch('/api/db/snapshot', { cache: 'no-store' });
     const payload = await response.json();
 
     if (payload?.source === 'neon' && payload?.data) {
@@ -606,48 +526,48 @@ export function getShops(): Shop[] {
   return getStoredData(KEYS.SHOPS, INITIAL_SHOPS);
 }
 
-export function saveShops(shops: Shop[], options: { sync?: boolean } = {}) {
-  saveStoredData(KEYS.SHOPS, shops, options);
+export function saveShops(shops: Shop[]) {
+  saveStoredData(KEYS.SHOPS, shops);
 }
 
 export function getCustomers(): Customer[] {
   return getStoredData(KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
 }
 
-export function saveCustomers(customers: Customer[], options: { sync?: boolean } = {}) {
-  saveStoredData(KEYS.CUSTOMERS, customers, options);
+export function saveCustomers(customers: Customer[]) {
+  saveStoredData(KEYS.CUSTOMERS, customers);
 }
 
 export function getRewards(): Reward[] {
   return getStoredData(KEYS.REWARDS, INITIAL_REWARDS);
 }
 
-export function saveRewards(rewards: Reward[], options: { sync?: boolean } = {}) {
-  saveStoredData(KEYS.REWARDS, rewards, options);
+export function saveRewards(rewards: Reward[]) {
+  saveStoredData(KEYS.REWARDS, rewards);
 }
 
 export function getBanners(): PromoBanner[] {
   return getStoredData(KEYS.BANNERS, INITIAL_BANNERS);
 }
 
-export function saveBanners(banners: PromoBanner[], options: { sync?: boolean } = {}) {
-  saveStoredData(KEYS.BANNERS, banners, options);
+export function saveBanners(banners: PromoBanner[]) {
+  saveStoredData(KEYS.BANNERS, banners);
 }
 
 export function getTransactions(): Transaction[] {
   return getStoredData(KEYS.TRANSACTIONS, INITIAL_TRANSACTIONS);
 }
 
-export function saveTransactions(txs: Transaction[], options: { sync?: boolean } = {}) {
-  saveStoredData(KEYS.TRANSACTIONS, txs, options);
+export function saveTransactions(txs: Transaction[]) {
+  saveStoredData(KEYS.TRANSACTIONS, txs);
 }
 
 export function getGeneratedCoupons(): GeneratedCoupon[] {
   return getStoredData(KEYS.COUPONS, [] as GeneratedCoupon[]);
 }
 
-export function saveGeneratedCoupons(coupons: GeneratedCoupon[], options: { sync?: boolean } = {}) {
-  saveStoredData(KEYS.COUPONS, coupons, options);
+export function saveGeneratedCoupons(coupons: GeneratedCoupon[]) {
+  saveStoredData(KEYS.COUPONS, coupons);
 }
 
 
@@ -655,11 +575,11 @@ export function getAuditLogs(): AuditLog[] {
   return getStoredData(KEYS.AUDIT_LOGS, [] as AuditLog[]);
 }
 
-export function saveAuditLogs(logs: AuditLog[], options: { sync?: boolean } = {}) {
-  saveStoredData(KEYS.AUDIT_LOGS, logs, options);
+export function saveAuditLogs(logs: AuditLog[]) {
+  saveStoredData(KEYS.AUDIT_LOGS, logs);
 }
 
-export function addAuditLog(log: Omit<AuditLog, 'id' | 'createdAt'> & Partial<Pick<AuditLog, 'id' | 'createdAt'>>, options: { sync?: boolean } = {}) {
+export function addAuditLog(log: Omit<AuditLog, 'id' | 'createdAt'> & Partial<Pick<AuditLog, 'id' | 'createdAt'>>) {
   const now = new Date().toISOString();
   const nextLog: AuditLog = {
     ...log,
@@ -668,24 +588,16 @@ export function addAuditLog(log: Omit<AuditLog, 'id' | 'createdAt'> & Partial<Pi
   };
 
   const logs = getAuditLogs();
-  saveAuditLogs([nextLog, ...logs].slice(0, 1000), options);
+  saveAuditLogs([nextLog, ...logs].slice(0, 1000));
   return nextLog;
-}
-
-export function getMembershipTiers(): MembershipTier[] {
-  return getStoredData(KEYS.MEMBERSHIP_TIERS, getDefaultMembershipTiersForShops(getShops().map((shop) => shop.id)));
-}
-
-export function saveMembershipTiers(tiers: MembershipTier[], options: { sync?: boolean } = {}) {
-  saveStoredData(KEYS.MEMBERSHIP_TIERS, tiers, options);
 }
 
 export function getOnboardingChecklists(): ShopOnboardingChecklist[] {
   return getStoredData(KEYS.ONBOARDING_CHECKLISTS, [] as ShopOnboardingChecklist[]);
 }
 
-export function saveOnboardingChecklists(checklists: ShopOnboardingChecklist[], options: { sync?: boolean } = {}) {
-  saveStoredData(KEYS.ONBOARDING_CHECKLISTS, checklists, options);
+export function saveOnboardingChecklists(checklists: ShopOnboardingChecklist[]) {
+  saveStoredData(KEYS.ONBOARDING_CHECKLISTS, checklists);
 }
 
 export function getOrCreateOnboardingChecklist(shopId: string): ShopOnboardingChecklist {
@@ -718,6 +630,6 @@ export function upsertOnboardingChecklist(checklist: ShopOnboardingChecklist) {
     ? checklists.map((item) => (item.shopId === checklist.shopId ? { ...item, ...nextChecklist } : item))
     : [{ ...nextChecklist, createdAt: checklist.createdAt || now }, ...checklists];
 
-  saveOnboardingChecklists(next, { sync: false });
+  saveOnboardingChecklists(next);
   return nextChecklist;
 }

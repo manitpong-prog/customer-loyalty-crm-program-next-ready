@@ -5,7 +5,7 @@ import {
   AlertCircle, AppWindow, Globe, CheckCircle2, RotateCcw, Landmark
 } from 'lucide-react';
 import { Shop, Customer, Transaction } from '../types';
-import { getShops, saveShops, getCustomers, getTransactions, initializeDatabase } from '../data/mockData';
+import { getShops, saveShops, getCustomers, getTransactions } from '../data/mockData';
 
 interface WebmasterDashboardProps {
   key?: string;
@@ -44,103 +44,36 @@ export default function WebmasterDashboard({ onDataChange }: WebmasterDashboardP
     setTimeout(() => setNotification(''), 3500);
   };
 
-  const postJson = async <T,>(url: string, body: unknown): Promise<T> => {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+  // Webmaster approves a store shop
+  const handleApproveShop = (shopId: string) => {
+    const shops = getShops();
+    const updated = shops.map(s => {
+      if (s.id === shopId) {
+        return { ...s, registrationStatus: 'approved' as const, isActive: true };
+      }
+      return s;
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload?.ok === false) {
-      throw new Error(payload?.message || 'บันทึกข้อมูลออนไลน์ไม่สำเร็จ');
-    }
-    return payload as T;
-  };
 
-  const refreshFromNeon = async () => {
-    await initializeDatabase();
+    saveShops(updated);
+    triggerNotify('✓ อนุมัติการเปิดบริการร้านค้าใหม่ ทรานส์แอคชันพร้อมใช้งานได้ทันที!');
     onDataChange();
     loadData();
   };
 
-  // Webmaster approves a store shop
-  const handleApproveShop = async (shopId: string) => {
-    const shops = getShops();
-    const targetShop = shops.find((shop) => shop.id === shopId);
-    if (!targetShop) {
-      triggerNotify('❌ ไม่พบร้านค้าที่ต้องการอนุมัติ');
-      return;
-    }
-
-    const nextShop: Shop = { ...targetShop, registrationStatus: 'approved', isActive: true };
-    const updated = shops.map(s => s.id === shopId ? nextShop : s);
-
-    try {
-      triggerNotify('กำลังอนุมัติร้านค้าออนไลน์...');
-      await postJson('/api/db/merchant-settings', {
-        shop: nextShop,
-        auditLog: {
-          id: `audit_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          shopId,
-          shopName: nextShop.name,
-          actorType: 'system',
-          actorName: 'Platform Admin',
-          action: 'shop_approved_online',
-          actionLabel: 'อนุมัติร้านค้าแบบออนไลน์',
-          description: `อนุมัติการเปิดร้าน “${nextShop.name}”`,
-          targetType: 'shop',
-          targetId: shopId,
-          status: 'success',
-          metadata: {},
-          createdAt: new Date().toISOString(),
-        },
-      });
-      saveShops(updated, { sync: false });
-      await refreshFromNeon();
-      triggerNotify('✓ อนุมัติการเปิดบริการร้านค้าใหม่ในฐานข้อมูลออนไลน์แล้ว');
-    } catch (error) {
-      triggerNotify(`❌ ${error instanceof Error ? error.message : 'อนุมัติร้านค้าไม่สำเร็จ'}`);
-    }
-  };
-
   // Webmaster rejects a store shop
-  const handleRejectShop = async (shopId: string) => {
+  const handleRejectShop = (shopId: string) => {
     const shops = getShops();
-    const targetShop = shops.find((shop) => shop.id === shopId);
-    if (!targetShop) {
-      triggerNotify('❌ ไม่พบร้านค้าที่ต้องการปฏิเสธ');
-      return;
-    }
+    const updated = shops.map(s => {
+      if (s.id === shopId) {
+        return { ...s, registrationStatus: 'rejected' as const, isActive: false };
+      }
+      return s;
+    });
 
-    const nextShop: Shop = { ...targetShop, registrationStatus: 'rejected', isActive: false };
-    const updated = shops.map(s => s.id === shopId ? nextShop : s);
-
-    try {
-      triggerNotify('กำลังปฏิเสธร้านค้าออนไลน์...');
-      await postJson('/api/db/merchant-settings', {
-        shop: nextShop,
-        auditLog: {
-          id: `audit_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          shopId,
-          shopName: nextShop.name,
-          actorType: 'system',
-          actorName: 'Platform Admin',
-          action: 'shop_rejected_online',
-          actionLabel: 'ปฏิเสธร้านค้าแบบออนไลน์',
-          description: `ปฏิเสธคำร้องร้าน “${nextShop.name}”`,
-          targetType: 'shop',
-          targetId: shopId,
-          status: 'warning',
-          metadata: {},
-          createdAt: new Date().toISOString(),
-        },
-      });
-      saveShops(updated, { sync: false });
-      await refreshFromNeon();
-      triggerNotify('✕ ปฏิเสธคำร้องขอเปิดร้านค้าในฐานข้อมูลออนไลน์แล้ว');
-    } catch (error) {
-      triggerNotify(`❌ ${error instanceof Error ? error.message : 'ปฏิเสธร้านค้าไม่สำเร็จ'}`);
-    }
+    saveShops(updated);
+    triggerNotify('✕ ปฏิเสธคำร้องขอเปิดร้านค้าเรียบร้อยแล้ว');
+    onDataChange();
+    loadData();
   };
 
   // Save Platform core settings

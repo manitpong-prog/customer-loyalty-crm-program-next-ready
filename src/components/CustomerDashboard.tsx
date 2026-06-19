@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Award,
@@ -29,21 +29,20 @@ import {
   PromoBanner,
   Transaction,
   Shop,
+  TierType,
 } from "../types";
 import {
   getCustomers,
   saveCustomers,
   getRewards,
-  saveRewards,
   getBanners,
   getTransactions,
-  replaceLocalCacheFromSnapshot,
+  initializeDatabase,
   saveTransactions,
   getShops,
   getGeneratedCoupons,
   saveGeneratedCoupons,
   addAuditLog,
-  getMembershipTiers,
   type GeneratedCoupon,
 } from "../data/mockData";
 import {
@@ -55,8 +54,6 @@ import {
 } from "../lib/shopScope";
 import LineLoginPanel from "./LineLoginPanel";
 import { shopIdToSlug } from "../lib/shopSlug";
-import { getCurrentMembershipTierConfig, getMembershipTiersForShop, getNextMembershipTier, resolveMembershipTier } from "../lib/membershipTiers";
-import { getEarnPointsExpiresAt, getPointRules, isEarnTransactionNearExpiry } from "../lib/pointRules";
 import type { LineIdentity } from "../lib/lineAuth";
 
 type CustomerTab = "home" | "rewards" | "code" | "history" | "profile";
@@ -101,7 +98,6 @@ export default function CustomerDashboard({
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [banners, setBanners] = useState<PromoBanner[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [membershipTiers, setMembershipTiers] = useState(getMembershipTiersForShop(getMembershipTiers(), selectedShopId));
 
   // Interactive UI States
   const [promoCode, setPromoCode] = useState("");
@@ -122,16 +118,14 @@ export default function CustomerDashboard({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scannerStreamRef = useRef<MediaStream | null>(null);
   const scanFrameRef = useRef<number | null>(null);
+  const autoMemberRefreshTimerRef = useRef<number | null>(null);
+  const autoMemberRefreshRunningRef = useRef(false);
   const [isAutoLoadingMember, setIsAutoLoadingMember] = useState(false);
-  const [isRefreshingFreshData, setIsRefreshingFreshData] = useState(false);
-  const refreshInFlightRef = useRef(false);
-  const lastRefreshSignatureRef = useRef("");
-  const [lastFreshLoadedAt, setLastFreshLoadedAt] = useState<string>("");
+  const [autoMemberRefreshAttempt, setAutoMemberRefreshAttempt] = useState(0);
 
   // Dynamic Coupon States
   const [pendingCoupon, setPendingCoupon] = useState<GeneratedCoupon | null>(null);
   const [showCouponConfirm, setShowCouponConfirm] = useState(false);
-  const [isClaimingCoupon, setIsClaimingCoupon] = useState(false);
 
   const validateCouponForCurrentShop = (coupon?: GeneratedCoupon | null): CouponValidationState => {
     if (!coupon) return "not-found";
@@ -280,6 +274,7 @@ export default function CustomerDashboard({
   useEffect(() => {
     return () => {
       if (scanFrameRef.current) window.cancelAnimationFrame(scanFrameRef.current);
+      if (autoMemberRefreshTimerRef.current) window.clearTimeout(autoMemberRefreshTimerRef.current);
       scannerStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
@@ -349,10 +344,8 @@ export default function CustomerDashboard({
     }
   }, [initialCouponCode, clearInitialCouponCode, selectedShopId, isProductionView, customer]);
 
-  // Load latest data from the local read cache after scoped customer-state refreshes it from Neon.
-  // Production customer identity is strict: never fall back to the first customer, because that
-  // can show an old tester profile while LIFF/Neon is still loading the current LINE user.
-  const loadData = useCallback(() => {
+  // Load latest data on mount and tab switch
+  const loadData = () => {
     const allTransactions = getTransactions();
     const scopedTransactions = filterTransactionsByShop(allTransactions, selectedShopId);
     const allCustomers = getCustomers();
@@ -362,6 +355,14 @@ export default function CustomerDashboard({
       allTransactions,
       true,
     );
+    const lineCustomerId = lineIdentity?.customerId || (lineIdentity?.lineUserId ? `line_${lineIdentity.lineUserId}` : "");
+    const currCust =
+      (lineCustomerId ? scopedCustomers.find((c) => c.id === lineCustomerId) : undefined) ||
+      scopedCustomers.find((c) => c.id === currentCustomerId) ||
+      allCustomers.find((c) => c.id === currentCustomerId) ||
+      scopedCustomers[0] ||
+      allCustomers[0];
+    setCustomer(currCust);
 
     // Production route is locked to one shop slug. Demo can still switch shops.
     const approvedShops = getShops().filter(
@@ -380,84 +381,83 @@ export default function CustomerDashboard({
       filterRewardsByShop(getRewards(), selectedShopId).filter((r) => r.isAvailable && r.stock > 0),
     );
     setBanners(filterBannersByShop(getBanners(), selectedShopId, true));
-    setMembershipTiers(getMembershipTiersForShop(getMembershipTiers(), selectedShopId));
-
-    const lineCustomerId = lineIdentity?.customerId || (lineIdentity?.lineUserId ? `line_${lineIdentity.lineUserId}` : "");
-    const currCust = isProductionView
-      ? (lineCustomerId ? scopedCustomers.find((c) => c.id === lineCustomerId) || allCustomers.find((c) => c.id === lineCustomerId) || null : null)
-      : (
-          scopedCustomers.find((c) => c.id === currentCustomerId) ||
-          allCustomers.find((c) => c.id === currentCustomerId) ||
-          scopedCustomers[0] ||
-          allCustomers[0] ||
-          null
-        );
-
-    setCustomer(currCust);
-    setTransactions(currCust ? scopedTransactions.filter((t) => t.userId === currCust.id) : []);
-  }, [currentCustomerId, isProductionView, lineIdentity?.customerId, lineIdentity?.lineUserId, selectedShopId, setSelectedShopId]);
-
-  const refreshCustomerFromNeon = useCallback(async (options?: { force?: boolean; couponCode?: string }) => {
-    const couponCode = options?.couponCode ?? initialCouponCode ?? "";
-    const signature = [selectedShopId, lineIdentity?.customerId || "", lineIdentity?.lineUserId || "", couponCode].join("|");
-
-    if (!options?.force && refreshInFlightRef.current) return false;
-    if (!options?.force && signature === lastRefreshSignatureRef.current) return false;
-
-    refreshInFlightRef.current = true;
-    lastRefreshSignatureRef.current = signature;
-    setIsRefreshingFreshData(true);
-    if (lineIdentity?.customerId || lineIdentity?.lineUserId) {
-      setIsAutoLoadingMember(true);
-    }
-
-    try {
-      const params = new URLSearchParams({ shopId: selectedShopId, ts: String(Date.now()) });
-      if (lineIdentity?.customerId) params.set('customerId', lineIdentity.customerId);
-      if (lineIdentity?.lineUserId) params.set('lineUserId', lineIdentity.lineUserId);
-      if (couponCode) params.set('couponCode', couponCode);
-
-      const response = await fetch(`/api/db/customer-state?${params.toString()}`, {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          Pragma: 'no-cache',
-        },
-      });
-      const payload = await response.json().catch(() => null) as { ok?: boolean; data?: Parameters<typeof replaceLocalCacheFromSnapshot>[0]; message?: string } | null;
-
-      if (!response.ok || !payload?.ok || !payload.data) {
-        throw new Error(payload?.message || 'โหลดข้อมูลล่าสุดจากฐานข้อมูลไม่สำเร็จ');
-      }
-
-      replaceLocalCacheFromSnapshot(payload.data);
-      loadData();
-      setLastFreshLoadedAt(new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      return true;
-    } catch (error) {
-      if (options?.force) {
-        setErrorMessage(error instanceof Error ? error.message : 'โหลดข้อมูลล่าสุดไม่สำเร็จ');
-        setTimeout(() => setErrorMessage(""), 4000);
-      }
-      // Allow a later retry if this request failed.
-      lastRefreshSignatureRef.current = "";
-      return false;
-    } finally {
-      refreshInFlightRef.current = false;
-      setIsRefreshingFreshData(false);
-      setIsAutoLoadingMember(false);
-    }
-  }, [initialCouponCode, lineIdentity?.customerId, lineIdentity?.lineUserId, loadData, selectedShopId]);
+    setTransactions(scopedTransactions.filter((t) => t.userId === currCust.id));
+  };
 
   useEffect(() => {
     loadData();
-  }, [loadData, dataVersion]);
+  }, [currentCustomerId, selectedShopId, activeTab, lineIdentity?.lineUserId, lineIdentity?.customerId, dataVersion]);
 
   useEffect(() => {
-    if (!isProductionView) return;
-    void refreshCustomerFromNeon();
-  }, [isProductionView, refreshCustomerFromNeon]);
+    if (customer || !isProductionView || !lineIdentity?.customerId) {
+      if (customer) {
+        setIsAutoLoadingMember(false);
+        setAutoMemberRefreshAttempt(0);
+      }
+      return;
+    }
 
+    if (autoMemberRefreshRunningRef.current) return;
+
+    let cancelled = false;
+    const expectedCustomerId = lineIdentity.customerId;
+
+    const wait = (ms: number) =>
+      new Promise<void>((resolve) => {
+        if (typeof window === "undefined") {
+          resolve();
+          return;
+        }
+
+        autoMemberRefreshTimerRef.current = window.setTimeout(() => {
+          autoMemberRefreshTimerRef.current = null;
+          resolve();
+        }, ms);
+      });
+
+    const refreshUntilMemberExists = async () => {
+      autoMemberRefreshRunningRef.current = true;
+      setIsAutoLoadingMember(true);
+
+      try {
+        for (let attempt = 1; attempt <= 8; attempt += 1) {
+          if (cancelled) return;
+
+          setAutoMemberRefreshAttempt(attempt);
+          await initializeDatabase();
+
+          if (cancelled) return;
+
+          const memberExists = getCustomers().some((member) => member.id === expectedCustomerId);
+          if (memberExists) {
+            loadData();
+            onDataChange();
+            setIsAutoLoadingMember(false);
+            setAutoMemberRefreshAttempt(0);
+            return;
+          }
+
+          await wait(attempt <= 3 ? 650 : 1100);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsAutoLoadingMember(false);
+        }
+        autoMemberRefreshRunningRef.current = false;
+      }
+    };
+
+    refreshUntilMemberExists();
+
+    return () => {
+      cancelled = true;
+      if (autoMemberRefreshTimerRef.current) {
+        window.clearTimeout(autoMemberRefreshTimerRef.current);
+        autoMemberRefreshTimerRef.current = null;
+      }
+      autoMemberRefreshRunningRef.current = false;
+    };
+  }, [customer, isProductionView, lineIdentity?.customerId, onDataChange, selectedShopId]);
 
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -504,8 +504,8 @@ export default function CustomerDashboard({
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-600">
               {isAutoLoadingMember
-                ? "กำลังโหลดข้อมูลสมาชิกจากฐานข้อมูลล่าสุด เมื่อพร้อมแล้วจะพาไปหน้าสมาชิกอัตโนมัติ"
-                : "ถ้าเพิ่งเข้าสู่ระบบด้วย LINE ระบบจะโหลดข้อมูลสมาชิกให้อัตโนมัติ หรือกดโหลดใหม่ได้อีกครั้ง"}
+                ? `กำลังโหลดข้อมูลสมาชิกอัตโนมัติ${autoMemberRefreshAttempt ? ` รอบที่ ${autoMemberRefreshAttempt}` : ""} เมื่อพร้อมแล้วจะพาไปหน้าสมาชิกอัตโนมัติ`
+                : "ถ้าเพิ่งเข้าสู่ระบบด้วย LINE ระบบจะลองโหลดข้อมูลสมาชิกให้อัตโนมัติ หรือกดโหลดใหม่ได้อีกครั้ง"}
             </p>
             {isAutoLoadingMember && (
               <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-extrabold text-emerald-700">
@@ -518,7 +518,9 @@ export default function CustomerDashboard({
                 type="button"
                 onClick={async () => {
                   setIsAutoLoadingMember(true);
-                  await refreshCustomerFromNeon({ force: true });
+                  await initializeDatabase();
+                  loadData();
+                  onDataChange();
                   setIsAutoLoadingMember(false);
                 }}
                 className="rounded-2xl bg-slate-950 px-4 py-2 text-xs font-extrabold text-white"
@@ -576,14 +578,7 @@ export default function CustomerDashboard({
   const activeShopContactText = activeShop?.contactText || activeShop?.phone || "ติดต่อร้านค้าเพื่อสอบถามรายละเอียดเพิ่มเติม";
   const displayedCustomerName = customer.name || customer.lineName || "สมาชิก";
   const maskedMemberId = `${(customer.lineId || customer.id).substring(0, 12).toUpperCase()}***`;
-  const activeShopPointRules = getPointRules(activeShop);
-  const expiringPointTransactions = transactions
-    .filter((transaction) => isEarnTransactionNearExpiry(transaction, activeShop))
-    .sort((a, b) => new Date(a.pointsExpiresAt || '').getTime() - new Date(b.pointsExpiresAt || '').getTime());
-  const expiringPoints = expiringPointTransactions.reduce((sum, transaction) => sum + transaction.points, 0);
-  const nearestPointExpiryLabel = expiringPointTransactions[0]?.pointsExpiresAt
-    ? new Date(expiringPointTransactions[0].pointsExpiresAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })
-    : '-';
+  const expiringPoints = 0;
   const featuredRewards = rewards.slice(0, 3);
   const recentTransactions = [...transactions]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -597,18 +592,28 @@ export default function CustomerDashboard({
     })
     : "";
 
-  // Point Progress calculate from database-backed membership tiers.
-  const currentTierName = resolveMembershipTier(customer.lifetimePoints, membershipTiers);
-  const currentTierConfig = getCurrentMembershipTierConfig(customer.lifetimePoints, membershipTiers);
-  const nextTierConfig = getNextMembershipTier(customer.lifetimePoints, membershipTiers);
-  const tierInfo = {
-    next: nextTierConfig?.name || "Maxed",
-    target: nextTierConfig?.minLifetimePoints || Math.max(currentTierConfig.minLifetimePoints, customer.lifetimePoints, 1),
-    color: nextTierConfig ? "from-amber-600 to-amber-800" : "from-teal-400 to-cyan-500",
+  // Point Progress calculate
+  const getTierThreshold = (tier: TierType) => {
+    if (tier === "Silver")
+      return {
+        next: "Gold",
+        target: 300,
+        color: "from-amber-600 to-amber-800",
+      };
+    if (tier === "Gold")
+      return {
+        next: "Platinum",
+        target: 1000,
+        color: "from-yellow-500 to-amber-500",
+      };
+    return { next: "Maxed", target: 1000, color: "from-teal-400 to-cyan-500" };
   };
-  const pointsProgress = nextTierConfig
-    ? Math.min(100, Math.max(0, (customer.lifetimePoints / Math.max(1, nextTierConfig.minLifetimePoints)) * 100))
-    : 100;
+
+  const tierInfo = getTierThreshold(customer.tier);
+  const pointsProgress = Math.min(
+    100,
+    (customer.currentPoints / tierInfo.target) * 100,
+  );
 
   const processPromoCode = (rawCode: string) => {
     const code = rawCode.trim().toUpperCase();
@@ -675,7 +680,9 @@ export default function CustomerDashboard({
         const newPts = c.currentPoints + pointsEarned;
         const newLifetime = c.lifetimePoints + pointsEarned;
         // recalculate tier
-        const newTier = resolveMembershipTier(newLifetime, membershipTiers);
+        let newTier = c.tier;
+        if (newLifetime >= 1000) newTier = "Platinum";
+        else if (newLifetime >= 300) newTier = "Gold";
 
         return {
           ...c,
@@ -701,7 +708,6 @@ export default function CustomerDashboard({
       points: pointsEarned,
       description,
       status: "completed",
-      pointsExpiresAt: getEarnPointsExpiresAt(activeShop),
       createdAt: new Date().toISOString(),
     };
 
@@ -730,35 +736,6 @@ export default function CustomerDashboard({
   const handlePromoSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     processPromoCode(promoCode);
-  };
-
-  const handleDataChangeAfterOnlineClaim = (
-    confirmedCustomer: Customer,
-    confirmedCoupon: GeneratedCoupon,
-    confirmedTransaction: Transaction,
-  ) => {
-    // Keep the UI responsive after Neon confirms the write. These local updates are
-    // cache-only and use the rows returned by the API, not browser-created data.
-    const nextCustomers = [
-      confirmedCustomer,
-      ...getCustomers().filter((item) => item.id !== confirmedCustomer.id),
-    ];
-    const nextCoupons = [
-      confirmedCoupon,
-      ...getGeneratedCoupons().filter((item) => item.code !== confirmedCoupon.code),
-    ];
-    const nextTransactions = [
-      confirmedTransaction,
-      ...getTransactions().filter((tx) => tx.id !== confirmedTransaction.id),
-    ];
-
-    saveCustomers(nextCustomers, { sync: false });
-    saveGeneratedCoupons(nextCoupons, { sync: false });
-    saveTransactions(nextTransactions, { sync: false });
-
-    setCustomer(confirmedCustomer);
-    setPendingCoupon(confirmedCoupon);
-    setTransactions(nextTransactions.filter((tx) => tx.userId === confirmedCustomer.id && tx.shopId === selectedShopId));
   };
 
   const handleDeclineDynamicCoupon = () => {
@@ -826,17 +803,22 @@ export default function CustomerDashboard({
     }
   };
 
-  // Confirm claim points via Dynamic Coupon modal overlay.
-  // Phase 7A: online-only. The customer receives points only after Neon confirms
-  // customer update + coupon used + transaction insert. LocalStorage becomes cache only.
-  const handleConfirmClaimDynamicCoupon = async () => {
-    if (!pendingCoupon || !customer || isClaimingCoupon) return;
+  // Confirm claim points via Dynamic Coupon modal overlay
+  const handleConfirmClaimDynamicCoupon = () => {
+    if (!pendingCoupon || !customer) return;
 
     const coupons = getGeneratedCoupons();
-    const matched = coupons.find(
-      (c: any) => c.code.toUpperCase() === pendingCoupon.code.toUpperCase(),
-    ) || pendingCoupon;
 
+    const matchedIdx = coupons.findIndex(
+      (c: any) => c.code.toUpperCase() === pendingCoupon.code.toUpperCase(),
+    );
+    if (matchedIdx === -1) {
+      setErrorMessage("ตรวจรหัสไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      setShowCouponConfirm(false);
+      return;
+    }
+
+    const matched = coupons[matchedIdx];
     const couponState = validateCouponForCurrentShop(matched);
     if (couponState !== "ready") {
       setErrorMessage(explainCouponValidation(couponState));
@@ -844,64 +826,68 @@ export default function CustomerDashboard({
       return;
     }
 
-    setIsClaimingCoupon(true);
-    setErrorMessage("");
+    // 1. Mark as used
+    coupons[matchedIdx].isUsed = true;
+    coupons[matchedIdx].usedByCustomerId = customer.id;
+    coupons[matchedIdx].usedAt = new Date().toISOString();
+    saveGeneratedCoupons(coupons);
 
-    try {
-      const response = await fetch('/api/db/point-claim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          couponCode: matched.code,
-          shopId: selectedShopId,
-          customer: {
-            id: customer.id,
-            name: displayedCustomerName || customer.name,
-            phone: customer.phone || '',
-            lineName: customer.lineName || lineIdentity?.displayName || displayedCustomerName || customer.name,
-            lineId: customer.lineId || lineIdentity?.lineUserId || '',
-            avatar: customer.avatar || lineIdentity?.pictureUrl || '',
-            createdAt: customer.createdAt,
-          },
-        }),
-      });
+    // 2. Add points to the user
+    const pointsToAdd = matched.points;
+    const allCustomers = getCustomers();
+    const updatedCustomers = allCustomers.map((c) => {
+      if (c.id === customer.id) {
+        const newPts = c.currentPoints + pointsToAdd;
+        const newLifetime = c.lifetimePoints + pointsToAdd;
+        let newTier = c.tier;
+        if (newLifetime >= 1000) newTier = "Platinum";
+        else if (newLifetime >= 300) newTier = "Gold";
 
-      const payload = await response.json().catch(() => null) as {
-        ok?: boolean;
-        message?: string;
-        customer?: Customer;
-        coupon?: GeneratedCoupon;
-        transaction?: Transaction;
-      } | null;
-
-      if (!response.ok || !payload?.ok || !payload.customer || !payload.coupon || !payload.transaction) {
-        throw new Error(payload?.message || 'บันทึกรับแต้มลงฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+        return {
+          ...c,
+          currentPoints: newPts,
+          lifetimePoints: newLifetime,
+          tier: newTier,
+        };
       }
+      return c;
+    });
+    saveCustomers(updatedCustomers);
 
-      // API already wrote Neon and returned the confirmed rows. Update the local read cache
-      // from the confirmed response instead of loading the whole CRM snapshot again.
-      handleDataChangeAfterOnlineClaim(payload.customer, payload.coupon, payload.transaction);
+    // 3. Create Transaction
+    const newTx: Transaction = {
+      id: `tx_${Date.now()}`,
+      userId: customer.id,
+      userName: customer.name,
+      userPhone: customer.phone,
+      shopId: matched.shopId,
+      shopName: matched.shopName,
+      type: "earn",
+      points: pointsToAdd,
+      description: `รับแต้มจากลิงก์ของร้าน: ${matched.description} (รหัส: ${matched.code})`,
+      status: "completed",
+      createdAt: new Date().toISOString(),
+    };
+    saveTransactions([newTx, ...getTransactions()]);
+    recordCustomerAuditLog({
+      action: 'customer_point_link_claimed',
+      actionLabel: 'ลูกค้ากดรับแต้มจากลิงก์',
+      description: `${customer.name} รับแต้ม +${pointsToAdd.toLocaleString('th-TH')} จากลิงก์รหัส ${matched.code}`,
+      targetType: 'coupon',
+      targetId: matched.code,
+      points: pointsToAdd,
+      metadata: { transactionId: newTx.id, couponCode: matched.code },
+    });
 
-      setShowCouponConfirm(false);
-      setSuccessMessage(
-        `รับแต้ม ${payload.transaction.points.toLocaleString('th-TH')} แต้มแล้ว กำลังพากลับหน้าแรก`,
-      );
-      setPromoCode("");
-      setPendingCoupon(null);
-      onDataChange();
-      loadData();
-      goToCustomerHome(1300);
-    } catch (error) {
-      console.error('[point-claim-online]', error);
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : 'บันทึกรับแต้มลงฐานข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง',
-      );
-      setShowCouponConfirm(false);
-    } finally {
-      setIsClaimingCoupon(false);
-    }
+    setShowCouponConfirm(false);
+    setSuccessMessage(
+      `รับแต้ม ${pointsToAdd} แต้มแล้ว กำลังพากลับหน้าแรก`,
+    );
+    setPromoCode("");
+    setPendingCoupon(null);
+    onDataChange();
+    loadData();
+    goToCustomerHome(1300);
   };
 
   // QR Simulator Scan
@@ -918,7 +904,9 @@ export default function CustomerDashboard({
         if (c.id === customer.id) {
           const newPts = c.currentPoints + points;
           const newLifetime = c.lifetimePoints + points;
-          const newTier = resolveMembershipTier(newLifetime, membershipTiers);
+          let newTier = c.tier;
+          if (newLifetime >= 1000) newTier = "Platinum";
+          else if (newLifetime >= 300) newTier = "Gold";
 
           return {
             ...c,
@@ -942,7 +930,6 @@ export default function CustomerDashboard({
         points,
         description: `สแกนคิวอาร์โค้ดรับแต้มหน้าร้าน: ${desc}`,
         status: "completed",
-        pointsExpiresAt: getEarnPointsExpiresAt(activeShop),
         createdAt: new Date().toISOString(),
       };
 
@@ -976,7 +963,7 @@ export default function CustomerDashboard({
   };
 
   // Confirm Redeem
-  const handleConfirmRedeem = async () => {
+  const handleConfirmRedeem = () => {
     if (!selectedReward || !customer) return;
 
     const latestReward = getRewards().find(
@@ -989,118 +976,94 @@ export default function CustomerDashboard({
       return;
     }
 
-    // Phase 7B: do not trust local stock/points here. The API checks the latest
-    // Neon reward stock and customer points before it writes the redeem request.
+    if (latestReward.stock <= 0) {
+      setErrorMessage("ของรางวัลนี้หมดสต็อกแล้ว กรุณาติดต่อร้านค้า");
+      setTimeout(() => setErrorMessage(""), 3000);
+      return;
+    }
+
+    if (customer.currentPoints < latestReward.pointsCost) {
+      setErrorMessage("แต้มสะสมของคุณไม่เพียงพอสำหรับการแลกของรางวัลชิ้นนี้");
+      setTimeout(() => setErrorMessage(""), 3000);
+      return;
+    }
 
     setIsRedeeming(true);
-    setErrorMessage("");
 
-    try {
-      const response = await fetch('/api/db/reward-redeem', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rewardId: latestReward.id,
-          shopId: selectedShopId,
-          customer: {
-            ...customer,
-            shopIds: Array.from(new Set([...(customer.shopIds || []), selectedShopId])),
-          },
-        }),
+    // Short delay for a friendlier mobile/LINE OA interaction.
+    setTimeout(() => {
+      const allCustomers = getCustomers();
+      const updatedCustomers = allCustomers.map((c) => {
+        if (c.id === customer.id) {
+          return {
+            ...c,
+            currentPoints: c.currentPoints - latestReward.pointsCost,
+          };
+        }
+        return c;
+      });
+      saveCustomers(updatedCustomers);
+
+      // Create Pending Transaction. Merchant confirms handover in /merchant/im-sticker.
+      const newTx: Transaction = {
+        id: `tx_${Date.now()}`,
+        userId: customer.id,
+        userName: customer.name,
+        userPhone: customer.phone,
+        shopId: selectedShopId,
+        shopName: activeShop?.name || "ร้านค้าพาร์ทเนอร์",
+        type: "redeem",
+        points: latestReward.pointsCost,
+        description: `ขอแลกรางวัล: ${latestReward.name}`,
+        status: "pending",
+        rewardId: latestReward.id,
+        createdAt: new Date().toISOString(),
+      };
+
+      const currentTxs = getTransactions();
+      saveTransactions([newTx, ...currentTxs]);
+      recordCustomerAuditLog({
+        action: 'customer_reward_redeemed',
+        actionLabel: 'ลูกค้าแลกรางวัล',
+        description: `${customer.name} ขอแลกรางวัล “${latestReward.name}” ใช้ ${latestReward.pointsCost.toLocaleString('th-TH')} แต้ม`,
+        targetType: 'transaction',
+        targetId: newTx.id,
+        points: -Math.abs(latestReward.pointsCost),
+        metadata: { rewardId: latestReward.id, rewardName: latestReward.name },
       });
 
-      const payload = await response.json().catch(() => null) as {
-        ok?: boolean;
-        message?: string;
-        customer?: Customer;
-        transaction?: Transaction;
-        reward?: Reward;
-      } | null;
-
-      if (!response.ok || !payload?.ok || !payload.transaction || !payload.customer) {
-        throw new Error(payload?.message || 'แลกรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
-      }
-
-      // API already checked Neon and returned confirmed rows. Update the local read cache
-      // directly from the response instead of loading the whole CRM snapshot again.
-      const confirmedReward = payload.reward || latestReward;
-      saveCustomers([payload.customer, ...getCustomers().filter((item) => item.id !== payload.customer!.id)], { sync: false });
-      saveRewards(getRewards().map((reward) => reward.id === confirmedReward.id ? confirmedReward : reward), { sync: false });
-      saveTransactions([payload.transaction, ...getTransactions().filter((tx) => tx.id !== payload.transaction!.id)], { sync: false });
-
-      setCustomer(payload.customer);
-      setSelectedReward(confirmedReward);
-      setLatestRedeemTransaction(payload.transaction);
-      setTransactions((current) => [payload.transaction!, ...current.filter((tx) => tx.id !== payload.transaction!.id)]);
-      setIsRedeemSuccess(true);
-      setSuccessMessage('ส่งคำขอแลกรางวัลให้ร้านแล้ว กรุณาส่งลิงก์ให้ร้านตรวจสอบ');
-      setTimeout(() => setSuccessMessage(""), 4000);
-      onDataChange();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'แลกรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
-      setErrorMessage(message);
-      setTimeout(() => setErrorMessage(""), 5000);
-    } finally {
+      setSelectedReward(latestReward);
+      setLatestRedeemTransaction(newTx);
       setIsRedeeming(false);
-    }
+      setIsRedeemSuccess(true);
+      onDataChange();
+      loadData();
+    }, 900);
   };
 
   // Update Profile
-  const handleUpdateProfile = async (e: React.FormEvent) => {
+  const handleUpdateProfile = (e: React.FormEvent) => {
     e.preventDefault();
     if (!profileName.trim()) return;
 
-    const nextCustomer: Customer = {
-      ...customer,
-      name: profileName.trim(),
-      phone: profilePhone.trim(),
-      lineName: profileLineName.trim() || profileName.trim(),
-      shopIds: Array.from(new Set([...(customer.shopIds || []), selectedShopId])),
-    };
-
-    try {
-      setErrorMessage("");
-      const response = await fetch('/api/db/customers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'upsert',
-          customer: nextCustomer,
-          auditLog: {
-            id: `audit_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            shopId: selectedShopId,
-            shopName: activeShop?.name || selectedShopId,
-            actorType: 'customer',
-            actorName: nextCustomer.name,
-            actorId: nextCustomer.id,
-            action: 'customer_profile_updated_online',
-            actionLabel: 'ลูกค้าแก้โปรไฟล์แบบออนไลน์',
-            description: `${nextCustomer.name} บันทึกข้อมูลโปรไฟล์`,
-            targetType: 'customer',
-            targetId: nextCustomer.id,
-            customerId: nextCustomer.id,
-            customerName: nextCustomer.name,
-            status: 'success',
-            metadata: {},
-            createdAt: new Date().toISOString(),
-          },
-        }),
-      });
-
-      const payload = await response.json().catch(() => null) as { ok?: boolean; message?: string; customer?: Customer } | null;
-      if (!response.ok || !payload?.ok || !payload.customer) {
-        throw new Error(payload?.message || 'บันทึกข้อมูลโปรไฟล์ลงฐานข้อมูลไม่สำเร็จ');
+    const allCustomers = getCustomers();
+    const updated = allCustomers.map((c) => {
+      if (c.id === customer.id) {
+        return {
+          ...c,
+          name: profileName,
+          phone: profilePhone,
+          lineName: profileLineName,
+        };
       }
+      return c;
+    });
 
-      setCustomer(payload.customer);
-      setSuccessMessage("บันทึกข้อมูลโปรไฟล์ออนไลน์แล้ว");
-      onDataChange();
-      loadData();
-      setTimeout(() => setSuccessMessage(""), 3000);
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : 'บันทึกข้อมูลโปรไฟล์ไม่สำเร็จ');
-      setTimeout(() => setErrorMessage(""), 4000);
-    }
+    saveCustomers(updated);
+    setSuccessMessage("บันทึกข้อมูลโปรไฟล์แล้ว");
+    onDataChange();
+    loadData();
+    setTimeout(() => setSuccessMessage(""), 3000);
   };
 
   return (
@@ -1156,26 +1119,12 @@ export default function CustomerDashboard({
       </div>
 
       {isProductionView && (
-        <>
-          <LineLoginPanel
-            context="customer"
-            shopId={selectedShopId}
-            onAuthenticated={onLineIdentityChange}
-            compact
-          />
-          <div className="mx-4 mt-3 flex items-center justify-between rounded-2xl border border-slate-200 bg-white/85 px-4 py-2 text-[10px] font-bold text-slate-500 shadow-sm">
-            <span>{lastFreshLoadedAt ? `โหลดข้อมูลล่าสุด ${lastFreshLoadedAt}` : 'ข้อมูลจากฐานข้อมูลล่าสุด'}</span>
-            <button
-              type="button"
-              onClick={() => void refreshCustomerFromNeon({ force: true })}
-              disabled={isRefreshingFreshData}
-              className="inline-flex items-center gap-1 rounded-full bg-slate-950 px-2.5 py-1 text-white disabled:opacity-60"
-            >
-              <RefreshCw className={`h-3 w-3 ${isRefreshingFreshData ? 'animate-spin' : ''}`} />
-              รีเฟรช
-            </button>
-          </div>
-        </>
+        <LineLoginPanel
+          context="customer"
+          shopId={selectedShopId}
+          onAuthenticated={onLineIdentityChange}
+          compact
+        />
       )}
 
       {/* Success / Error Notification banners floating */}
@@ -1234,7 +1183,7 @@ export default function CustomerDashboard({
                     </h2>
                     <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[#d6c7b3] bg-[#fbf7ef] px-3 py-1 text-[10px] font-black text-[#4a3626] shadow-sm">
                       <Award className="h-3.5 w-3.5 text-[#b8872d]" />
-                      {currentTierName.toUpperCase()} MEMBER
+                      {customer.tier.toUpperCase()} MEMBER
                     </div>
                   </div>
                 </div>
@@ -1276,7 +1225,7 @@ export default function CustomerDashboard({
               <div className="relative mt-3 text-center">
                 <p className="text-[11px] font-black tracking-[0.16em] text-[#a8761f]">LOYALTY PRIVILEGE CLUB</p>
                 <h3 className="mt-1 text-[22px] font-black tracking-wide text-[#2a140a]">
-                  {currentTierName.toUpperCase()} MEMBER
+                  {customer.tier.toUpperCase()} VIP MEMBER
                 </h3>
                 <div className="mx-auto mt-2 h-px w-24 bg-gradient-to-r from-transparent via-[#c89a45] to-transparent" />
               </div>
@@ -1295,12 +1244,12 @@ export default function CustomerDashboard({
                 </div>
                 <div className="space-y-1 border-l border-[#d8c4a2] pl-3 text-right">
                   <p className="text-[10px] font-black uppercase tracking-wide text-[#836848]">VALID THRU</p>
-                  <p className="text-[11px] font-black text-[#2a140a]">{nearestPointExpiryLabel}</p>
+                  <p className="text-[11px] font-black text-[#2a140a]">31 ธ.ค. 2568</p>
                 </div>
               </div>
 
               <div className="relative mt-5 flex items-center justify-between border-t border-[#d8c4a2] pt-3 text-[12px] font-black">
-                <span className="text-[#4f3c2c]">แต้มใกล้หมดอายุใน {activeShopPointRules.pointExpiryReminderDays.toLocaleString("th-TH")} วัน</span>
+                <span className="text-[#4f3c2c]">แต้มใกล้หมดอายุใน 30 วัน</span>
                 <span className="text-red-600">{expiringPoints.toLocaleString()} คะแนน</span>
               </div>
             </motion.section>
@@ -1351,7 +1300,7 @@ export default function CustomerDashboard({
                     className="overflow-hidden rounded-2xl border border-[#eadfce] bg-white text-left shadow-[0_14px_32px_-30px_rgba(55,36,18,0.55)] transition active:scale-[0.98]"
                   >
                     <div className="relative h-20 overflow-hidden bg-[#f5eee4]">
-                      <img src={rew.imageUrl || rew.image} alt={rew.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                      <img src={rew.image} alt={rew.name} className="h-full w-full object-cover" referrerPolicy="no-referrer" />
                       {index === 0 && (
                         <span className="absolute left-1.5 top-1.5 rounded-full bg-[#2a140a]/90 px-2 py-0.5 text-[8px] font-black text-[#f4c767]">
                           ยอดนิยม
@@ -1436,7 +1385,7 @@ export default function CustomerDashboard({
             {/* Active Shop details banner inside rewards */}
             <div className="bg-white border border-slate-200/60 rounded-2xl p-3 flex items-center gap-3 shadow-sm">
               <img
-                src={activeShop?.logoUrl || activeShop?.logo}
+                src={activeShop?.logo}
                 className="w-10 h-10 rounded-full object-cover border border-slate-100"
                 referrerPolicy="no-referrer"
               />
@@ -1462,7 +1411,7 @@ export default function CustomerDashboard({
                   >
                     <div className="h-24 relative overflow-hidden">
                       <img
-                        src={rew.imageUrl || rew.image}
+                        src={rew.image}
                         alt={rew.name}
                         className="w-full h-full object-cover"
                         referrerPolicy="no-referrer"
@@ -1576,13 +1525,13 @@ export default function CustomerDashboard({
                   <button
                     type="button"
                     onClick={handleConfirmClaimDynamicCoupon}
-                    disabled={pendingCouponState !== "ready" || isClaimingCoupon}
-                    className={`flex-1 rounded-xl px-3 py-2.5 text-xs font-black shadow-sm transition active:scale-[0.98] ${pendingCouponState === "ready" && !isClaimingCoupon
+                    disabled={pendingCouponState !== "ready"}
+                    className={`flex-1 rounded-xl px-3 py-2.5 text-xs font-black shadow-sm transition active:scale-[0.98] ${pendingCouponState === "ready"
                       ? "bg-emerald-600 text-white hover:bg-emerald-700"
                       : "bg-slate-200 text-slate-500 cursor-not-allowed"
                       }`}
                   >
-                    {isClaimingCoupon ? "กำลังบันทึก..." : "ยืนยัน"}
+                    ยืนยัน
                   </button>
                 </div>
               </div>
@@ -1862,9 +1811,9 @@ export default function CustomerDashboard({
                             </p>
                           </div>
                           <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-[9.5px] font-bold text-amber-700 leading-relaxed">
-                            ลูกค้าสามารถคัดลอกลิงก์นี้ส่งให้ร้านค้าอีกครั้งได้ตลอดจนกว่าร้านค้าจะอนุมัติหรือปฏิเสธรายการ
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
+                          ลูกค้าสามารถคัดลอกลิงก์นี้ส่งให้ร้านค้าอีกครั้งได้ตลอดจนกว่าร้านค้าจะอนุมัติหรือปฏิเสธรายการ
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
                             <button
                               type="button"
                               onClick={() => handleShareRedeemLink(t)}
@@ -1975,7 +1924,7 @@ export default function CustomerDashboard({
                     ข้อมูลจาก LINE
                   </p>
                   <span className="inline-block mt-1 bg-amber-500/10 text-amber-700 text-[8px] font-black px-2 py-0.5 rounded-full border border-amber-500/20 shadow-sm">
-                    👑 ระดับ {currentTierName}
+                    👑 ระดับ {customer.tier}
                   </span>
                 </div>
               </div>
@@ -2030,14 +1979,14 @@ export default function CustomerDashboard({
             {/* Level Privileges Info Card */}
             <div className="bg-amber-50/50 border border-amber-200/65 p-4 rounded-2xl space-y-2.5 text-[10.5px] shadow-sm">
               <span className="text-[11px] font-extrabold text-amber-900">
-                สิทธิพิเศษประจำระดับ {currentTierName} :
+                สิทธิพิเศษประจำระดับ {customer.tier} :
               </span>
               <ul className="space-y-1.5 text-stone-700 list-disc list-inside font-semibold font-sans">
                 <li>สะสมแต้มแลกเครื่องดื่มและของรางวัลพิเศษหน้าร้าน</li>
                 <li>
                   รับสิทธิ์ร่วมกิจกรรมพิเศษของร้านตามเงื่อนไข
                 </li>
-                {(currentTierName === "Platinum" || currentTierName === "VIP") ? (
+                {customer.tier === "Platinum" ? (
                   <>
                     <li className="text-amber-700 font-bold">
                       ส่วนลดวันเกิดทันที 20% และเค้กวันเกิดจานพิเศษฟรี
@@ -2047,7 +1996,7 @@ export default function CustomerDashboard({
                     </li>
                   </>
                 ) : (
-                  <li>สะสมแต้มให้ถึงระดับถัดไปเพื่ออัปเกรด badge สมาชิก</li>
+                  <li>สะสมครบ 1000 แต้มเพื่ออัปเกรดเป็น Platinum</li>
                 )}
               </ul>
             </div>
@@ -2201,7 +2150,7 @@ export default function CustomerDashboard({
 
               <div className="space-y-4">
                 <img
-                  src={selectedReward.imageUrl || selectedReward.image}
+                  src={selectedReward.image}
                   alt={selectedReward.name}
                   className="w-full h-32 object-cover rounded-2xl border border-slate-100"
                   referrerPolicy="no-referrer"
@@ -2468,7 +2417,6 @@ export default function CustomerDashboard({
                 <button
                   type="button"
                   onClick={handleDeclineDynamicCoupon}
-                  disabled={isClaimingCoupon}
                   className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs py-2.5 font-bold rounded-xl transition cursor-pointer"
                 >
                   ไม่รับ
@@ -2476,10 +2424,9 @@ export default function CustomerDashboard({
                 <button
                   type="button"
                   onClick={handleConfirmClaimDynamicCoupon}
-                  disabled={isClaimingCoupon}
                   className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-xl shadow-lg shadow-emerald-600/10 transition active:scale-[0.98] cursor-pointer"
                 >
-                  {isClaimingCoupon ? "กำลังบันทึก..." : "ยืนยัน"}
+                  ยืนยัน
                 </button>
               </div>
             </motion.div>
