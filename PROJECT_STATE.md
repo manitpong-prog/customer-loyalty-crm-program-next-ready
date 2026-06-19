@@ -124,3 +124,12 @@ Migration ที่ต้องรันก่อน deploy: `neon/migrations/00
 - ไม่อนุมัติ: transaction เป็น `rejected` และคืนแต้มให้ลูกค้า
 - ไม่ต้องรัน SQL migration ใหม่
 - Phase ถัดไปที่แนะนำ: Phase 7C — Online-only Merchant Point Adjustment
+
+## Phase 7C — Online-only Merchant Point Adjustment
+
+- เพิ่ม `/api/db/point-adjustment` สำหรับปรับแต้มหลังบ้านแบบ Database-first
+- Merchant “บันทึกยอดซื้อ / ให้แต้ม” ต้องเขียน Neon สำเร็จก่อนแสดงผลสำเร็จ
+- Merchant popup “แก้ไขแต้ม (+/-)” ต้องเขียน Neon สำเร็จก่อนแสดงผลสำเร็จ
+- API อัปเดต current/lifetime points, recalculates tier from membership_tiers, inserts transaction, and writes audit log
+- Test link button no longer mutates local points directly; it opens the customer claim flow instead
+- No SQL migration required

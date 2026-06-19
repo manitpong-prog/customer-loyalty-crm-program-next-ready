@@ -360,3 +360,12 @@ Migration ที่ต้องรันก่อน deploy: `neon/migrations/00
 - หลัง API สำเร็จ ฝั่ง UI refresh cache จาก Neon เพื่อลดข้อมูลไม่ตรงกันระหว่างลูกค้ากับหลังบ้าน
 - ไม่ต้องรัน SQL ใหม่สำหรับเฟสนี้
 - เอกสาร: `docs/ONLINE_ONLY_REWARD_REDEEM_APPROVAL_PHASE7B_TH.md`
+
+## Phase 7C — Online-only Merchant Point Adjustment
+
+- เพิ่ม API `/api/db/point-adjustment` สำหรับการปรับแต้มจากหลังบ้านร้านค้าแบบ online-only
+- ฟอร์ม “บันทึกยอดซื้อ / ให้แต้ม” และ popup “แก้ไขแต้ม (+/-)” จะเขียน Neon Database สำเร็จก่อนจึงแสดงว่าสำเร็จ
+- API อัปเดต `customers.current_points`, `customers.lifetime_points`, คำนวณ `tier` จาก `membership_tiers`, สร้าง `transactions`, และสร้าง `audit_logs`
+- ปุ่ม “เปิดลิงก์ทดสอบ” ไม่แก้แต้มใน localStorage เองแล้ว แต่พาไป flow รับแต้มจริงผ่าน customer claim
+- ไม่ต้องรัน SQL ใหม่สำหรับเฟสนี้
+- เอกสาร: `docs/ONLINE_ONLY_MERCHANT_POINT_ADJUSTMENT_PHASE7C_TH.md`

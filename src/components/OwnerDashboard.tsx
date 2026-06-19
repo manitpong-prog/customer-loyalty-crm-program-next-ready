@@ -395,6 +395,7 @@ export default function OwnerDashboard({
   const [adjustPoints, setAdjustPoints] = useState('20');
   const [adjustType, setAdjustType] = useState<'add' | 'deduct'>('add');
   const [adjustReason, setAdjustReason] = useState('ปรับแต้มโดยร้านค้า');
+  const [adjustSaving, setAdjustSaving] = useState(false);
 
   // Real merchant workflow states: create members and record purchases.
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -404,6 +405,7 @@ export default function OwnerDashboard({
   const [selectedSaleCustomerId, setSelectedSaleCustomerId] = useState('');
   const [saleAmount, setSaleAmount] = useState('100');
   const [saleReason, setSaleReason] = useState('บันทึกยอดซื้อหน้าร้าน');
+  const [recordPurchaseSaving, setRecordPurchaseSaving] = useState(false);
 
   // Promotion Banner creation states
   const [showBannerModal, setShowBannerModal] = useState(false);
@@ -1187,11 +1189,11 @@ export default function OwnerDashboard({
     loadData();
   };
 
-  const handleRecordPurchase = (e: React.FormEvent) => {
+  const handleRecordPurchase = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (recordPurchaseSaving) return;
 
-    const allCustomers = getCustomers();
-    const customer = allCustomers.find((item) => item.id === selectedSaleCustomerId);
+    const customer = customers.find((item) => item.id === selectedSaleCustomerId) || getCustomers().find((item) => item.id === selectedSaleCustomerId);
 
     if (!customer) {
       showStatus('❌ กรุณาเลือกสมาชิกก่อนบันทึกยอดซื้อ');
@@ -1215,53 +1217,37 @@ export default function OwnerDashboard({
       return;
     }
 
-    const updatedCustomers = allCustomers.map((item) => {
-      if (item.id !== customer.id) return item;
+    try {
+      setRecordPurchaseSaving(true);
+      showStatus('กำลังบันทึกยอดซื้อและแต้มลงฐานข้อมูลออนไลน์...');
 
-      const nextLifetime = item.lifetimePoints + calculatedSalePoints;
-      const nextShopIds = Array.from(new Set([...(item.shopIds || []), selectedShopId]));
+      const reason = `${saleReason || 'บันทึกยอดซื้อหน้าร้าน'}: ยอดซื้อ ${saleAmountValue.toLocaleString('th-TH')} บาท`;
+      const response = await fetch('/api/db/point-adjustment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: customer.id,
+          shopId: selectedShopId,
+          adjustmentType: 'add',
+          points: calculatedSalePoints,
+          reason,
+        }),
+      });
 
-      return {
-        ...item,
-        currentPoints: item.currentPoints + calculatedSalePoints,
-        lifetimePoints: nextLifetime,
-        tier: getTierForLifetime(nextLifetime),
-        shopIds: nextShopIds,
-      };
-    });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.message || 'บันทึกยอดซื้อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+      }
 
-    saveCustomers(updatedCustomers);
-
-    const newTx: Transaction = {
-      id: `tx_${Date.now()}`,
-      userId: customer.id,
-      userName: customer.name,
-      userPhone: customer.phone,
-      shopId: selectedShopId,
-      shopName: activeShopDetail?.name || selectedShopId,
-      type: 'earn',
-      points: calculatedSalePoints,
-      description: `${saleReason || 'บันทึกยอดซื้อหน้าร้าน'}: ยอดซื้อ ${saleAmountValue.toLocaleString('th-TH')} บาท`,
-      status: 'completed',
-      pointsExpiresAt: getEarnPointsExpiresAt(activeShopDetail),
-      createdAt: new Date().toISOString(),
-    };
-
-    saveTransactions([newTx, ...getTransactions()]);
-    recordAuditLog({
-      action: 'purchase_points_recorded',
-      actionLabel: 'บันทึกยอดซื้อ / ให้แต้ม',
-      description: `บันทึกยอดซื้อ ${saleAmountValue.toLocaleString('th-TH')} บาท และให้ +${calculatedSalePoints.toLocaleString('th-TH')} แต้มแก่ ${customer.name}`,
-      targetType: 'transaction',
-      targetId: newTx.id,
-      customerId: customer.id,
-      customerName: customer.name,
-      points: calculatedSalePoints,
-      metadata: { saleAmount: saleAmountValue, pointRules },
-    });
-    showStatus(`✓ บันทึกยอดซื้อสำเร็จ: +${calculatedSalePoints} แต้มให้ ${customer.name}`);
-    onDataChange();
-    loadData();
+      await initializeDatabase();
+      showStatus(`✓ บันทึกยอดซื้อออนไลน์สำเร็จ เพิ่ม ${calculatedSalePoints.toLocaleString('th-TH')} แต้มให้ ${customer.name}`);
+      onDataChange();
+      loadData();
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกยอดซื้อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'}`);
+    } finally {
+      setRecordPurchaseSaving(false);
+    }
   };
 
   const handleToggleRewardAvailability = (rewardId: string) => {
@@ -1500,67 +1486,32 @@ export default function OwnerDashboard({
     setRedeemReviewError(null);
   };
 
-  // 3. GENERATED LINK SIMULATION (Adds points to current user context immediately!)
+  // 3. OPEN GENERATED LINK TEST WITHOUT LOCAL POINT MUTATION
   const simulateCustomerScanned = () => {
-    const allCustomers = getCustomers();
-    const scopedCustomers = filterCustomersByShop(allCustomers, selectedShopId, getTransactions(), true);
-    // Pick the first member scoped to the active shop only.
-    const victim = scopedCustomers[0];
-    if (!victim) {
-      showStatus('❌ ยังไม่มีลูกค้าให้ทดสอบรับแต้ม');
+    if (!activeCoupon?.code || !generatedQRValue) {
+      showStatus('❌ กรุณาสร้างลิงก์รับแต้มก่อนเปิดลิงก์ทดสอบ');
       return;
     }
 
-    const updatedCusts = allCustomers.map(c => {
-      if (c.id === victim.id) {
-        const newPts = c.currentPoints + calculatedGeneratePoints;
-        const newLifetime = c.lifetimePoints + calculatedGeneratePoints;
-        const newTier = getTierForLifetime(newLifetime);
+    if (onTriggerSimulatedLink) {
+      onTriggerSimulatedLink(activeCoupon.code);
+      showStatus('✓ เปิดหน้าลูกค้าพร้อมรหัสรับแต้มแล้ว ให้กดยืนยันเพื่อบันทึกออนไลน์');
+      return;
+    }
 
-        return { ...c, currentPoints: newPts, lifetimePoints: newLifetime, tier: newTier, shopIds: Array.from(new Set([...(c.shopIds || []), selectedShopId])) };
-      }
-      return c;
-    });
-    saveCustomers(updatedCusts);
-
-    const newTx: Transaction = {
-      id: `tx_${Date.now()}`,
-      userId: victim.id,
-      userName: victim.name,
-      userPhone: victim.phone,
-      shopId: selectedShopId,
-      shopName: shops.find(s => s.id === selectedShopId)?.name || 'Koffee Craft',
-      type: 'earn',
-      points: calculatedGeneratePoints,
-      description: `รับแต้มจากลิงก์ของร้าน: ${generateDesc || `ยอดซื้อ ${Number(generatePurchaseAmount || 0).toLocaleString('th-TH')} บาท`}`,
-      status: 'completed',
-      pointsExpiresAt: getEarnPointsExpiresAt(activeShopDetail),
-      createdAt: new Date().toISOString()
-    };
-
-    saveTransactions([newTx, ...getTransactions()]);
-    recordAuditLog({
-      action: 'test_points_claimed',
-      actionLabel: 'ทดสอบรับแต้ม',
-      description: `ทดสอบรับแต้ม +${calculatedGeneratePoints.toLocaleString('th-TH')} ให้ลูกค้า ${victim.name}`,
-      targetType: 'transaction',
-      targetId: newTx.id,
-      customerId: victim.id,
-      customerName: victim.name,
-      points: calculatedGeneratePoints,
-      metadata: { source: 'merchant-simulation' },
-    });
-    showStatus(`✓ ทดสอบรับแต้มสำเร็จ มอบ +${calculatedGeneratePoints} ให้ลูกค้า ${victim.name} เรียบร้อยแล้ว`);
-    onDataChange();
-    loadData();
+    if (typeof window !== 'undefined') {
+      window.open(generatedQRValue, '_blank', 'noopener,noreferrer');
+      showStatus('✓ เปิดลิงก์ทดสอบแล้ว ให้ลูกค้ากดยืนยันเพื่อบันทึกออนไลน์');
+    }
   };
 
-  // 4. MANUAL ADJUST POINTS FOR สมาชิก
-  const handleManualAdjustPoints = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCustForAdjust) return;
 
-    const allCustomers = getCustomers();
+
+  // 4. MANUAL ADJUST POINTS FOR สมาชิก
+  const handleManualAdjustPoints = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCustForAdjust || adjustSaving) return;
+
     const parsedAdjustPoints = parsePositiveIntegerInput(adjustPoints, 'จำนวนแต้ม');
     if (parsedAdjustPoints.error || parsedAdjustPoints.value === null) {
       showStatus(parsedAdjustPoints.error);
@@ -1569,58 +1520,44 @@ export default function OwnerDashboard({
 
     const adjustPointsValue = parsedAdjustPoints.value;
     const finalAmount = adjustType === 'add' ? adjustPointsValue : -adjustPointsValue;
-    
-    // Validate deduction
+
+    // Quick local validation for better UX. Neon validates again before writing.
     if (adjustType === 'deduct' && selectedCustForAdjust.currentPoints < adjustPointsValue) {
       showStatus('❌ แต้มไม่พอสำหรับการหักรายการนี้');
       return;
     }
 
-    const updatedCusts = allCustomers.map(c => {
-      if (c.id === selectedCustForAdjust.id) {
-        const finalPts = Math.max(0, c.currentPoints + finalAmount);
-        const finalLifetime = Math.max(0, c.lifetimePoints + finalAmount);
-        const newTier = getTierForLifetime(finalLifetime);
+    try {
+      setAdjustSaving(true);
+      showStatus('กำลังบันทึกการปรับแต้มลงฐานข้อมูลออนไลน์...');
 
-        return { ...c, currentPoints: finalPts, lifetimePoints: finalLifetime, tier: newTier, shopIds: Array.from(new Set([...(c.shopIds || []), selectedShopId])) };
+      const response = await fetch('/api/db/point-adjustment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customerId: selectedCustForAdjust.id,
+          shopId: selectedShopId,
+          adjustmentType: adjustType,
+          points: adjustPointsValue,
+          reason: adjustReason,
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.ok) {
+        throw new Error(payload?.message || 'ปรับแต้มไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
       }
-      return c;
-    });
 
-    saveCustomers(updatedCusts);
-
-    // Record system adjustment transaction
-    const newTx: Transaction = {
-      id: `tx_${Date.now()}`,
-      userId: selectedCustForAdjust.id,
-      userName: selectedCustForAdjust.name,
-      userPhone: selectedCustForAdjust.phone,
-      shopId: selectedShopId,
-      shopName: shops.find(s => s.id === selectedShopId)?.name || 'Koffee Craft',
-      type: adjustType === 'add' ? 'earn' : 'redeem',
-      points: adjustPointsValue,
-      description: `ปรับแต้มโดยร้าน: ${adjustReason}`,
-      status: 'completed',
-      pointsExpiresAt: adjustType === 'add' ? getEarnPointsExpiresAt(activeShopDetail) : undefined,
-      createdAt: new Date().toISOString()
-    };
-
-    saveTransactions([newTx, ...getTransactions()]);
-    recordAuditLog({
-      action: adjustType === 'add' ? 'manual_points_added' : 'manual_points_deducted',
-      actionLabel: adjustType === 'add' ? 'ปรับเพิ่มแต้ม' : 'ปรับลดแต้ม',
-      description: `${adjustType === 'add' ? 'เพิ่ม' : 'ลด'}แต้ม ${adjustPointsValue.toLocaleString('th-TH')} แต้ม ให้ ${selectedCustForAdjust.name}: ${adjustReason}`,
-      targetType: 'transaction',
-      targetId: newTx.id,
-      customerId: selectedCustForAdjust.id,
-      customerName: selectedCustForAdjust.name,
-      points: finalAmount,
-      status: adjustType === 'add' ? 'success' : 'warning',
-    });
-    setSelectedCustForAdjust(null);
-    showStatus(`✓ ปรับแต้มลูกค้า ${selectedCustForAdjust.name} จำนวน ${finalAmount > 0 ? '+' : ''}${finalAmount} แต้ม สำเร็จ!`);
-    onDataChange();
-    loadData();
+      await initializeDatabase();
+      setSelectedCustForAdjust(null);
+      showStatus(`✓ ปรับแต้มลูกค้า ${selectedCustForAdjust.name} จำนวน ${finalAmount > 0 ? '+' : ''}${finalAmount} แต้ม สำเร็จและบันทึกออนไลน์แล้ว`);
+      onDataChange();
+      loadData();
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'ปรับแต้มไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'}`);
+    } finally {
+      setAdjustSaving(false);
+    }
   };
 
   // 5. MANAGING REWARDS (Add/Edit)
@@ -3161,10 +3098,10 @@ export default function OwnerDashboard({
                 <span className="text-[10px] text-slate-500 font-bold text-center">คำนวณ: {pointRuleSummary.earnText} / {pointRuleSummary.roundingText}</span>
                 <button
                   type="submit"
-                  disabled={customers.length === 0}
+                  disabled={customers.length === 0 || recordPurchaseSaving}
                   className="bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 disabled:text-slate-500 text-neutral-950 font-black text-xs px-3 py-2 rounded-xl flex items-center justify-center gap-1 cursor-pointer transition active:scale-95"
                 >
-                  <ReceiptText className="w-3.5 h-3.5" /> บันทึก +{calculatedSalePoints} แต้ม
+                  <ReceiptText className="w-3.5 h-3.5" /> {recordPurchaseSaving ? 'กำลังบันทึก...' : `บันทึก +${calculatedSalePoints} แต้ม`}
                 </button>
               </div>
             </form>
@@ -3309,15 +3246,17 @@ export default function OwnerDashboard({
                     <button 
                       type="button"
                       onClick={() => setSelectedCustForAdjust(null)}
-                      className="flex-1 bg-neutral-800 hover:bg-neutral-750 text-xs py-2 rounded-lg"
+                      disabled={adjustSaving}
+                      className="flex-1 bg-neutral-800 hover:bg-neutral-750 text-xs py-2 rounded-lg disabled:opacity-60"
                     >
                       ยกเลิก
                     </button>
                     <button 
                       type="submit"
-                      className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-neutral-950 font-bold text-xs py-2 rounded-lg transition"
+                      disabled={adjustSaving}
+                      className="flex-1 bg-yellow-500 hover:bg-yellow-600 text-neutral-950 font-bold text-xs py-2 rounded-lg transition disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      ตกลงแก้ไข
+                      {adjustSaving ? 'กำลังบันทึก...' : 'ตกลงแก้ไข'}
                     </button>
                   </div>
                 </form>

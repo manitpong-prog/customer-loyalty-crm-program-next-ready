@@ -850,6 +850,14 @@ type OnlineRewardApprovalParams = {
   action: 'approve' | 'reject';
 };
 
+type OnlineMerchantPointAdjustmentParams = {
+  customerId: string;
+  shopId: string;
+  adjustmentType: 'add' | 'deduct';
+  points: number;
+  reason: string;
+};
+
 type OnlinePointClaimParams = {
   couponCode: string;
   shopId: string;
@@ -1876,6 +1884,293 @@ export async function handleRewardApprovalOnline(params: OnlineRewardApprovalPar
   `;
 
   return { transaction, customer };
+}
+
+
+export async function adjustCustomerPointsOnline(params: OnlineMerchantPointAdjustmentParams): Promise<{
+  customer: Customer;
+  transaction: Transaction;
+}> {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  const customerId = params.customerId.trim();
+  const shopId = params.shopId.trim();
+  const adjustmentType = params.adjustmentType;
+  const points = Math.floor(Number(params.points));
+  const reason = params.reason.trim() || 'ปรับแต้มโดยร้านค้า';
+
+  if (!customerId || !shopId || (adjustmentType !== 'add' && adjustmentType !== 'deduct') || !Number.isFinite(points) || points <= 0) {
+    throw new Error('ข้อมูลปรับแต้มไม่ครบ กรุณาลองใหม่อีกครั้ง');
+  }
+
+  const [shopRows, customerRows] = await Promise.all([
+    sql`
+      select id, name, point_expiry_days as "pointExpiryDays"
+      from shops
+      where id = ${shopId}
+      limit 1
+    `,
+    sql`
+      select
+        id,
+        name,
+        phone,
+        line_name as "lineName",
+        line_id as "lineId",
+        avatar,
+        current_points as "currentPoints",
+        lifetime_points as "lifetimePoints",
+        tier,
+        created_at as "createdAt",
+        shop_ids as "shopIds"
+      from customers
+      where id = ${customerId}
+      limit 1
+    `,
+  ]);
+
+  const shop = shopRows[0] as Record<string, unknown> | undefined;
+  const existingCustomer = customerRows[0] as Record<string, unknown> | undefined;
+
+  if (!shop) {
+    throw new Error('ไม่พบร้านค้าที่ต้องการปรับแต้ม');
+  }
+  if (!existingCustomer) {
+    throw new Error('ไม่พบลูกค้าคนนี้ในฐานข้อมูลออนไลน์');
+  }
+
+  const currentPoints = Number(existingCustomer.currentPoints || 0);
+  if (adjustmentType === 'deduct' && currentPoints < points) {
+    throw new Error(`แต้มไม่พอสำหรับการหักรายการนี้ ลูกค้ามี ${currentPoints.toLocaleString('th-TH')} แต้ม`);
+  }
+
+  const shopIdsPayload = JSON.stringify([shopId]);
+  const adjustmentRows = await sql`
+    with selected_shop as (
+      select id, name, point_expiry_days
+      from shops
+      where id = ${shopId}
+      limit 1
+    ),
+    selected_customer as (
+      select *
+      from customers
+      where id = ${customerId}
+      limit 1
+    ),
+    computed as (
+      select
+        sc.*,
+        ss.id as shop_id_for_adjustment,
+        ss.name as shop_name_for_adjustment,
+        ss.point_expiry_days,
+        case
+          when ${adjustmentType} = 'add' then sc.current_points + ${points}
+          else sc.current_points - ${points}
+        end as next_current_points,
+        case
+          when ${adjustmentType} = 'add' then sc.lifetime_points + ${points}
+          else greatest(0, sc.lifetime_points - ${points})
+        end as next_lifetime_points
+      from selected_customer sc
+      join selected_shop ss on true
+    ),
+    updated_customer as (
+      update customers c
+      set
+        current_points = computed.next_current_points,
+        lifetime_points = computed.next_lifetime_points,
+        tier = coalesce(
+          (
+            select name
+            from membership_tiers
+            where shop_id = ${shopId}
+              and is_active = true
+              and min_lifetime_points <= computed.next_lifetime_points
+            order by min_lifetime_points desc, sort_order desc
+            limit 1
+          ),
+          'Member'
+        ),
+        shop_ids = coalesce(
+          (
+            select jsonb_agg(distinct value)
+            from jsonb_array_elements_text(c.shop_ids || ${shopIdsPayload}::jsonb) as merged(value)
+          ),
+          ${shopIdsPayload}::jsonb
+        ),
+        updated_at = now()
+      from computed
+      where c.id = computed.id
+        and computed.next_current_points >= 0
+      returning
+        c.id,
+        c.name,
+        c.phone,
+        c.line_name,
+        c.line_id,
+        c.avatar,
+        c.current_points,
+        c.lifetime_points,
+        c.tier,
+        c.created_at,
+        c.shop_ids,
+        computed.shop_id_for_adjustment,
+        computed.shop_name_for_adjustment,
+        computed.point_expiry_days
+    ),
+    inserted_tx as (
+      insert into transactions (
+        id,
+        user_id,
+        user_name,
+        user_phone,
+        shop_id,
+        shop_name,
+        type,
+        points,
+        description,
+        status,
+        points_expires_at,
+        created_at
+      )
+      select
+        ${makeServerId('tx')},
+        uc.id,
+        uc.name,
+        uc.phone,
+        uc.shop_id_for_adjustment,
+        uc.shop_name_for_adjustment,
+        case when ${adjustmentType} = 'add' then 'earn' else 'redeem' end,
+        ${points},
+        ${`ปรับแต้มโดยร้าน: ${reason}`},
+        'completed',
+        case
+          when ${adjustmentType} = 'add' then now() + (greatest(1, uc.point_expiry_days) * interval '1 day')
+          else null::timestamptz
+        end,
+        now()
+      from updated_customer uc
+      returning
+        id,
+        user_id,
+        user_name,
+        user_phone,
+        shop_id,
+        shop_name,
+        type,
+        points,
+        description,
+        status,
+        reward_id,
+        points_expires_at,
+        created_at
+    )
+    select
+      uc.id as "customerId",
+      uc.name as "customerName",
+      uc.phone as "customerPhone",
+      uc.line_name as "customerLineName",
+      uc.line_id as "customerLineId",
+      uc.avatar as "customerAvatar",
+      uc.current_points as "customerCurrentPoints",
+      uc.lifetime_points as "customerLifetimePoints",
+      uc.tier as "customerTier",
+      uc.created_at as "customerCreatedAt",
+      uc.shop_ids as "customerShopIds",
+      tx.id as "transactionId",
+      tx.user_id as "transactionUserId",
+      tx.user_name as "transactionUserName",
+      tx.user_phone as "transactionUserPhone",
+      tx.shop_id as "transactionShopId",
+      tx.shop_name as "transactionShopName",
+      tx.type as "transactionType",
+      tx.points as "transactionPoints",
+      tx.description as "transactionDescription",
+      tx.status as "transactionStatus",
+      tx.reward_id as "transactionRewardId",
+      tx.points_expires_at as "transactionPointsExpiresAt",
+      tx.created_at as "transactionCreatedAt"
+    from updated_customer uc
+    join inserted_tx tx on true
+  `;
+
+  const row = adjustmentRows[0] as Record<string, unknown> | undefined;
+  if (!row) {
+    throw new Error('ปรับแต้มไม่สำเร็จ กรุณารีเฟรชข้อมูลแล้วลองใหม่อีกครั้ง');
+  }
+
+  const customer = mapCustomerRow({
+    id: row.customerId,
+    name: row.customerName,
+    phone: row.customerPhone,
+    lineName: row.customerLineName,
+    lineId: row.customerLineId,
+    avatar: row.customerAvatar,
+    currentPoints: row.customerCurrentPoints,
+    lifetimePoints: row.customerLifetimePoints,
+    tier: row.customerTier,
+    createdAt: row.customerCreatedAt,
+    shopIds: row.customerShopIds,
+  });
+
+  const transaction = mapTransactionRow({
+    id: row.transactionId,
+    userId: row.transactionUserId,
+    userName: row.transactionUserName,
+    userPhone: row.transactionUserPhone,
+    shopId: row.transactionShopId,
+    shopName: row.transactionShopName,
+    type: row.transactionType,
+    points: row.transactionPoints,
+    description: row.transactionDescription,
+    status: row.transactionStatus,
+    rewardId: row.transactionRewardId,
+    pointsExpiresAt: row.transactionPointsExpiresAt,
+    createdAt: row.transactionCreatedAt,
+  });
+
+  const signedPoints = adjustmentType === 'add' ? points : -points;
+  await sql`
+    insert into audit_logs (
+      id,
+      shop_id,
+      shop_name,
+      actor_type,
+      actor_name,
+      action,
+      action_label,
+      description,
+      target_type,
+      target_id,
+      customer_id,
+      customer_name,
+      points,
+      status,
+      metadata,
+      created_at
+    ) values (
+      ${makeServerId('audit')},
+      ${transaction.shopId},
+      ${transaction.shopName},
+      'owner',
+      'เจ้าของร้าน',
+      ${adjustmentType === 'add' ? 'manual_points_added_online' : 'manual_points_deducted_online'},
+      ${adjustmentType === 'add' ? 'ปรับเพิ่มแต้มแบบออนไลน์' : 'ปรับลดแต้มแบบออนไลน์'},
+      ${`${adjustmentType === 'add' ? 'เพิ่ม' : 'ลด'}แต้ม ${points.toLocaleString('th-TH')} แต้ม ให้ ${customer.name}: ${reason}`},
+      'transaction',
+      ${transaction.id},
+      ${customer.id},
+      ${customer.name},
+      ${signedPoints},
+      ${adjustmentType === 'add' ? 'success' : 'warning'},
+      ${JSON.stringify({ reason, adjustmentType })}::jsonb,
+      now()
+    )
+    on conflict (id) do nothing
+  `;
+
+  return { customer, transaction };
 }
 
 export async function persistPointClaim(params: {
