@@ -402,3 +402,12 @@ Key changes:
 - No SQL migration is required for this package.
 
 See `docs/ONLINE_ONLY_AUDIT_FINAL_TH.md` for the final verification checklist.
+
+
+## Phase 7F — Fresh Data Loading / No-cache / Customer Identity Fix
+
+- Customer production page now avoids showing a fallback/mock/old cached customer before LINE/Neon confirms the current LINE identity.
+- Customer matching in production is strict by LINE customer id. If not found, the page waits/asks to refresh instead of showing the first cached customer.
+- `/api/db/snapshot` returns no-store headers and `initializeDatabase()` calls it with a cache-buster.
+- Merchant back office now has a clear refresh-from-Neon button, and Settings “โหลดค่าล่าสุด” calls a real Neon refresh.
+- Added docs/FRESH_DATA_LOADING_PHASE7F_TH.md.

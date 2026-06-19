@@ -578,7 +578,14 @@ export async function initializeDatabase(): Promise<DatabaseBootstrapResult> {
   seedLocalStorageIfEmpty();
 
   try {
-    const response = await fetch('/api/db/snapshot', { cache: 'no-store' });
+    const snapshotUrl = `/api/db/snapshot?ts=${Date.now()}`;
+    const response = await fetch(snapshotUrl, {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        Pragma: 'no-cache',
+      },
+    });
     const payload = await response.json();
 
     if (payload?.source === 'neon' && payload?.data) {

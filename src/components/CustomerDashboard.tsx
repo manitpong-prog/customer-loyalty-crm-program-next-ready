@@ -125,6 +125,8 @@ export default function CustomerDashboard({
   const autoMemberRefreshRunningRef = useRef(false);
   const [isAutoLoadingMember, setIsAutoLoadingMember] = useState(false);
   const [autoMemberRefreshAttempt, setAutoMemberRefreshAttempt] = useState(0);
+  const [isRefreshingFreshData, setIsRefreshingFreshData] = useState(false);
+  const [lastFreshLoadedAt, setLastFreshLoadedAt] = useState<string>("");
 
   // Dynamic Coupon States
   const [pendingCoupon, setPendingCoupon] = useState<GeneratedCoupon | null>(null);
@@ -348,7 +350,9 @@ export default function CustomerDashboard({
     }
   }, [initialCouponCode, clearInitialCouponCode, selectedShopId, isProductionView, customer]);
 
-  // Load latest data on mount and tab switch
+  // Load latest data from the local read cache after initializeDatabase() refreshes it from Neon.
+  // Production customer identity is strict: never fall back to the first customer, because that
+  // can show an old tester profile while LIFF/Neon is still loading the current LINE user.
   const loadData = () => {
     const allTransactions = getTransactions();
     const scopedTransactions = filterTransactionsByShop(allTransactions, selectedShopId);
@@ -359,14 +363,6 @@ export default function CustomerDashboard({
       allTransactions,
       true,
     );
-    const lineCustomerId = lineIdentity?.customerId || (lineIdentity?.lineUserId ? `line_${lineIdentity.lineUserId}` : "");
-    const currCust =
-      (lineCustomerId ? scopedCustomers.find((c) => c.id === lineCustomerId) : undefined) ||
-      scopedCustomers.find((c) => c.id === currentCustomerId) ||
-      allCustomers.find((c) => c.id === currentCustomerId) ||
-      scopedCustomers[0] ||
-      allCustomers[0];
-    setCustomer(currCust);
 
     // Production route is locked to one shop slug. Demo can still switch shops.
     const approvedShops = getShops().filter(
@@ -385,13 +381,49 @@ export default function CustomerDashboard({
       filterRewardsByShop(getRewards(), selectedShopId).filter((r) => r.isAvailable && r.stock > 0),
     );
     setBanners(filterBannersByShop(getBanners(), selectedShopId, true));
-    setTransactions(scopedTransactions.filter((t) => t.userId === currCust.id));
     setMembershipTiers(getMembershipTiersForShop(getMembershipTiers(), selectedShopId));
+
+    const lineCustomerId = lineIdentity?.customerId || (lineIdentity?.lineUserId ? `line_${lineIdentity.lineUserId}` : "");
+    const currCust = isProductionView
+      ? (lineCustomerId ? scopedCustomers.find((c) => c.id === lineCustomerId) || allCustomers.find((c) => c.id === lineCustomerId) || null : null)
+      : (
+          scopedCustomers.find((c) => c.id === currentCustomerId) ||
+          allCustomers.find((c) => c.id === currentCustomerId) ||
+          scopedCustomers[0] ||
+          allCustomers[0] ||
+          null
+        );
+
+    setCustomer(currCust);
+    setTransactions(currCust ? scopedTransactions.filter((t) => t.userId === currCust.id) : []);
+  };
+
+  const refreshCustomerFromNeon = async () => {
+    setIsRefreshingFreshData(true);
+    try {
+      await initializeDatabase();
+      loadData();
+      onDataChange();
+      setLastFreshLoadedAt(new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    } finally {
+      setIsRefreshingFreshData(false);
+    }
   };
 
   useEffect(() => {
     loadData();
   }, [currentCustomerId, selectedShopId, activeTab, lineIdentity?.lineUserId, lineIdentity?.customerId, dataVersion]);
+
+  useEffect(() => {
+    if (!isProductionView || typeof window === 'undefined') return;
+
+    const handleFocus = () => {
+      void refreshCustomerFromNeon();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [isProductionView, selectedShopId, lineIdentity?.lineUserId, lineIdentity?.customerId]);
 
   useEffect(() => {
     if (customer || !isProductionView || !lineIdentity?.customerId) {
@@ -523,9 +555,7 @@ export default function CustomerDashboard({
                 type="button"
                 onClick={async () => {
                   setIsAutoLoadingMember(true);
-                  await initializeDatabase();
-                  loadData();
-                  onDataChange();
+                  await refreshCustomerFromNeon();
                   setIsAutoLoadingMember(false);
                 }}
                 className="rounded-2xl bg-slate-950 px-4 py-2 text-xs font-extrabold text-white"
@@ -1148,12 +1178,26 @@ export default function CustomerDashboard({
       </div>
 
       {isProductionView && (
-        <LineLoginPanel
-          context="customer"
-          shopId={selectedShopId}
-          onAuthenticated={onLineIdentityChange}
-          compact
-        />
+        <>
+          <LineLoginPanel
+            context="customer"
+            shopId={selectedShopId}
+            onAuthenticated={onLineIdentityChange}
+            compact
+          />
+          <div className="mx-4 mt-3 flex items-center justify-between rounded-2xl border border-slate-200 bg-white/85 px-4 py-2 text-[10px] font-bold text-slate-500 shadow-sm">
+            <span>{lastFreshLoadedAt ? `โหลดข้อมูลล่าสุด ${lastFreshLoadedAt}` : 'ข้อมูลจากฐานข้อมูลล่าสุด'}</span>
+            <button
+              type="button"
+              onClick={refreshCustomerFromNeon}
+              disabled={isRefreshingFreshData}
+              className="inline-flex items-center gap-1 rounded-full bg-slate-950 px-2.5 py-1 text-white disabled:opacity-60"
+            >
+              <RefreshCw className={`h-3 w-3 ${isRefreshingFreshData ? 'animate-spin' : ''}`} />
+              รีเฟรช
+            </button>
+          </div>
+        </>
       )}
 
       {/* Success / Error Notification banners floating */}

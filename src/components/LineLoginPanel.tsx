@@ -146,11 +146,20 @@ export default function LineLoginPanel({
 
   useEffect(() => {
     const stored = readStoredLineIdentity();
-    if (stored) {
+    if (!stored) return;
+
+    // Merchant can reuse stored identity briefly because owner authorization is
+    // rechecked through /api/line/me. Customer pages must not publish a stored
+    // LINE profile to the parent before LIFF confirms the current user, otherwise
+    // an old tester profile can appear for a new customer for a few minutes.
+    if (context === "merchant") {
       publishIdentity(stored);
       refreshOwnerStatus(stored);
+      return;
     }
-  }, [publishIdentity, refreshOwnerStatus]);
+
+    setStatusMessage("กำลังตรวจสอบ LINE ID ล่าสุด...");
+  }, [context, publishIdentity, refreshOwnerStatus]);
 
   const authenticateCurrentLineSession = useCallback(async (options?: { allowRedirect?: boolean; silent?: boolean }) => {
     if (!liffId) {
@@ -200,8 +209,10 @@ export default function LineLoginPanel({
 
       const response = await fetch("/api/line/auth", {
         method: "POST",
+        cache: "no-store",
         headers: {
           "Content-Type": "application/json",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
         },
         body: JSON.stringify({
           context,

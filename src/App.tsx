@@ -100,6 +100,7 @@ export default function App({
   const [initialCustomerTab, setInitialCustomerTab] = useState<CustomerTab>("home");
   const [databaseLabel, setDatabaseLabel] = useState("กำลังเชื่อมต่อข้อมูล...");
   const [lineIdentity, setLineIdentity] = useState<LineIdentity | null>(null);
+  const [isDatabaseBootstrapped, setIsDatabaseBootstrapped] = useState(isDemoMode);
 
   // Triggered when static storage modifies of children
   const handleDataChange = () => {
@@ -165,9 +166,10 @@ export default function App({
 
       setDatabaseLabel(
         result.source === "neon"
-          ? "Neon PostgreSQL + Local Cache"
+          ? "Neon PostgreSQL + Fresh Cache"
           : "LocalStorage Fallback",
       );
+      setIsDatabaseBootstrapped(true);
       handleDataChange();
 
       // Check customer deep-link query parameters.
@@ -330,7 +332,20 @@ export default function App({
         </header>
       )}
 
+      {!isDemoMode && !isDatabaseBootstrapped && (
+        <main className="flex-1 flex items-center justify-center bg-slate-50 p-6">
+          <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+              <Activity className="h-6 w-6 animate-pulse" />
+            </div>
+            <h2 className="mt-4 text-sm font-black text-slate-950">กำลังโหลดข้อมูลล่าสุดจากฐานข้อมูล</h2>
+            <p className="mt-2 text-xs leading-5 text-slate-500">ระบบจะไม่แสดงข้อมูลจาก cache เก่าก่อนโหลด Neon สำเร็จ เพื่อป้องกันชื่อ รูป และคะแนนค้างจากเครื่องเดิม</p>
+          </div>
+        </main>
+      )}
+
       {/* Main Body View Layouts Grid Render */}
+      {(isDemoMode || isDatabaseBootstrapped) && (
       <main
         className={`${isDemoMode ? "flex-1 max-w-7xl mx-auto w-full p-4 sm:p-6 md:p-8 flex flex-col justify-center" : activeRole === "customer" ? "flex-1 w-full bg-slate-50" : "flex-1 max-w-7xl mx-auto w-full p-4 sm:p-6 md:p-8 flex flex-col"}`}
       >
@@ -388,6 +403,7 @@ export default function App({
           </div>
         )}
       </main>
+      )}
 
       {/* Modern minimal footer bar */}
       {isDemoMode && (

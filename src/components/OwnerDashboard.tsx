@@ -406,6 +406,8 @@ export default function OwnerDashboard({
 
   // Manual point adjusting modal states
   const [statusMsg, setStatusMsg] = useState('');
+  const [isRefreshingFromNeon, setIsRefreshingFromNeon] = useState(false);
+  const [lastFreshLoadedAt, setLastFreshLoadedAt] = useState('');
   const [selectedCustForAdjust, setSelectedCustForAdjust] = useState<Customer | null>(null);
   const [adjustPoints, setAdjustPoints] = useState('20');
   const [adjustType, setAdjustType] = useState<'add' | 'deduct'>('add');
@@ -595,10 +597,27 @@ export default function OwnerDashboard({
   };
 
   const refreshFromNeon = async () => {
-    await initializeDatabase();
-    onDataChange();
-    loadData();
+    setIsRefreshingFromNeon(true);
+    try {
+      await initializeDatabase();
+      onDataChange();
+      loadData();
+      setLastFreshLoadedAt(new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+    } finally {
+      setIsRefreshingFromNeon(false);
+    }
   };
+
+  useEffect(() => {
+    if (!isProductionView || typeof window === 'undefined') return;
+
+    const handleFocus = () => {
+      void refreshFromNeon();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [isProductionView, selectedShopId]);
 
   const getStatusClassName = () => {
     if (statusMsg.startsWith('❌')) return 'border-rose-200 bg-rose-50 text-rose-800 shadow-rose-100';
@@ -1991,7 +2010,20 @@ export default function OwnerDashboard({
         {/* Compact top menu / shop switch */}
         <div className="shrink-0 flex items-center justify-end gap-2.5">
           {isProductionView ? (
-            <button
+            <>
+              <button
+                type="button"
+                onClick={refreshFromNeon}
+                disabled={isRefreshingFromNeon}
+                className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-[10px] font-black text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
+                title={lastFreshLoadedAt ? `โหลดล่าสุด ${lastFreshLoadedAt}` : 'ดึงข้อมูลล่าสุดจาก Neon'}
+              >
+                <span className="inline-flex items-center gap-1">
+                  <RefreshCw className={`h-3.5 w-3.5 ${isRefreshingFromNeon ? 'animate-spin' : ''}`} />
+                  รีเฟรช
+                </span>
+              </button>
+              <button
               type="button"
               onClick={() => setMenuOpen((value) => !value)}
               aria-expanded={menuOpen}
@@ -2005,6 +2037,7 @@ export default function OwnerDashboard({
                 </span>
               )}
             </button>
+            </>
           ) : (
             <>
               <span className="text-xs text-slate-500 font-black whitespace-nowrap">เปลี่ยนร้านทดสอบ:</span>
@@ -2547,10 +2580,11 @@ export default function OwnerDashboard({
                 </button>
                 <button
                   type="button"
-                  onClick={() => loadData()}
-                  className="md:w-44 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-sm rounded-2xl px-5 py-3.5 transition active:scale-95"
+                  onClick={refreshFromNeon}
+                  disabled={isRefreshingFromNeon}
+                  className="md:w-44 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-sm rounded-2xl px-5 py-3.5 transition active:scale-95 disabled:opacity-60"
                 >
-                  โหลดค่าล่าสุด
+                  {isRefreshingFromNeon ? 'กำลังโหลด...' : 'โหลดจากฐานข้อมูล'}
                 </button>
               </div>
             </form>
