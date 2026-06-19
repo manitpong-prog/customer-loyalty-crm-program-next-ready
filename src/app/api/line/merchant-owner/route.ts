@@ -6,6 +6,9 @@ import {
   linkMerchantOwner,
 } from "../../../../lib/server/crmDb";
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -39,7 +42,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await ensureCrmSchema();
+    if (process.env.ENABLE_RUNTIME_SCHEMA_CHECK === 'true') {
+      await ensureCrmSchema();
+    }
 
     const lineUser = await getLineUser(lineUserId);
     if (!lineUser) {

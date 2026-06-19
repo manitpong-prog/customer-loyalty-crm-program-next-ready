@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureCrmSchema, getLineUser, getOwnerShopIds } from "../../../../lib/server/crmDb";
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function GET(request: NextRequest) {
   try {
     const lineUserId = request.nextUrl.searchParams.get("lineUserId") || "";
@@ -12,7 +15,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    await ensureCrmSchema();
+    if (process.env.ENABLE_RUNTIME_SCHEMA_CHECK === 'true') {
+      await ensureCrmSchema();
+    }
 
     const lineUser = await getLineUser(lineUserId);
     const ownerShopIds = await getOwnerShopIds(lineUserId);

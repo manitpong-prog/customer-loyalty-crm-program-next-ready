@@ -9,6 +9,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="th">
+      <head>
+        <link rel="preconnect" href="https://static.line-scdn.net" />
+        <link rel="preload" as="script" href="https://static.line-scdn.net/liff/edge/2/sdk.js" />
+      </head>
       <body>{children}</body>
     </html>
   );

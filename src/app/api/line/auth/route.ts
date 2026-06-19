@@ -6,6 +6,9 @@ import {
   upsertLineUser,
 } from "../../../../lib/server/crmDb";
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 type LineProfilePayload = {
   userId?: string;
   displayName?: string;
@@ -70,7 +73,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await ensureCrmSchema();
+    if (process.env.ENABLE_RUNTIME_SCHEMA_CHECK === 'true') {
+      await ensureCrmSchema();
+    }
 
     let verifiedProfile = idToken ? await verifyLineIdToken(idToken) : null;
     let verified = Boolean(verifiedProfile?.verified);

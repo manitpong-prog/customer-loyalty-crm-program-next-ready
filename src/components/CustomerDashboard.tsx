@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Award,
@@ -122,11 +122,10 @@ export default function CustomerDashboard({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const scannerStreamRef = useRef<MediaStream | null>(null);
   const scanFrameRef = useRef<number | null>(null);
-  const autoMemberRefreshTimerRef = useRef<number | null>(null);
-  const autoMemberRefreshRunningRef = useRef(false);
   const [isAutoLoadingMember, setIsAutoLoadingMember] = useState(false);
-  const [autoMemberRefreshAttempt, setAutoMemberRefreshAttempt] = useState(0);
   const [isRefreshingFreshData, setIsRefreshingFreshData] = useState(false);
+  const refreshInFlightRef = useRef(false);
+  const lastRefreshSignatureRef = useRef("");
   const [lastFreshLoadedAt, setLastFreshLoadedAt] = useState<string>("");
 
   // Dynamic Coupon States
@@ -281,7 +280,6 @@ export default function CustomerDashboard({
   useEffect(() => {
     return () => {
       if (scanFrameRef.current) window.cancelAnimationFrame(scanFrameRef.current);
-      if (autoMemberRefreshTimerRef.current) window.clearTimeout(autoMemberRefreshTimerRef.current);
       scannerStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
@@ -354,7 +352,7 @@ export default function CustomerDashboard({
   // Load latest data from the local read cache after scoped customer-state refreshes it from Neon.
   // Production customer identity is strict: never fall back to the first customer, because that
   // can show an old tester profile while LIFF/Neon is still loading the current LINE user.
-  const loadData = () => {
+  const loadData = useCallback(() => {
     const allTransactions = getTransactions();
     const scopedTransactions = filterTransactionsByShop(allTransactions, selectedShopId);
     const allCustomers = getCustomers();
@@ -397,15 +395,27 @@ export default function CustomerDashboard({
 
     setCustomer(currCust);
     setTransactions(currCust ? scopedTransactions.filter((t) => t.userId === currCust.id) : []);
-  };
+  }, [currentCustomerId, isProductionView, lineIdentity?.customerId, lineIdentity?.lineUserId, selectedShopId, setSelectedShopId]);
 
-  const refreshCustomerFromNeon = async () => {
+  const refreshCustomerFromNeon = useCallback(async (options?: { force?: boolean; couponCode?: string }) => {
+    const couponCode = options?.couponCode ?? initialCouponCode ?? "";
+    const signature = [selectedShopId, lineIdentity?.customerId || "", lineIdentity?.lineUserId || "", couponCode].join("|");
+
+    if (!options?.force && refreshInFlightRef.current) return false;
+    if (!options?.force && signature === lastRefreshSignatureRef.current) return false;
+
+    refreshInFlightRef.current = true;
+    lastRefreshSignatureRef.current = signature;
     setIsRefreshingFreshData(true);
+    if (lineIdentity?.customerId || lineIdentity?.lineUserId) {
+      setIsAutoLoadingMember(true);
+    }
+
     try {
       const params = new URLSearchParams({ shopId: selectedShopId, ts: String(Date.now()) });
       if (lineIdentity?.customerId) params.set('customerId', lineIdentity.customerId);
       if (lineIdentity?.lineUserId) params.set('lineUserId', lineIdentity.lineUserId);
-      if (initialCouponCode) params.set('couponCode', initialCouponCode);
+      if (couponCode) params.set('couponCode', couponCode);
 
       const response = await fetch(`/api/db/customer-state?${params.toString()}`, {
         cache: 'no-store',
@@ -422,103 +432,32 @@ export default function CustomerDashboard({
 
       replaceLocalCacheFromSnapshot(payload.data);
       loadData();
-      onDataChange();
       setLastFreshLoadedAt(new Date().toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      return true;
+    } catch (error) {
+      if (options?.force) {
+        setErrorMessage(error instanceof Error ? error.message : 'โหลดข้อมูลล่าสุดไม่สำเร็จ');
+        setTimeout(() => setErrorMessage(""), 4000);
+      }
+      // Allow a later retry if this request failed.
+      lastRefreshSignatureRef.current = "";
+      return false;
     } finally {
+      refreshInFlightRef.current = false;
       setIsRefreshingFreshData(false);
+      setIsAutoLoadingMember(false);
     }
-  };
+  }, [initialCouponCode, lineIdentity?.customerId, lineIdentity?.lineUserId, loadData, selectedShopId]);
 
   useEffect(() => {
     loadData();
-  }, [currentCustomerId, selectedShopId, activeTab, lineIdentity?.lineUserId, lineIdentity?.customerId, dataVersion]);
+  }, [loadData, dataVersion]);
 
   useEffect(() => {
     if (!isProductionView) return;
     void refreshCustomerFromNeon();
-  }, [isProductionView, selectedShopId, lineIdentity?.lineUserId, lineIdentity?.customerId, initialCouponCode]);
+  }, [isProductionView, refreshCustomerFromNeon]);
 
-  useEffect(() => {
-    if (!isProductionView || typeof window === 'undefined') return;
-
-    const handleFocus = () => {
-      void refreshCustomerFromNeon();
-    };
-
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, [isProductionView, selectedShopId, lineIdentity?.lineUserId, lineIdentity?.customerId]);
-
-  useEffect(() => {
-    if (customer || !isProductionView || !lineIdentity?.customerId) {
-      if (customer) {
-        setIsAutoLoadingMember(false);
-        setAutoMemberRefreshAttempt(0);
-      }
-      return;
-    }
-
-    if (autoMemberRefreshRunningRef.current) return;
-
-    let cancelled = false;
-    const expectedCustomerId = lineIdentity.customerId;
-
-    const wait = (ms: number) =>
-      new Promise<void>((resolve) => {
-        if (typeof window === "undefined") {
-          resolve();
-          return;
-        }
-
-        autoMemberRefreshTimerRef.current = window.setTimeout(() => {
-          autoMemberRefreshTimerRef.current = null;
-          resolve();
-        }, ms);
-      });
-
-    const refreshUntilMemberExists = async () => {
-      autoMemberRefreshRunningRef.current = true;
-      setIsAutoLoadingMember(true);
-
-      try {
-        for (let attempt = 1; attempt <= 8; attempt += 1) {
-          if (cancelled) return;
-
-          setAutoMemberRefreshAttempt(attempt);
-          await refreshCustomerFromNeon();
-
-          if (cancelled) return;
-
-          const memberExists = getCustomers().some((member) => member.id === expectedCustomerId);
-          if (memberExists) {
-            loadData();
-            onDataChange();
-            setIsAutoLoadingMember(false);
-            setAutoMemberRefreshAttempt(0);
-            return;
-          }
-
-          await wait(attempt <= 3 ? 650 : 1100);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsAutoLoadingMember(false);
-        }
-        autoMemberRefreshRunningRef.current = false;
-      }
-    };
-
-    refreshUntilMemberExists();
-
-    return () => {
-      cancelled = true;
-      if (autoMemberRefreshTimerRef.current) {
-        window.clearTimeout(autoMemberRefreshTimerRef.current);
-        autoMemberRefreshTimerRef.current = null;
-      }
-      autoMemberRefreshRunningRef.current = false;
-    };
-  }, [customer, isProductionView, lineIdentity?.customerId, onDataChange, selectedShopId]);
 
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -565,8 +504,8 @@ export default function CustomerDashboard({
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-600">
               {isAutoLoadingMember
-                ? `กำลังโหลดข้อมูลสมาชิกอัตโนมัติ${autoMemberRefreshAttempt ? ` รอบที่ ${autoMemberRefreshAttempt}` : ""} เมื่อพร้อมแล้วจะพาไปหน้าสมาชิกอัตโนมัติ`
-                : "ถ้าเพิ่งเข้าสู่ระบบด้วย LINE ระบบจะลองโหลดข้อมูลสมาชิกให้อัตโนมัติ หรือกดโหลดใหม่ได้อีกครั้ง"}
+                ? "กำลังโหลดข้อมูลสมาชิกจากฐานข้อมูลล่าสุด เมื่อพร้อมแล้วจะพาไปหน้าสมาชิกอัตโนมัติ"
+                : "ถ้าเพิ่งเข้าสู่ระบบด้วย LINE ระบบจะโหลดข้อมูลสมาชิกให้อัตโนมัติ หรือกดโหลดใหม่ได้อีกครั้ง"}
             </p>
             {isAutoLoadingMember && (
               <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-extrabold text-emerald-700">
@@ -579,7 +518,7 @@ export default function CustomerDashboard({
                 type="button"
                 onClick={async () => {
                   setIsAutoLoadingMember(true);
-                  await refreshCustomerFromNeon();
+                  await refreshCustomerFromNeon({ force: true });
                   setIsAutoLoadingMember(false);
                 }}
                 className="rounded-2xl bg-slate-950 px-4 py-2 text-xs font-extrabold text-white"
@@ -1228,7 +1167,7 @@ export default function CustomerDashboard({
             <span>{lastFreshLoadedAt ? `โหลดข้อมูลล่าสุด ${lastFreshLoadedAt}` : 'ข้อมูลจากฐานข้อมูลล่าสุด'}</span>
             <button
               type="button"
-              onClick={refreshCustomerFromNeon}
+              onClick={() => void refreshCustomerFromNeon({ force: true })}
               disabled={isRefreshingFreshData}
               className="inline-flex items-center gap-1 rounded-full bg-slate-950 px-2.5 py-1 text-white disabled:opacity-60"
             >

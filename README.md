@@ -423,3 +423,15 @@ See `docs/ONLINE_ONLY_AUDIT_FINAL_TH.md` for the final verification checklist.
 
 ### Phase 7G Hotfix — LIFF Query / Snapshot Speed
 This hotfix keeps customer app query parameters (`tab`, `code`) while removing LIFF callback parameters, prevents repeated `liff.state` nesting, and speeds up merchant/customer refresh by skipping runtime schema/bootstrap checks on every `/api/db/snapshot` call. Set `ENABLE_RUNTIME_SCHEMA_CHECK=true` only when you intentionally want runtime schema checking.
+
+
+### Phase 7H — Customer / LIFF Flow Stabilization Fix
+- Fixed customer route and LIFF deep-link query handling for `/customer/{shopSlug}?tab=...`.
+- Separated LINE/OAuth callback `code` from app coupon `code` to prevent wrong routing and LIFF loops.
+- Removed full CRM snapshot reload from customer LINE identity updates.
+- Replaced customer auto-refresh polling loop with a single scoped `/api/db/customer-state` loader guarded by in-flight/signature refs.
+- Prevented silent `liff.login()` loops while LIFF/OAuth callback parameters are present.
+- Allowed direct browser customer pages to reuse stored LINE identity only when not in a LIFF callback.
+- Made LINE auth APIs skip runtime schema checks unless `ENABLE_RUNTIME_SCHEMA_CHECK=true`.
+- Added LIFF SDK preload/preconnect in `src/app/layout.tsx`.
+- No SQL migration required.

@@ -198,3 +198,35 @@ Docs:
 - Optimized `/api/db/snapshot` by making runtime schema/bootstrap checks opt-in with `ENABLE_RUNTIME_SCHEMA_CHECK=true`.
 - Removed several full snapshot refreshes after merchant actions and updated local read cache from confirmed API responses instead.
 - No SQL migration required.
+
+
+## 2026-06-19 — Phase 7H Customer / LIFF Flow Stabilization Fix
+
+Goal: fix regression where direct customer routes and LIFF `?tab=...` routes could fail or loop, and reduce slow customer loading caused by repeated customer refresh/full snapshot behavior.
+
+Changed files:
+- `src/App.tsx`
+- `src/components/LineLoginPanel.tsx`
+- `src/components/CustomerDashboard.tsx`
+- `src/app/api/line/auth/route.ts`
+- `src/app/api/line/me/route.ts`
+- `src/app/api/line/merchant-owner/route.ts`
+- `src/app/layout.tsx`
+- `docs/PHASE7H_CUSTOMER_LIFF_FLOW_FIX_TH.md`
+- `README.md`
+- `PROJECT_STATE.md`
+
+Summary:
+- Added robust app query extraction from direct URL and nested LIFF state.
+- Treated OAuth callback `code` separately from app coupon `code`.
+- Removed `initializeDatabase()` from `handleLineIdentityChange()` for customer identity flow.
+- Removed the 8-attempt customer auto-refresh loop and replaced it with one guarded scoped customer-state request.
+- Stopped silent LIFF re-login during callback to prevent nested `liff.state` loops.
+- Allowed direct browser customer pages to reuse stored LINE identity only outside LIFF callback.
+- Runtime schema checks in LINE APIs are opt-in through `ENABLE_RUNTIME_SCHEMA_CHECK=true`.
+
+SQL: none.
+
+Validation:
+- `npm run typecheck` passed after installing dependencies locally in sandbox.
+- `npm run build` compiled and finished TypeScript, then sandbox timed out during Next.js `Collecting page data` stage.
