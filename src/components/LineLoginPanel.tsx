@@ -112,6 +112,20 @@ function getCleanRedirectUri() {
   return url.toString();
 }
 
+
+function hasLiffCallbackParams() {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  return Boolean(
+    params.has("liff.state") ||
+    params.has("liffClientId") ||
+    params.has("liffRedirectUri") ||
+    params.has("liff.hback") ||
+    params.has("state") ||
+    params.has("code")
+  );
+}
+
 function clearLiffLoginPending() {
   try {
     window.sessionStorage.removeItem(liffLoginPendingKey);
@@ -223,11 +237,15 @@ export default function LineLoginPanel({
       await window.liff.init({ liffId });
 
       if (!window.liff.isLoggedIn()) {
-        if (!options?.allowRedirect) {
+        const openedInsideLine = Boolean(window.liff.isInClient?.());
+        const cameFromLiffCallback = hasLiffCallbackParams();
+        const shouldRedirectToLineLogin = Boolean(options?.allowRedirect || openedInsideLine || cameFromLiffCallback);
+
+        if (!shouldRedirectToLineLogin) {
           return;
         }
 
-        if (wasLiffLoginPending()) {
+        if (wasLiffLoginPending() && cameFromLiffCallback) {
           clearLiffLoginPending();
           throw new Error(
             "LINE Login กลับมาที่เว็บแล้ว แต่ยังไม่พบ session ของ LINE โปรดตรวจว่า NEXT_PUBLIC_LINE_LIFF_ID ใน Vercel ตรงกับ LIFF ID ที่เปิดอยู่ และกด Redeploy แล้ว",

@@ -1045,7 +1045,8 @@ export default function OwnerDashboard({
       showStatus('กำลังบันทึกกฎสะสมแต้มออนไลน์...');
       await postJson('/api/db/merchant-settings', { shop: nextShop, auditLog });
       saveShops(updatedShops, { sync: false });
-      await refreshFromNeon();
+      onDataChange();
+      loadData();
       showStatus(`✓ บันทึกกฎสะสมแต้มออนไลน์แล้ว: ${nextPointRules.pointsRate} บาท = 1 แต้ม`);
     } catch (error) {
       showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกกฎสะสมแต้มไม่สำเร็จ'}`);
@@ -1117,7 +1118,8 @@ export default function OwnerDashboard({
       showStatus('กำลังบันทึกระดับสมาชิกออนไลน์...');
       await postJson('/api/db/membership-tiers', { shopId: selectedShopId, tiers: nextShopTiers, auditLog });
       saveMembershipTiers(nextAllTiers, { sync: false });
-      await refreshFromNeon();
+      onDataChange();
+      loadData();
       showStatus('✓ บันทึกระดับสมาชิกออนไลน์แล้ว และอัปเดต badge ลูกค้าตามแต้มสะสมรวม');
     } catch (error) {
       showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกระดับสมาชิกไม่สำเร็จ'}`);
@@ -1191,7 +1193,8 @@ export default function OwnerDashboard({
       showStatus('กำลังบันทึกตั้งค่าร้านค้าออนไลน์...');
       await postJson('/api/db/merchant-settings', { shop: nextShop, auditLog });
       saveShops(updatedShops, { sync: false });
-      await refreshFromNeon();
+      onDataChange();
+      loadData();
       showStatus('✓ บันทึกตั้งค่าร้านค้าออนไลน์สำเร็จแล้ว');
     } catch (error) {
       showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกตั้งค่าร้านค้าไม่สำเร็จ'}`);
@@ -1260,7 +1263,8 @@ export default function OwnerDashboard({
       const payload = await postJson<{ customer?: Customer }>('/api/db/customers', { action: 'upsert', customer: newCustomer, auditLog });
       const confirmedCustomer = payload.customer || newCustomer;
       saveCustomers([...allCustomers.filter((customer) => customer.id !== confirmedCustomer.id), confirmedCustomer], { sync: false });
-      await refreshFromNeon();
+      onDataChange();
+      loadData();
       setSelectedSaleCustomerId(confirmedCustomer.id);
       setNewCustomerName('');
       setNewCustomerPhone('');
@@ -1322,7 +1326,12 @@ export default function OwnerDashboard({
         throw new Error(payload?.message || 'บันทึกยอดซื้อไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
       }
 
-      await initializeDatabase();
+      if (payload?.customer) {
+        saveCustomers([payload.customer, ...getCustomers().filter((item) => item.id !== payload.customer.id)], { sync: false });
+      }
+      if (payload?.transaction) {
+        saveTransactions([payload.transaction, ...getTransactions().filter((item) => item.id !== payload.transaction.id)], { sync: false });
+      }
       showStatus(`✓ บันทึกยอดซื้อออนไลน์สำเร็จ เพิ่ม ${calculatedSalePoints.toLocaleString('th-TH')} แต้มให้ ${customer.name}`);
       onDataChange();
       loadData();
@@ -1359,7 +1368,8 @@ export default function OwnerDashboard({
       showStatus('กำลังบันทึกสถานะของรางวัลออนไลน์...');
       await postJson('/api/db/rewards', { action: 'upsert', reward: nextReward, auditLog });
       saveRewards(updatedRewards, { sync: false });
-      await refreshFromNeon();
+      onDataChange();
+      loadData();
       showStatus(reward.isAvailable ? '✓ ปิดการแสดงของรางวัลนี้แล้ว' : '✓ เปิดให้ลูกค้าเห็นของรางวัลนี้แล้ว');
     } catch (error) {
       showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกสถานะของรางวัลไม่สำเร็จ'}`);
@@ -1416,7 +1426,12 @@ export default function OwnerDashboard({
         throw new Error(payload?.message || 'อนุมัติรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
       }
 
-      await initializeDatabase();
+      if (payload?.transaction) {
+        saveTransactions(getTransactions().map((item) => item.id === payload.transaction!.id ? payload.transaction! : item), { sync: false });
+      }
+      if (payload?.reward) {
+        saveRewards(getRewards().map((item) => item.id === payload.reward!.id ? payload.reward! : item), { sync: false });
+      }
       showStatus(`✓ อนุมัติให้ของรางวัล “${payload.reward?.name || rewardName}” กับ ${tx.userName} แล้ว`);
       if (options?.closeModal) setReviewRedeemId(null);
       onDataChange();
@@ -1466,7 +1481,12 @@ export default function OwnerDashboard({
         throw new Error(payload?.message || 'ปฏิเสธรางวัลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
       }
 
-      await initializeDatabase();
+      if (payload?.transaction) {
+        saveTransactions(getTransactions().map((item) => item.id === payload.transaction!.id ? payload.transaction! : item), { sync: false });
+      }
+      if (payload?.customer) {
+        saveCustomers([payload.customer, ...getCustomers().filter((item) => item.id !== payload.customer!.id)], { sync: false });
+      }
       showStatus(`✕ ปฏิเสธรายการแล้ว และคืน ${tx.points.toLocaleString('th-TH')} แต้มให้ ${tx.userName} แล้ว`);
       if (options?.closeModal) setReviewRedeemId(null);
       onDataChange();
@@ -1530,8 +1550,7 @@ export default function OwnerDashboard({
     if (!tx) {
       try {
         setRedeemReviewError(null);
-        await initializeDatabase();
-        loadData();
+        await refreshFromNeon();
         tx = findRedeemTransactionInCache(cleanTxId);
       } catch {
         // The invalid-link message below is clearer for the merchant than a raw network error.
@@ -1638,7 +1657,12 @@ export default function OwnerDashboard({
         throw new Error(payload?.message || 'ปรับแต้มไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
       }
 
-      await initializeDatabase();
+      if (payload?.customer) {
+        saveCustomers([payload.customer, ...getCustomers().filter((item) => item.id !== payload.customer.id)], { sync: false });
+      }
+      if (payload?.transaction) {
+        saveTransactions([payload.transaction, ...getTransactions().filter((item) => item.id !== payload.transaction.id)], { sync: false });
+      }
       setSelectedCustForAdjust(null);
       showStatus(`✓ ปรับแต้มลูกค้า ${selectedCustForAdjust.name} จำนวน ${finalAmount > 0 ? '+' : ''}${finalAmount} แต้ม สำเร็จและบันทึกออนไลน์แล้ว`);
       onDataChange();
@@ -1740,7 +1764,8 @@ export default function OwnerDashboard({
       } else {
         saveRewards([...allRewards, rewardToPersist], { sync: false });
       }
-      await refreshFromNeon();
+      onDataChange();
+      loadData();
       showStatus(editingReward ? '✓ อัปเดตรายการของรางวัลออนไลน์สำเร็จ' : '✓ เพิ่มของรางวัลออนไลน์สำเร็จ');
     } catch (error) {
       showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกของรางวัลไม่สำเร็จ'}`);
@@ -1767,7 +1792,9 @@ export default function OwnerDashboard({
       try {
         showStatus('กำลังลบของรางวัลออนไลน์...');
         await postJson('/api/db/rewards', { action: 'delete', rewardId: rewId, shopId: selectedShopId, auditLog });
-        await refreshFromNeon();
+        saveRewards(getRewards().filter((reward) => !(reward.id === rewId && reward.shopId === selectedShopId)), { sync: false });
+        onDataChange();
+        loadData();
         showStatus('✓ ลบสินค้าของรางวัลจากฐานข้อมูลแล้ว');
       } catch (error) {
         showStatus(`❌ ${error instanceof Error ? error.message : 'ลบของรางวัลไม่สำเร็จ'}`);
@@ -1789,7 +1816,9 @@ export default function OwnerDashboard({
       try {
         showStatus('กำลังลบโปรโมชันออนไลน์...');
         await postJson('/api/db/banners', { action: 'delete', bannerId, shopId: selectedShopId, auditLog });
-        await refreshFromNeon();
+        saveBanners(getBanners().filter((banner) => !(banner.id === bannerId && banner.shopId === selectedShopId)), { sync: false });
+        onDataChange();
+        loadData();
         showStatus('✓ ลบแคมเปญโปรโมชั่นจากฐานข้อมูลแล้ว');
       } catch (error) {
         showStatus(`❌ ${error instanceof Error ? error.message : 'ลบโปรโมชันไม่สำเร็จ'}`);
@@ -1815,7 +1844,9 @@ export default function OwnerDashboard({
       try {
         showStatus('กำลังลบประวัติธุรกรรมออนไลน์...');
         await postJson('/api/db/transactions', { action: 'delete', transactionId: txId, shopId: selectedShopId, auditLog });
-        await refreshFromNeon();
+        saveTransactions(getTransactions().filter((transaction) => !(transaction.id === txId && transaction.shopId === selectedShopId)), { sync: false });
+        onDataChange();
+        loadData();
         showStatus('✓ ลบข้อมูลประวัติธุรกรรมจากฐานข้อมูลออนไลน์แล้ว');
       } catch (error) {
         showStatus(`❌ ${error instanceof Error ? error.message : 'ลบประวัติธุรกรรมไม่สำเร็จ'}`);
@@ -1850,7 +1881,8 @@ export default function OwnerDashboard({
       showStatus('กำลังสร้างโปรโมชันออนไลน์...');
       await postJson('/api/db/banners', { action: 'upsert', banner: newBan, auditLog });
       saveBanners([...allBanners, newBan], { sync: false });
-      await refreshFromNeon();
+      onDataChange();
+      loadData();
       showStatus('✓ สร้างโปรโมชันออนไลน์เรียบร้อยแล้ว');
       setShowBannerModal(false);
       setNewBannerTitle('');

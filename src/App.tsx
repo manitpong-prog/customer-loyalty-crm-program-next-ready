@@ -72,10 +72,32 @@ function getEffectiveSearchParams(): URLSearchParams {
   return merged;
 }
 
-function cleanCustomerEntryQuery() {
+function cleanCustomerEntryQuery(effectiveParams?: URLSearchParams) {
   try {
     const url = new URL(window.location.href);
-    ["tab", "code", "resetLine", "liff.state", "liff.referrer", "liffClientId", "liffRedirectUri", "liff.hback", "state", "friendship_status_changed"].forEach((key) => url.searchParams.delete(key));
+    const appTab = effectiveParams?.get("tab") || url.searchParams.get("tab");
+    const appCode = effectiveParams?.get("code") || url.searchParams.get("code");
+
+    [
+      "liff.state",
+      "liff.referrer",
+      "liffClientId",
+      "liffRedirectUri",
+      "liff.hback",
+      "state",
+      "friendship_status_changed",
+      "access_token",
+      "id_token",
+      "error",
+      "error_description",
+    ].forEach((key) => url.searchParams.delete(key));
+
+    // Keep app-owned deep-link params. Removing tab/code here caused LIFF
+    // login redirects to lose their target tab and could restart the redirect flow.
+    if (appTab) url.searchParams.set("tab", appTab);
+    if (appCode) url.searchParams.set("code", appCode);
+    url.searchParams.delete("resetLine");
+
     window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ""));
   } catch (e) {
     console.error("Failed to clean URL", e);
@@ -205,7 +227,7 @@ export default function App({
 
       if (code || tabParam || shouldResetLine || hasLiffState) {
         // Clean entry parameters after bootstrap to avoid re-triggering on refresh.
-        cleanCustomerEntryQuery();
+        cleanCustomerEntryQuery(searchParams);
       }
     };
 

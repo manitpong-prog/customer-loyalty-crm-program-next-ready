@@ -191,3 +191,10 @@ Docs:
 - Merchant point-link generation now shows the generated coupon immediately after Neon confirms the write.
 - LIFF redirect URLs are sanitized to prevent nested `liff.state` / `liffRedirectUri` loops.
 - High-frequency online actions no longer run schema ensure on every request; migrations remain the source of schema readiness.
+
+## Phase 7G Hotfix — LIFF Query / Snapshot Speed
+- Fixed customer deep-link cleanup so app params `tab` and `code` survive LIFF callback cleanup.
+- Adjusted LIFF auto-login guard to reduce redirect loops while still allowing LINE/LIFF opened links to authenticate.
+- Optimized `/api/db/snapshot` by making runtime schema/bootstrap checks opt-in with `ENABLE_RUNTIME_SCHEMA_CHECK=true`.
+- Removed several full snapshot refreshes after merchant actions and updated local read cache from confirmed API responses instead.
+- No SQL migration required.
