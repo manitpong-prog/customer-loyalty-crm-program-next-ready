@@ -388,3 +388,17 @@ The migration adds merchant-facing settings columns to `shops`:
 - `rich_menu_contact_url`
 
 The browser still uses localStorage as a temporary UI cache after loading the latest Neon snapshot, but the updated flows write to Neon first and only show success after the API returns successfully.
+
+## Pilot Online-only Audit Final
+
+This package completes the final online-only audit pass for the pilot. Neon is treated as the source of truth for core business data, while browser `localStorage` is kept as a UI cache after snapshot refresh.
+
+Key changes:
+
+- Generic `saveStoredData()` no longer queues background `/api/db/sync` automatically.
+- Added `/api/db/customers` for customer/profile/manual member writes.
+- Added `/api/db/transactions` for online transaction deletion.
+- Merchant manual customer creation, customer profile update, transaction deletion, and Platform Admin shop approval/rejection now write Neon first.
+- No SQL migration is required for this package.
+
+See `docs/ONLINE_ONLY_AUDIT_FINAL_TH.md` for the final verification checklist.

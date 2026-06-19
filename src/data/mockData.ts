@@ -354,7 +354,8 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
 ];
 
 // Client-side cache helpers.
-// Neon is accessed only through Next.js API routes. The browser keeps a local cache so the existing prototype UI can remain fast and mostly unchanged.
+// Phase 7 final audit: Neon is the source of truth for business data.
+// localStorage is kept only as a read cache/UI fallback after API routes confirm writes.
 const KEYS = {
   SHOPS: 'crm_platforms_shops',
   CUSTOMERS: 'crm_platform_customers',
@@ -472,15 +473,16 @@ function queueNeonSync<T>(key: SyncableKey, data: T) {
   const entity = KEY_TO_ENTITY[key];
   if (!entity) return;
 
-  // Legacy fallback only: new online-only flows must call dedicated API routes before updating the UI.
-  // This remains for old prototype-only actions until they are fully refactored.
+  // Emergency legacy path only. Normal pilot flows must call dedicated API routes
+  // and wait for Neon before showing success. This function is no longer called
+  // automatically by saveStoredData().
   window.fetch('/api/db/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ entity, rows: data }),
     keepalive: true,
   }).catch((error) => {
-    console.warn(`[crm-db] Could not sync ${entity} to Neon. Local cache is still updated.`, error);
+    console.warn(`[crm-db] Emergency legacy sync failed for ${entity}.`, error);
   });
 }
 
@@ -504,7 +506,7 @@ export function saveStoredData<T>(key: SyncableKey, data: T, options: { sync?: b
 
   try {
     window.localStorage.setItem(key, JSON.stringify(data));
-    if (options.sync !== false) {
+    if (options.sync === true) {
       queueNeonSync(key, data);
     }
   } catch (e) {

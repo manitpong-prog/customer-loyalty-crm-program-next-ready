@@ -1187,7 +1187,7 @@ export default function OwnerDashboard({
     }
   };
 
-  const handleCreateCustomer = (e: React.FormEvent) => {
+  const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const trimmedName = newCustomerName.trim();
@@ -1220,24 +1220,31 @@ export default function OwnerDashboard({
       shopIds: [selectedShopId],
     };
 
-    saveCustomers([...allCustomers, newCustomer]);
-    recordAuditLog({
-      action: 'customer_created',
-      actionLabel: 'เพิ่มสมาชิก',
+    const auditLog = recordAuditLog({
+      action: 'customer_created_online',
+      actionLabel: 'เพิ่มสมาชิกแบบออนไลน์',
       description: `เพิ่มสมาชิกใหม่ ${newCustomer.name}`,
       targetType: 'customer',
       targetId: newCustomer.id,
       customerId: newCustomer.id,
       customerName: newCustomer.name,
     });
-    setSelectedSaleCustomerId(newCustomer.id);
-    setNewCustomerName('');
-    setNewCustomerPhone('');
-    setNewCustomerLineName('');
-    setShowCustomerModal(false);
-    showStatus(`✓ เพิ่มสมาชิก ${newCustomer.name} ให้ร้านนี้เรียบร้อยแล้ว`);
-    onDataChange();
-    loadData();
+
+    try {
+      showStatus('กำลังเพิ่มสมาชิกออนไลน์...');
+      const payload = await postJson<{ customer?: Customer }>('/api/db/customers', { action: 'upsert', customer: newCustomer, auditLog });
+      const confirmedCustomer = payload.customer || newCustomer;
+      saveCustomers([...allCustomers.filter((customer) => customer.id !== confirmedCustomer.id), confirmedCustomer], { sync: false });
+      await refreshFromNeon();
+      setSelectedSaleCustomerId(confirmedCustomer.id);
+      setNewCustomerName('');
+      setNewCustomerPhone('');
+      setNewCustomerLineName('');
+      setShowCustomerModal(false);
+      showStatus(`✓ เพิ่มสมาชิก ${confirmedCustomer.name} ลงฐานข้อมูลออนไลน์แล้ว`);
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'เพิ่มสมาชิกไม่สำเร็จ'}`);
+    }
   };
 
   const handleRecordPurchase = async (e: React.FormEvent) => {
@@ -1765,14 +1772,12 @@ export default function OwnerDashboard({
     }
   };
 
-  const handleDeleteTransactionPermanently = (txId: string) => {
+  const handleDeleteTransactionPermanently = async (txId: string) => {
     if (confirm('คุณต้องการลบรายงานประวัติประวัติธุรกรรมนี้ถาวรจากฐานสตรีมมิ่งเลยใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้')) {
       const txToDelete = getTransactions().find(t => t.id === txId);
-      const filtered = getTransactions().filter(t => t.id !== txId);
-      saveTransactions(filtered);
-      recordAuditLog({
-        action: 'transaction_deleted',
-        actionLabel: 'ลบประวัติธุรกรรม',
+      const auditLog = recordAuditLog({
+        action: 'transaction_deleted_online',
+        actionLabel: 'ลบประวัติธุรกรรมแบบออนไลน์',
         description: `ลบประวัติธุรกรรม ${txId}${txToDelete ? ` (${txToDelete.description})` : ''}`,
         targetType: 'transaction',
         targetId: txId,
@@ -1781,9 +1786,15 @@ export default function OwnerDashboard({
         points: txToDelete?.type === 'earn' ? txToDelete.points : txToDelete ? -Math.abs(txToDelete.points) : undefined,
         status: 'danger',
       });
-      showStatus('✓ ลบข้อมูลประวัติธุรกรรมถาวรเรียบร้อยแล้ว');
-      onDataChange();
-      loadData();
+
+      try {
+        showStatus('กำลังลบประวัติธุรกรรมออนไลน์...');
+        await postJson('/api/db/transactions', { action: 'delete', transactionId: txId, shopId: selectedShopId, auditLog });
+        await refreshFromNeon();
+        showStatus('✓ ลบข้อมูลประวัติธุรกรรมจากฐานข้อมูลออนไลน์แล้ว');
+      } catch (error) {
+        showStatus(`❌ ${error instanceof Error ? error.message : 'ลบประวัติธุรกรรมไม่สำเร็จ'}`);
+      }
     }
   };
 

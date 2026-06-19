@@ -153,3 +153,23 @@ Required SQL:
 
 Known limitation:
 - Legacy `/api/db/sync` still exists as compatibility fallback and should be removed only after all remaining non-critical flows are converted.
+
+## Pilot Online-only Audit Final
+
+Status: implemented in this package.
+
+Completed:
+- Disabled automatic background `/api/db/sync` from generic `saveStoredData()`; localStorage is now cache/fallback only unless a caller explicitly requests emergency sync.
+- Added `/api/db/customers` for online-only customer profile/manual customer upsert.
+- Added `/api/db/transactions` for online-only transaction deletion.
+- Merchant manual customer creation now writes Neon first before showing success.
+- Customer profile update now writes Neon first before showing success.
+- Merchant transaction deletion now deletes from Neon first before showing success.
+- Platform Admin approve/reject shop now writes Neon through `/api/db/merchant-settings` first.
+- Legacy `/api/db/sync` remains as an emergency compatibility endpoint, but normal pilot flows should not rely on it.
+
+Required SQL:
+- None.
+
+Docs:
+- `docs/ONLINE_ONLY_AUDIT_FINAL_TH.md`

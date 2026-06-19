@@ -1037,28 +1037,62 @@ export default function CustomerDashboard({
   };
 
   // Update Profile
-  const handleUpdateProfile = (e: React.FormEvent) => {
+  const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profileName.trim()) return;
 
-    const allCustomers = getCustomers();
-    const updated = allCustomers.map((c) => {
-      if (c.id === customer.id) {
-        return {
-          ...c,
-          name: profileName,
-          phone: profilePhone,
-          lineName: profileLineName,
-        };
-      }
-      return c;
-    });
+    const nextCustomer: Customer = {
+      ...customer,
+      name: profileName.trim(),
+      phone: profilePhone.trim(),
+      lineName: profileLineName.trim() || profileName.trim(),
+      shopIds: Array.from(new Set([...(customer.shopIds || []), selectedShopId])),
+    };
 
-    saveCustomers(updated);
-    setSuccessMessage("บันทึกข้อมูลโปรไฟล์แล้ว");
-    onDataChange();
-    loadData();
-    setTimeout(() => setSuccessMessage(""), 3000);
+    try {
+      setErrorMessage("");
+      const response = await fetch('/api/db/customers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'upsert',
+          customer: nextCustomer,
+          auditLog: {
+            id: `audit_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            shopId: selectedShopId,
+            shopName: activeShop?.name || selectedShopId,
+            actorType: 'customer',
+            actorName: nextCustomer.name,
+            actorId: nextCustomer.id,
+            action: 'customer_profile_updated_online',
+            actionLabel: 'ลูกค้าแก้โปรไฟล์แบบออนไลน์',
+            description: `${nextCustomer.name} บันทึกข้อมูลโปรไฟล์`,
+            targetType: 'customer',
+            targetId: nextCustomer.id,
+            customerId: nextCustomer.id,
+            customerName: nextCustomer.name,
+            status: 'success',
+            metadata: {},
+            createdAt: new Date().toISOString(),
+          },
+        }),
+      });
+
+      const payload = await response.json().catch(() => null) as { ok?: boolean; message?: string; customer?: Customer } | null;
+      if (!response.ok || !payload?.ok || !payload.customer) {
+        throw new Error(payload?.message || 'บันทึกข้อมูลโปรไฟล์ลงฐานข้อมูลไม่สำเร็จ');
+      }
+
+      await initializeDatabase();
+      setCustomer(payload.customer);
+      setSuccessMessage("บันทึกข้อมูลโปรไฟล์ออนไลน์แล้ว");
+      onDataChange();
+      loadData();
+      setTimeout(() => setSuccessMessage(""), 3000);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'บันทึกข้อมูลโปรไฟล์ไม่สำเร็จ');
+      setTimeout(() => setErrorMessage(""), 4000);
+    }
   };
 
   return (

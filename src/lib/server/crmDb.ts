@@ -575,6 +575,72 @@ async function syncCustomers(rows: Customer[]) {
   `;
 }
 
+export async function upsertCustomerRow(customer: Customer): Promise<Customer> {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  const shopIdsPayload = JSON.stringify(Array.from(new Set(customer.shopIds || [])));
+
+  const rows = await sql`
+    insert into customers (
+      id,
+      name,
+      phone,
+      line_name,
+      line_id,
+      avatar,
+      current_points,
+      lifetime_points,
+      tier,
+      created_at,
+      shop_ids,
+      updated_at
+    ) values (
+      ${customer.id},
+      ${customer.name || 'LINE User'},
+      ${customer.phone || ''},
+      ${customer.lineName || customer.name || ''},
+      ${customer.lineId || ''},
+      ${customer.avatar || ''},
+      ${Math.max(0, Number(customer.currentPoints) || 0)},
+      ${Math.max(0, Number(customer.lifetimePoints) || 0)},
+      ${['Member', 'Silver', 'Gold', 'Platinum', 'VIP'].includes(customer.tier) ? customer.tier : 'Member'},
+      ${customer.createdAt || new Date().toISOString()}::timestamptz,
+      ${shopIdsPayload}::jsonb,
+      now()
+    )
+    on conflict (id) do update set
+      name = excluded.name,
+      phone = excluded.phone,
+      line_name = excluded.line_name,
+      line_id = excluded.line_id,
+      avatar = excluded.avatar,
+      shop_ids = coalesce(
+        (
+          select jsonb_agg(distinct value)
+          from jsonb_array_elements_text(customers.shop_ids || excluded.shop_ids) as merged(value)
+        ),
+        excluded.shop_ids
+      ),
+      updated_at = now()
+    returning
+      id,
+      name,
+      phone,
+      line_name as "lineName",
+      line_id as "lineId",
+      avatar,
+      current_points as "currentPoints",
+      lifetime_points as "lifetimePoints",
+      tier,
+      created_at as "createdAt",
+      shop_ids as "shopIds"
+  `;
+
+  const row = rows[0] as Record<string, unknown> | undefined;
+  if (!row) throw new Error('บันทึกข้อมูลลูกค้าไม่สำเร็จ');
+  return mapCustomerRow(row);
+}
+
 async function syncRewards(rows: Reward[]) {
   const sql = requireSql();
   const payload = JSON.stringify(rows);
@@ -876,6 +942,21 @@ async function syncTransactions(rows: Transaction[]) {
       points_expires_at = excluded.points_expires_at,
       created_at = excluded.created_at
   `;
+}
+
+export async function deleteTransactionRow(transactionId: string, shopId: string) {
+  await ensureCrmSchema();
+  const sql = requireSql();
+
+  const rows = await sql`
+    delete from transactions
+    where id = ${transactionId} and shop_id = ${shopId}
+    returning id
+  `;
+
+  if (!rows.length) {
+    throw new Error('ไม่พบประวัติธุรกรรมในฐานข้อมูลออนไลน์ หรือรายการนี้เป็นของร้านอื่น');
+  }
 }
 
 async function syncCoupons(rows: GeneratedCoupon[]) {
