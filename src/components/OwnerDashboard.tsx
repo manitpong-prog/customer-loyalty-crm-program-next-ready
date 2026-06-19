@@ -9,7 +9,7 @@ import { Shop, Customer, Reward, Transaction, PromoBanner, AuditLog, ShopOnboard
 import { 
   getShops, saveShops, getCustomers, saveCustomers, 
   getRewards, saveRewards, getTransactions, saveTransactions,
-  getBanners, saveBanners, getGeneratedCoupons, saveGeneratedCoupons,
+  getBanners, saveBanners, getGeneratedCoupons,
   getAuditLogs, addAuditLog, getOrCreateOnboardingChecklist, upsertOnboardingChecklist, getMembershipTiers, saveMembershipTiers, initializeDatabase
 } from '../data/mockData';
 import { shopIdToSlug } from '../lib/shopSlug';
@@ -226,7 +226,7 @@ export default function OwnerDashboard({
     }
   };
 
-  const generateNewCouponAndLink = () => {
+  const generateNewCouponAndLink = async () => {
     const activeShop = shops.length > 0 ? shops.find(s => s.id === selectedShopId) : getShops().find(s => s.id === selectedShopId);
     const activePointRules = getPointRules(activeShop);
     const currentPointsRate = activePointRules.pointsRate;
@@ -289,29 +289,41 @@ export default function OwnerDashboard({
       isUsed: false
     };
 
-    coupons.push(newCoupon);
-    saveGeneratedCoupons(coupons);
-
     // Construct LIFF URL first so customer opens inside LINE when available.
     const generatedUrl = buildCustomerClaimUrl(uniqueCode);
-
-    recordAuditLog({
+    const auditLog = {
+      id: `audit_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      shopId: selectedShopId,
+      shopName: activeShop?.name || activeShopDetail?.name || selectedShopId,
+      actorType: 'owner' as const,
+      actorName: 'เจ้าของร้าน',
+      actorId: 'merchant-owner',
       action: 'point_link_created',
       actionLabel: 'สร้างลิงก์รับแต้ม',
       description: `สร้างลิงก์รับแต้ม ${couponPoints.toLocaleString('th-TH')} แต้ม จากยอดซื้อ ${purchaseAmount.toLocaleString('th-TH')} บาท`,
       targetType: 'coupon',
       targetId: uniqueCode,
       points: couponPoints,
+      status: 'success' as const,
       metadata: { purchaseAmount, ...activePointRules, pointLinkExpiryMinutes: safeLinkExpiryMinutes, expiresAt, url: generatedUrl },
-    });
+      createdAt: new Date().toISOString(),
+    };
 
-    setGeneratedQRValue(generatedUrl);
-    setActiveCoupon(newCoupon);
-
-    // Refresh generated coupons list
-    const shopCoupons = coupons.filter((c: any) => c.shopId === selectedShopId);
-    shopCoupons.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    setGeneratedCouponsList(shopCoupons);
+    try {
+      showStatus('กำลังสร้างลิงก์รับแต้มออนไลน์...');
+      await postJson('/api/db/point-coupons', { action: 'upsert', coupon: newCoupon, auditLog });
+      recordAuditLog(auditLog);
+      await refreshFromNeon();
+      setGeneratedQRValue(generatedUrl);
+      setActiveCoupon(newCoupon);
+      const shopCoupons = getGeneratedCoupons()
+        .filter((c: any) => c.shopId === selectedShopId)
+        .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setGeneratedCouponsList(shopCoupons);
+      showStatus('✓ สร้างลิงก์รับแต้มออนไลน์แล้ว');
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'สร้างลิงก์รับแต้มไม่สำเร็จ'}`);
+    }
   };
 
   const handleShareClaimLink = async (url: string, points: number, code?: string) => {
@@ -361,12 +373,9 @@ export default function OwnerDashboard({
     showStatus(code ? `✓ เปิด LINE สำหรับแชร์รหัส ${code}` : '✓ เปิด LINE สำหรับแชร์ลิงก์แล้ว');
   };
 
-  const handleDeleteGeneratedCoupon = (code: string) => {
+  const handleDeleteGeneratedCoupon = async (code: string) => {
     if (confirm(`คุณแน่ใจต้องการลบรหัสคูปอง ${code} ถาวรใช่หรือไม่? หลังจากลบแล้ว คูปองหรือลิงก์สะสมแต้มนี้จะไม่สามารถถูกนำมาสแกนหรือใช้งานได้อีกทุกกรณี`)) {
-      const coupons = getGeneratedCoupons();
-      const filtered = coupons.filter((c: any) => c.code.toUpperCase() !== code.toUpperCase());
-      saveGeneratedCoupons(filtered);
-      recordAuditLog({
+      const auditLog = recordAuditLog({
         action: 'point_link_deleted',
         actionLabel: 'ลบลิงก์รับแต้ม',
         description: `ลบรหัสรับแต้ม ${code} ออกจากระบบ`,
@@ -374,8 +383,14 @@ export default function OwnerDashboard({
         targetId: code,
         status: 'warning',
       });
-      showStatus('✓ ลบข้อมูลรหัสแจกแต้มพิเศษสำเร็จอย่างถาวร');
-      loadData();
+      try {
+        showStatus('กำลังลบลิงก์รับแต้มออนไลน์...');
+        await postJson('/api/db/point-coupons', { action: 'delete', code, shopId: selectedShopId, auditLog });
+        await refreshFromNeon();
+        showStatus('✓ ลบข้อมูลรหัสแจกแต้มพิเศษจากฐานข้อมูลแล้ว');
+      } catch (error) {
+        showStatus(`❌ ${error instanceof Error ? error.message : 'ลบลิงก์รับแต้มไม่สำเร็จ'}`);
+      }
     }
   };
 
@@ -431,7 +446,7 @@ export default function OwnerDashboard({
     });
 
     if (normalizedCustomers.some((customer, index) => customer.tier !== allCustomers[index]?.tier)) {
-      saveCustomers(normalizedCustomers);
+      saveCustomers(normalizedCustomers, { sync: false });
     }
 
     setShops(scopeApprovedShops(allShops, selectedShopId, isProductionView));
@@ -566,6 +581,25 @@ export default function OwnerDashboard({
     setTimeout(() => setStatusMsg(''), 3000);
   };
 
+  const postJson = async <T,>(url: string, body: unknown): Promise<T> => {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.message || 'บันทึกข้อมูลออนไลน์ไม่สำเร็จ');
+    }
+    return payload as T;
+  };
+
+  const refreshFromNeon = async () => {
+    await initializeDatabase();
+    onDataChange();
+    loadData();
+  };
+
   const getStatusClassName = () => {
     if (statusMsg.startsWith('❌')) return 'border-rose-200 bg-rose-50 text-rose-800 shadow-rose-100';
     if (statusMsg.startsWith('⚠️')) return 'border-amber-200 bg-amber-50 text-amber-800 shadow-amber-100';
@@ -609,17 +643,17 @@ export default function OwnerDashboard({
     return log;
   };
 
-  const updateOnboardingChecklist = (patch: Partial<ShopOnboardingChecklist>, successMessage?: string) => {
+  const updateOnboardingChecklist = async (patch: Partial<ShopOnboardingChecklist>, successMessage?: string) => {
     const base = onboardingChecklist || getOrCreateOnboardingChecklist(selectedShopId);
-    const nextChecklist = upsertOnboardingChecklist({
+    const nextChecklist = {
       ...base,
       ...patch,
       shopId: selectedShopId,
       id: base.id || `onboarding_${selectedShopId}`,
-    });
+      updatedAt: new Date().toISOString(),
+    };
 
-    setOnboardingChecklist(nextChecklist);
-    recordAuditLog({
+    const auditLog = recordAuditLog({
       action: 'pilot_checklist_updated',
       actionLabel: 'อัปเดต Pilot Checklist',
       description: 'บันทึกสถานะความพร้อมก่อนเปิดร้านจริง',
@@ -627,7 +661,15 @@ export default function OwnerDashboard({
       targetId: nextChecklist.id,
       metadata: patch as Record<string, unknown>,
     });
-    if (successMessage) showStatus(successMessage);
+
+    try {
+      await postJson('/api/db/onboarding-checklist', { checklist: nextChecklist, auditLog });
+      upsertOnboardingChecklist(nextChecklist);
+      setOnboardingChecklist(nextChecklist);
+      if (successMessage) showStatus(successMessage);
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึก Pilot Checklist ไม่สำเร็จ'}`);
+    }
   };
 
   const getPilotChecklistData = () => {
@@ -943,7 +985,7 @@ export default function OwnerDashboard({
     return { value: validated.value?.pointsRate ?? null, error: validated.error };
   };
 
-  const handleSaveShopPointRate = (e: React.FormEvent | React.MouseEvent<HTMLButtonElement>) => {
+  const handleSaveShopPointRate = async (e: React.FormEvent | React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
 
     const { value: nextPointRules, error } = getValidatedPointRules();
@@ -964,8 +1006,9 @@ export default function OwnerDashboard({
       shop.id === selectedShopId ? { ...shop, ...nextPointRules } : shop
     ));
 
-    saveShops(updatedShops);
-    recordAuditLog({
+    const nextShop = updatedShops.find((shop) => shop.id === selectedShopId);
+    if (!nextShop) return;
+    const auditLog = recordAuditLog({
       action: 'shop_point_rules_updated',
       actionLabel: 'แก้กฎสะสมแต้ม',
       description: `บันทึกกฎสะสมแต้มใหม่: ${nextPointRules.pointsRate} บาท = 1 แต้ม / ${nextPointRules.pointRoundingMode === 'nearest' ? 'ปัดเศษใกล้สุด' : 'ปัดเศษลง'}`,
@@ -973,9 +1016,15 @@ export default function OwnerDashboard({
       targetId: selectedShopId,
       metadata: { previousRules: getPointRules(targetShop), nextRules: nextPointRules },
     });
-    showStatus(`✓ บันทึกกฎสะสมแต้มแล้ว: ${nextPointRules.pointsRate} บาท = 1 แต้ม`);
-    onDataChange();
-    loadData();
+    try {
+      showStatus('กำลังบันทึกกฎสะสมแต้มออนไลน์...');
+      await postJson('/api/db/merchant-settings', { shop: nextShop, auditLog });
+      saveShops(updatedShops, { sync: false });
+      await refreshFromNeon();
+      showStatus(`✓ บันทึกกฎสะสมแต้มออนไลน์แล้ว: ${nextPointRules.pointsRate} บาท = 1 แต้ม`);
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกกฎสะสมแต้มไม่สำเร็จ'}`);
+    }
   };
 
 
@@ -991,7 +1040,7 @@ export default function OwnerDashboard({
     }));
   };
 
-  const handleSaveMembershipTiers = () => {
+  const handleSaveMembershipTiers = async () => {
     const now = new Date().toISOString();
     const shopTiers = activeMembershipTiers.length > 0 ? activeMembershipTiers : getDefaultMembershipTiersForShop(selectedShopId);
     const nextShopTiers: MembershipTier[] = [];
@@ -1030,18 +1079,7 @@ export default function OwnerDashboard({
       ...nextShopTiers,
     ].sort((a, b) => a.shopId.localeCompare(b.shopId) || a.sortOrder - b.sortOrder);
 
-    saveMembershipTiers(nextAllTiers);
-    setMembershipTiers(getMembershipTiersForShop(nextAllTiers, selectedShopId));
-
-    const allCustomers = getCustomers();
-    const updatedCustomers = allCustomers.map((customer) => {
-      const belongsToShop = customer.shopIds?.includes(selectedShopId) || transactions.some((tx) => tx.userId === customer.id && tx.shopId === selectedShopId);
-      if (!belongsToShop) return customer;
-      return { ...customer, tier: resolveMembershipTier(customer.lifetimePoints, nextShopTiers) };
-    });
-    saveCustomers(updatedCustomers);
-
-    recordAuditLog({
+    const auditLog = recordAuditLog({
       action: 'membership_tiers_updated',
       actionLabel: 'แก้ไขระดับสมาชิก',
       description: `บันทึกระดับสมาชิก ${nextShopTiers.length} ระดับของร้าน ${activeShopDetail?.name || selectedShopId}`,
@@ -1050,12 +1088,18 @@ export default function OwnerDashboard({
       metadata: { tiers: nextShopTiers.map((tier) => ({ name: tier.name, minLifetimePoints: tier.minLifetimePoints, isActive: tier.isActive })) },
     });
 
-    showStatus('✓ บันทึกระดับสมาชิกแล้ว และอัปเดต badge ลูกค้าตามแต้มสะสมรวม');
-    onDataChange();
-    loadData();
+    try {
+      showStatus('กำลังบันทึกระดับสมาชิกออนไลน์...');
+      await postJson('/api/db/membership-tiers', { shopId: selectedShopId, tiers: nextShopTiers, auditLog });
+      saveMembershipTiers(nextAllTiers, { sync: false });
+      await refreshFromNeon();
+      showStatus('✓ บันทึกระดับสมาชิกออนไลน์แล้ว และอัปเดต badge ลูกค้าตามแต้มสะสมรวม');
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกระดับสมาชิกไม่สำเร็จ'}`);
+    }
   };
 
-  const handleSaveShopSettings = (e: React.FormEvent) => {
+  const handleSaveShopSettings = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const allShops = getShops();
@@ -1108,8 +1152,9 @@ export default function OwnerDashboard({
         : shop
     ));
 
-    saveShops(updatedShops);
-    recordAuditLog({
+    const nextShop = updatedShops.find((shop) => shop.id === selectedShopId);
+    if (!nextShop) return;
+    const auditLog = recordAuditLog({
       action: 'shop_settings_updated',
       actionLabel: 'แก้ไขตั้งค่าร้าน',
       description: `บันทึกข้อมูลร้าน “${nextName}” และการตั้งค่าหน้าลูกค้า`,
@@ -1117,9 +1162,15 @@ export default function OwnerDashboard({
       targetId: selectedShopId,
       metadata: { previousName: targetShop.name, nextName, nextPointRules, isActive: shopIsActiveInput },
     });
-    showStatus('✓ บันทึกตั้งค่าร้านค้าสำเร็จแล้ว');
-    onDataChange();
-    loadData();
+    try {
+      showStatus('กำลังบันทึกตั้งค่าร้านค้าออนไลน์...');
+      await postJson('/api/db/merchant-settings', { shop: nextShop, auditLog });
+      saveShops(updatedShops, { sync: false });
+      await refreshFromNeon();
+      showStatus('✓ บันทึกตั้งค่าร้านค้าออนไลน์สำเร็จแล้ว');
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกตั้งค่าร้านค้าไม่สำเร็จ'}`);
+    }
   };
 
   const handleCopyText = async (text: string, label = 'ข้อความ') => {
@@ -1250,7 +1301,7 @@ export default function OwnerDashboard({
     }
   };
 
-  const handleToggleRewardAvailability = (rewardId: string) => {
+  const handleToggleRewardAvailability = async (rewardId: string) => {
     const allRewards = getRewards();
     const reward = allRewards.find((item) => item.id === rewardId && item.shopId === selectedShopId);
     if (!reward) return;
@@ -1262,8 +1313,9 @@ export default function OwnerDashboard({
       return item;
     });
 
-    saveRewards(updatedRewards);
-    recordAuditLog({
+    const nextReward = updatedRewards.find((item) => item.id === rewardId && item.shopId === selectedShopId);
+    if (!nextReward) return;
+    const auditLog = recordAuditLog({
       action: reward.isAvailable ? 'reward_hidden' : 'reward_shown',
       actionLabel: reward.isAvailable ? 'ซ่อนของรางวัล' : 'เปิดแสดงของรางวัล',
       description: `${reward.isAvailable ? 'ปิดการแสดง' : 'เปิดให้ลูกค้าเห็น'}ของรางวัล “${reward.name}”`,
@@ -1271,9 +1323,15 @@ export default function OwnerDashboard({
       targetId: reward.id,
       status: reward.isAvailable ? 'warning' : 'success',
     });
-    showStatus(reward.isAvailable ? '✓ ปิดการแสดงของรางวัลนี้แล้ว' : '✓ เปิดให้ลูกค้าเห็นของรางวัลนี้แล้ว');
-    onDataChange();
-    loadData();
+    try {
+      showStatus('กำลังบันทึกสถานะของรางวัลออนไลน์...');
+      await postJson('/api/db/rewards', { action: 'upsert', reward: nextReward, auditLog });
+      saveRewards(updatedRewards, { sync: false });
+      await refreshFromNeon();
+      showStatus(reward.isAvailable ? '✓ ปิดการแสดงของรางวัลนี้แล้ว' : '✓ เปิดให้ลูกค้าเห็นของรางวัลนี้แล้ว');
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกสถานะของรางวัลไม่สำเร็จ'}`);
+    }
   };
 
   // 1. APPROVE CUSTOMER REWARD CLAIM
@@ -1583,7 +1641,7 @@ export default function OwnerDashboard({
     setShowRewardModal(true);
   };
 
-  const saveRewardForm = (e: React.FormEvent) => {
+  const saveRewardForm = async (e: React.FormEvent) => {
     e.preventDefault();
     const allRewards = getRewards();
 
@@ -1609,57 +1667,52 @@ export default function OwnerDashboard({
     const rewardStockValue = parsedRewardStock.value;
     const rewardDescription = newRewDesc.trim() || 'ไม่มีเงื่อนไขเพิ่มเติม';
 
-    if (editingReward) {
-      // Edit
-      const updated = allRewards.map(r => {
-        if (r.id === editingReward.id) {
-          return {
-            ...r,
-            name: trimmedRewardName,
-            pointsCost: rewardPointsValue,
-            stock: rewardStockValue,
-            description: rewardDescription,
-            image: newRewImage || defaultRewardImage,
-            imageUrl: newRewImage && newRewImage.startsWith('http') ? newRewImage : undefined,
-            imageStorageKey: newRewStorageKey || undefined
-          };
+    const rewardToPersist: Reward = editingReward
+      ? {
+          ...editingReward,
+          name: trimmedRewardName,
+          pointsCost: rewardPointsValue,
+          stock: rewardStockValue,
+          description: rewardDescription,
+          image: newRewImage || defaultRewardImage,
+          imageUrl: newRewImage && newRewImage.startsWith('http') ? newRewImage : undefined,
+          imageStorageKey: newRewStorageKey || undefined,
         }
-        return r;
-      });
-      saveRewards(updated);
-      recordAuditLog({
-        action: 'reward_updated',
-        actionLabel: 'แก้ไขของรางวัล',
-        description: `แก้ไขของรางวัล “${trimmedRewardName}”`,
-        targetType: 'reward',
-        targetId: editingReward.id,
-        metadata: { pointsCost: rewardPointsValue, stock: rewardStockValue },
-      });
-      showStatus('✓ อัปเดตรายการสินค้าของรางวัลสำเร็จ');
-    } else {
-      // Add
-      const newRew: Reward = {
-        id: `rew_${Date.now()}`,
-        name: trimmedRewardName,
-        pointsCost: rewardPointsValue,
-        stock: rewardStockValue,
-        description: rewardDescription,
-        image: newRewImage || defaultRewardImage,
-        imageUrl: newRewImage && newRewImage.startsWith('http') ? newRewImage : undefined,
-        imageStorageKey: newRewStorageKey || undefined,
-        isAvailable: true,
-        shopId: selectedShopId
-      };
-      saveRewards([...allRewards, newRew]);
-      recordAuditLog({
-        action: 'reward_created',
-        actionLabel: 'เพิ่มของรางวัล',
-        description: `เพิ่มของรางวัลใหม่ “${newRew.name}”`,
-        targetType: 'reward',
-        targetId: newRew.id,
-        metadata: { pointsCost: rewardPointsValue, stock: rewardStockValue },
-      });
-      showStatus('✓ บันทึกเปิดตัวสินค้าของรางวัลใหม่สำเร็จ');
+      : {
+          id: `rew_${Date.now()}`,
+          name: trimmedRewardName,
+          pointsCost: rewardPointsValue,
+          stock: rewardStockValue,
+          description: rewardDescription,
+          image: newRewImage || defaultRewardImage,
+          imageUrl: newRewImage && newRewImage.startsWith('http') ? newRewImage : undefined,
+          imageStorageKey: newRewStorageKey || undefined,
+          isAvailable: true,
+          shopId: selectedShopId,
+        };
+
+    const auditLog = recordAuditLog({
+      action: editingReward ? 'reward_updated' : 'reward_created',
+      actionLabel: editingReward ? 'แก้ไขของรางวัล' : 'เพิ่มของรางวัล',
+      description: editingReward ? `แก้ไขของรางวัล “${trimmedRewardName}”` : `เพิ่มของรางวัลใหม่ “${rewardToPersist.name}”`,
+      targetType: 'reward',
+      targetId: rewardToPersist.id,
+      metadata: { pointsCost: rewardPointsValue, stock: rewardStockValue },
+    });
+
+    try {
+      showStatus(editingReward ? 'กำลังบันทึกของรางวัลออนไลน์...' : 'กำลังเพิ่มของรางวัลออนไลน์...');
+      await postJson('/api/db/rewards', { action: 'upsert', reward: rewardToPersist, auditLog });
+      if (editingReward) {
+        saveRewards(allRewards.map((reward) => reward.id === rewardToPersist.id ? rewardToPersist : reward), { sync: false });
+      } else {
+        saveRewards([...allRewards, rewardToPersist], { sync: false });
+      }
+      await refreshFromNeon();
+      showStatus(editingReward ? '✓ อัปเดตรายการของรางวัลออนไลน์สำเร็จ' : '✓ เพิ่มของรางวัลออนไลน์สำเร็จ');
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'บันทึกของรางวัลไม่สำเร็จ'}`);
+      return;
     }
 
     setShowRewardModal(false);
@@ -1668,12 +1721,10 @@ export default function OwnerDashboard({
     loadData();
   };
 
-  const handleDeleteReward = (rewId: string) => {
+  const handleDeleteReward = async (rewId: string) => {
     if (confirm('คุณต้องการยกเลิกและลบบาร์นี้ถาวรจากฐานสตรีมมิ่งเลยใช่หรือไม่?')) {
       const rewardToDelete = getRewards().find(r => r.id === rewId);
-      const filtered = getRewards().filter(r => r.id !== rewId);
-      saveRewards(filtered);
-      recordAuditLog({
+      const auditLog = recordAuditLog({
         action: 'reward_deleted',
         actionLabel: 'ลบของรางวัล',
         description: `ลบของรางวัล “${rewardToDelete?.name || rewId}”`,
@@ -1681,18 +1732,21 @@ export default function OwnerDashboard({
         targetId: rewId,
         status: 'danger',
       });
-      showStatus('✓ ลบสินค้าของรางวัลเรียบร้อยแล้ว');
-      onDataChange();
-      loadData();
+      try {
+        showStatus('กำลังลบของรางวัลออนไลน์...');
+        await postJson('/api/db/rewards', { action: 'delete', rewardId: rewId, shopId: selectedShopId, auditLog });
+        await refreshFromNeon();
+        showStatus('✓ ลบสินค้าของรางวัลจากฐานข้อมูลแล้ว');
+      } catch (error) {
+        showStatus(`❌ ${error instanceof Error ? error.message : 'ลบของรางวัลไม่สำเร็จ'}`);
+      }
     }
   };
 
-  const handleDeleteBanner = (bannerId: string) => {
+  const handleDeleteBanner = async (bannerId: string) => {
     if (confirm('คุณแน่ใจต้องการลบแคมเปญโปรโมชั่นนี้ออกจากการแสดงผลอย่างถาวรใช่หรือไม่?')) {
       const bannerToDelete = getBanners().find(b => b.id === bannerId);
-      const filtered = getBanners().filter(b => b.id !== bannerId);
-      saveBanners(filtered);
-      recordAuditLog({
+      const auditLog = recordAuditLog({
         action: 'promotion_deleted',
         actionLabel: 'ลบโปรโมชัน',
         description: `ลบโปรโมชัน “${bannerToDelete?.title || bannerId}”`,
@@ -1700,9 +1754,14 @@ export default function OwnerDashboard({
         targetId: bannerId,
         status: 'danger',
       });
-      showStatus('✓ ลบแคมเปญโปรโมชั่นสำเร็จ');
-      onDataChange();
-      loadData();
+      try {
+        showStatus('กำลังลบโปรโมชันออนไลน์...');
+        await postJson('/api/db/banners', { action: 'delete', bannerId, shopId: selectedShopId, auditLog });
+        await refreshFromNeon();
+        showStatus('✓ ลบแคมเปญโปรโมชั่นจากฐานข้อมูลแล้ว');
+      } catch (error) {
+        showStatus(`❌ ${error instanceof Error ? error.message : 'ลบโปรโมชันไม่สำเร็จ'}`);
+      }
     }
   };
 
@@ -1728,7 +1787,7 @@ export default function OwnerDashboard({
     }
   };
 
-  const handleCreatePromoBanner = (e: React.FormEvent) => {
+  const handleCreatePromoBanner = async (e: React.FormEvent) => {
     e.preventDefault();
     const allBanners = getBanners();
     const newBan: PromoBanner = {
@@ -1742,8 +1801,7 @@ export default function OwnerDashboard({
       shopId: selectedShopId,
       isAd: false
     };
-    saveBanners([...allBanners, newBan]);
-    recordAuditLog({
+    const auditLog = recordAuditLog({
       action: 'promotion_created',
       actionLabel: 'สร้างโปรโมชัน',
       description: `สร้างโปรโมชัน “${newBan.title}”`,
@@ -1751,18 +1809,22 @@ export default function OwnerDashboard({
       targetId: newBan.id,
       metadata: { expirationDate: newBan.expirationDate },
     });
-    showStatus('✓ สร้างโปรโมชันเรียบร้อยแล้ว');
-    setShowBannerModal(false);
-    
-    // Reset states
-    setNewBannerTitle('');
-    setNewBannerDesc('');
-    setNewBannerImage('');
-    setNewBannerStorageKey('');
-    setNewBannerExp('2026-06-30');
 
-    onDataChange();
-    loadData();
+    try {
+      showStatus('กำลังสร้างโปรโมชันออนไลน์...');
+      await postJson('/api/db/banners', { action: 'upsert', banner: newBan, auditLog });
+      saveBanners([...allBanners, newBan], { sync: false });
+      await refreshFromNeon();
+      showStatus('✓ สร้างโปรโมชันออนไลน์เรียบร้อยแล้ว');
+      setShowBannerModal(false);
+      setNewBannerTitle('');
+      setNewBannerDesc('');
+      setNewBannerImage('');
+      setNewBannerStorageKey('');
+      setNewBannerExp('2026-06-30');
+    } catch (error) {
+      showStatus(`❌ ${error instanceof Error ? error.message : 'สร้างโปรโมชันไม่สำเร็จ'}`);
+    }
   };
 
   const rewardRedeems = transactions
@@ -2172,7 +2234,7 @@ export default function OwnerDashboard({
                           <input
                             type="checkbox"
                             checked={Boolean(pilotChecklist.manual[item.key])}
-                            onChange={(event) => updateOnboardingChecklist({ [item.key]: event.target.checked } as Partial<ShopOnboardingChecklist>, event.target.checked ? `✓ บันทึกแล้ว: ${item.label}` : `✓ ยกเลิกแล้ว: ${item.label}`)}
+                            onChange={(event) => { void updateOnboardingChecklist({ [item.key]: event.target.checked } as Partial<ShopOnboardingChecklist>, event.target.checked ? `✓ บันทึกแล้ว: ${item.label}` : `✓ ยกเลิกแล้ว: ${item.label}`); }}
                             className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-400"
                           />
                           <div>
@@ -2194,7 +2256,7 @@ export default function OwnerDashboard({
                     />
                     <button
                       type="button"
-                      onClick={() => updateOnboardingChecklist({ notes: onboardingChecklist?.notes || '' }, '✓ บันทึกหมายเหตุ Pilot Checklist แล้ว')}
+                      onClick={() => { void updateOnboardingChecklist({ notes: onboardingChecklist?.notes || '' }, '✓ บันทึกหมายเหตุ Pilot Checklist แล้ว'); }}
                       className="w-full rounded-2xl bg-slate-950 px-4 py-3 text-xs font-black text-white transition hover:bg-slate-800 active:scale-95"
                     >
                       บันทึกหมายเหตุ Checklist

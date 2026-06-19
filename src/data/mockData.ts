@@ -472,7 +472,8 @@ function queueNeonSync<T>(key: SyncableKey, data: T) {
   const entity = KEY_TO_ENTITY[key];
   if (!entity) return;
 
-  // Fire-and-forget: the UI remains responsive while the server persists the latest full list to Neon.
+  // Legacy fallback only: new online-only flows must call dedicated API routes before updating the UI.
+  // This remains for old prototype-only actions until they are fully refactored.
   window.fetch('/api/db/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -596,48 +597,48 @@ export function getShops(): Shop[] {
   return getStoredData(KEYS.SHOPS, INITIAL_SHOPS);
 }
 
-export function saveShops(shops: Shop[]) {
-  saveStoredData(KEYS.SHOPS, shops);
+export function saveShops(shops: Shop[], options: { sync?: boolean } = {}) {
+  saveStoredData(KEYS.SHOPS, shops, options);
 }
 
 export function getCustomers(): Customer[] {
   return getStoredData(KEYS.CUSTOMERS, INITIAL_CUSTOMERS);
 }
 
-export function saveCustomers(customers: Customer[]) {
-  saveStoredData(KEYS.CUSTOMERS, customers);
+export function saveCustomers(customers: Customer[], options: { sync?: boolean } = {}) {
+  saveStoredData(KEYS.CUSTOMERS, customers, options);
 }
 
 export function getRewards(): Reward[] {
   return getStoredData(KEYS.REWARDS, INITIAL_REWARDS);
 }
 
-export function saveRewards(rewards: Reward[]) {
-  saveStoredData(KEYS.REWARDS, rewards);
+export function saveRewards(rewards: Reward[], options: { sync?: boolean } = {}) {
+  saveStoredData(KEYS.REWARDS, rewards, options);
 }
 
 export function getBanners(): PromoBanner[] {
   return getStoredData(KEYS.BANNERS, INITIAL_BANNERS);
 }
 
-export function saveBanners(banners: PromoBanner[]) {
-  saveStoredData(KEYS.BANNERS, banners);
+export function saveBanners(banners: PromoBanner[], options: { sync?: boolean } = {}) {
+  saveStoredData(KEYS.BANNERS, banners, options);
 }
 
 export function getTransactions(): Transaction[] {
   return getStoredData(KEYS.TRANSACTIONS, INITIAL_TRANSACTIONS);
 }
 
-export function saveTransactions(txs: Transaction[]) {
-  saveStoredData(KEYS.TRANSACTIONS, txs);
+export function saveTransactions(txs: Transaction[], options: { sync?: boolean } = {}) {
+  saveStoredData(KEYS.TRANSACTIONS, txs, options);
 }
 
 export function getGeneratedCoupons(): GeneratedCoupon[] {
   return getStoredData(KEYS.COUPONS, [] as GeneratedCoupon[]);
 }
 
-export function saveGeneratedCoupons(coupons: GeneratedCoupon[]) {
-  saveStoredData(KEYS.COUPONS, coupons);
+export function saveGeneratedCoupons(coupons: GeneratedCoupon[], options: { sync?: boolean } = {}) {
+  saveStoredData(KEYS.COUPONS, coupons, options);
 }
 
 
@@ -645,11 +646,11 @@ export function getAuditLogs(): AuditLog[] {
   return getStoredData(KEYS.AUDIT_LOGS, [] as AuditLog[]);
 }
 
-export function saveAuditLogs(logs: AuditLog[]) {
-  saveStoredData(KEYS.AUDIT_LOGS, logs);
+export function saveAuditLogs(logs: AuditLog[], options: { sync?: boolean } = {}) {
+  saveStoredData(KEYS.AUDIT_LOGS, logs, options);
 }
 
-export function addAuditLog(log: Omit<AuditLog, 'id' | 'createdAt'> & Partial<Pick<AuditLog, 'id' | 'createdAt'>>) {
+export function addAuditLog(log: Omit<AuditLog, 'id' | 'createdAt'> & Partial<Pick<AuditLog, 'id' | 'createdAt'>>, options: { sync?: boolean } = {}) {
   const now = new Date().toISOString();
   const nextLog: AuditLog = {
     ...log,
@@ -658,7 +659,7 @@ export function addAuditLog(log: Omit<AuditLog, 'id' | 'createdAt'> & Partial<Pi
   };
 
   const logs = getAuditLogs();
-  saveAuditLogs([nextLog, ...logs].slice(0, 1000));
+  saveAuditLogs([nextLog, ...logs].slice(0, 1000), options);
   return nextLog;
 }
 
@@ -666,16 +667,16 @@ export function getMembershipTiers(): MembershipTier[] {
   return getStoredData(KEYS.MEMBERSHIP_TIERS, getDefaultMembershipTiersForShops(getShops().map((shop) => shop.id)));
 }
 
-export function saveMembershipTiers(tiers: MembershipTier[]) {
-  saveStoredData(KEYS.MEMBERSHIP_TIERS, tiers);
+export function saveMembershipTiers(tiers: MembershipTier[], options: { sync?: boolean } = {}) {
+  saveStoredData(KEYS.MEMBERSHIP_TIERS, tiers, options);
 }
 
 export function getOnboardingChecklists(): ShopOnboardingChecklist[] {
   return getStoredData(KEYS.ONBOARDING_CHECKLISTS, [] as ShopOnboardingChecklist[]);
 }
 
-export function saveOnboardingChecklists(checklists: ShopOnboardingChecklist[]) {
-  saveStoredData(KEYS.ONBOARDING_CHECKLISTS, checklists);
+export function saveOnboardingChecklists(checklists: ShopOnboardingChecklist[], options: { sync?: boolean } = {}) {
+  saveStoredData(KEYS.ONBOARDING_CHECKLISTS, checklists, options);
 }
 
 export function getOrCreateOnboardingChecklist(shopId: string): ShopOnboardingChecklist {
@@ -708,6 +709,6 @@ export function upsertOnboardingChecklist(checklist: ShopOnboardingChecklist) {
     ? checklists.map((item) => (item.shopId === checklist.shopId ? { ...item, ...nextChecklist } : item))
     : [{ ...nextChecklist, createdAt: checklist.createdAt || now }, ...checklists];
 
-  saveOnboardingChecklists(next);
+  saveOnboardingChecklists(next, { sync: false });
   return nextChecklist;
 }

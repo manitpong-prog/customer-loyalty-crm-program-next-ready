@@ -19,6 +19,10 @@ create table if not exists shops (
   is_active boolean not null default false,
   registration_status text not null default 'pending' check (registration_status in ('pending', 'approved', 'rejected')),
   phone text not null default '',
+  welcome_message text not null default '',
+  contact_text text not null default '',
+  share_message_template text not null default '',
+  rich_menu_contact_url text not null default '',
   created_at timestamptz not null default now(),
   shop_ids jsonb not null default '[]'::jsonb,
   updated_at timestamptz not null default now()
@@ -169,3 +173,10 @@ alter table rewards add column if not exists image_url text;
 alter table rewards add column if not exists image_storage_key text;
 alter table promo_banners add column if not exists image_url text;
 alter table promo_banners add column if not exists image_storage_key text;
+
+
+-- Phase 7D: Online-only settings fields for customer-facing merchant text/link settings.
+alter table shops add column if not exists welcome_message text not null default '';
+alter table shops add column if not exists contact_text text not null default '';
+alter table shops add column if not exists share_message_template text not null default '';
+alter table shops add column if not exists rich_menu_contact_url text not null default '';

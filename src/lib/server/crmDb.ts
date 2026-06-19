@@ -126,12 +126,20 @@ export async function ensureCrmSchema() {
     is_active boolean not null default false,
     registration_status text not null default 'pending' check (registration_status in ('pending', 'approved', 'rejected')),
     phone text not null default '',
+    welcome_message text not null default '',
+    contact_text text not null default '',
+    share_message_template text not null default '',
+    rich_menu_contact_url text not null default '',
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
   )`;
 
   await sql`alter table shops add column if not exists logo_url text`;
   await sql`alter table shops add column if not exists logo_storage_key text`;
+  await sql`alter table shops add column if not exists welcome_message text not null default ''`;
+  await sql`alter table shops add column if not exists contact_text text not null default ''`;
+  await sql`alter table shops add column if not exists share_message_template text not null default ''`;
+  await sql`alter table shops add column if not exists rich_menu_contact_url text not null default ''`;
   await sql`alter table shops add column if not exists point_rounding_mode text not null default 'floor'`;
   await sql`alter table shops add column if not exists minimum_purchase_for_points integer not null default 1`;
   await sql`alter table shops add column if not exists point_link_expiry_days integer not null default 7`;
@@ -415,7 +423,7 @@ export async function getCrmSnapshot(): Promise<CrmSnapshot> {
     onboardingChecklists,
     membershipTiers,
   ] = await Promise.all([
-    sql`select id, name, description, logo, logo_url as "logoUrl", logo_storage_key as "logoStorageKey", category, points_rate as "pointsRate", point_rounding_mode as "pointRoundingMode", minimum_purchase_for_points as "minimumPurchaseForPoints", point_link_expiry_days as "pointLinkExpiryDays", point_expiry_days as "pointExpiryDays", point_expiry_reminder_days as "pointExpiryReminderDays", is_active as "isActive", registration_status as "registrationStatus", phone, created_at as "createdAt" from shops order by created_at asc`,
+    sql`select id, name, description, logo, logo_url as "logoUrl", logo_storage_key as "logoStorageKey", category, points_rate as "pointsRate", point_rounding_mode as "pointRoundingMode", minimum_purchase_for_points as "minimumPurchaseForPoints", point_link_expiry_days as "pointLinkExpiryDays", point_expiry_days as "pointExpiryDays", point_expiry_reminder_days as "pointExpiryReminderDays", is_active as "isActive", registration_status as "registrationStatus", phone, welcome_message as "welcomeMessage", contact_text as "contactText", share_message_template as "shareMessageTemplate", rich_menu_contact_url as "richMenuContactUrl", created_at as "createdAt" from shops order by created_at asc`,
     sql`select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds" from customers order by created_at asc`,
     sql`select id, name, image, image_url as "imageUrl", image_storage_key as "imageStorageKey", description, points_cost as "pointsCost", stock, is_available as "isAvailable", shop_id as "shopId" from rewards order by created_at asc`,
     sql`select id, title, image, image_url as "imageUrl", image_storage_key as "imageStorageKey", description, is_ad as "isAd", shop_id as "shopId", url, expiration_date as "expirationDate" from promo_banners order by created_at asc`,
@@ -470,7 +478,7 @@ async function syncShops(rows: Shop[]) {
       id, name, description, logo, logo_url, logo_storage_key, category, points_rate,
       point_rounding_mode, minimum_purchase_for_points, point_link_expiry_days,
       point_expiry_days, point_expiry_reminder_days,
-      is_active, registration_status, phone, created_at, updated_at
+      is_active, registration_status, phone, welcome_message, contact_text, share_message_template, rich_menu_contact_url, created_at, updated_at
     )
     select
       id,
@@ -489,6 +497,10 @@ async function syncShops(rows: Shop[]) {
       coalesce("isActive", false),
       coalesce("registrationStatus", 'pending'),
       coalesce(phone, ''),
+      coalesce("welcomeMessage", ''),
+      coalesce("contactText", ''),
+      coalesce("shareMessageTemplate", ''),
+      coalesce("richMenuContactUrl", ''),
       coalesce("createdAt"::timestamptz, now()),
       now()
     from jsonb_to_recordset(${payload}::jsonb) as x(
@@ -508,6 +520,10 @@ async function syncShops(rows: Shop[]) {
       "isActive" boolean,
       "registrationStatus" text,
       phone text,
+      "welcomeMessage" text,
+      "contactText" text,
+      "shareMessageTemplate" text,
+      "richMenuContactUrl" text,
       "createdAt" text
     )
     on conflict (id) do update set
@@ -526,6 +542,10 @@ async function syncShops(rows: Shop[]) {
       is_active = excluded.is_active,
       registration_status = excluded.registration_status,
       phone = excluded.phone,
+      welcome_message = excluded.welcome_message,
+      contact_text = excluded.contact_text,
+      share_message_template = excluded.share_message_template,
+      rich_menu_contact_url = excluded.rich_menu_contact_url,
       updated_at = now()
   `;
 }
@@ -617,6 +637,193 @@ export async function deleteRewardRow(rewardId: string, shopId: string) {
   await ensureCrmSchema();
   const sql = requireSql();
   await sql`delete from rewards where id = ${rewardId} and shop_id = ${shopId}`;
+}
+
+export async function upsertShopRow(shop: Shop) {
+  await ensureCrmSchema();
+  const sql = requireSql();
+
+  await sql`
+    insert into shops (
+      id, name, description, logo, logo_url, logo_storage_key, category, points_rate,
+      point_rounding_mode, minimum_purchase_for_points, point_link_expiry_days,
+      point_expiry_days, point_expiry_reminder_days,
+      is_active, registration_status, phone,
+      welcome_message, contact_text, share_message_template, rich_menu_contact_url,
+      created_at, updated_at
+    ) values (
+      ${shop.id},
+      ${shop.name},
+      ${shop.description || ''},
+      ${shop.logo || ''},
+      ${shop.logoUrl || null},
+      ${shop.logoStorageKey || null},
+      ${shop.category || 'ร้านค้า'},
+      ${Math.max(1, Number(shop.pointsRate) || 10)},
+      ${shop.pointRoundingMode === 'nearest' ? 'nearest' : 'floor'},
+      ${Math.max(0, Number(shop.minimumPurchaseForPoints ?? 1) || 0)},
+      ${Math.max(1, Number(shop.pointLinkExpiryDays ?? 7) || 7)},
+      ${Math.max(1, Number(shop.pointExpiryDays ?? 365) || 365)},
+      ${Math.max(0, Number(shop.pointExpiryReminderDays ?? 30) || 0)},
+      ${shop.isActive !== false},
+      ${shop.registrationStatus || 'approved'},
+      ${shop.phone || ''},
+      ${shop.welcomeMessage || ''},
+      ${shop.contactText || ''},
+      ${shop.shareMessageTemplate || ''},
+      ${shop.richMenuContactUrl || ''},
+      ${shop.createdAt || new Date().toISOString()},
+      now()
+    )
+    on conflict (id) do update set
+      name = excluded.name,
+      description = excluded.description,
+      logo = excluded.logo,
+      logo_url = excluded.logo_url,
+      logo_storage_key = excluded.logo_storage_key,
+      category = excluded.category,
+      points_rate = excluded.points_rate,
+      point_rounding_mode = excluded.point_rounding_mode,
+      minimum_purchase_for_points = excluded.minimum_purchase_for_points,
+      point_link_expiry_days = excluded.point_link_expiry_days,
+      point_expiry_days = excluded.point_expiry_days,
+      point_expiry_reminder_days = excluded.point_expiry_reminder_days,
+      is_active = excluded.is_active,
+      registration_status = excluded.registration_status,
+      phone = excluded.phone,
+      welcome_message = excluded.welcome_message,
+      contact_text = excluded.contact_text,
+      share_message_template = excluded.share_message_template,
+      rich_menu_contact_url = excluded.rich_menu_contact_url,
+      updated_at = now()
+  `;
+}
+
+export async function upsertBannerRow(banner: PromoBanner) {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  await sql`
+    insert into promo_banners (id, title, image, image_url, image_storage_key, description, is_ad, shop_id, url, expiration_date, updated_at)
+    values (
+      ${banner.id}, ${banner.title}, ${banner.image || ''}, ${banner.imageUrl || null}, ${banner.imageStorageKey || null},
+      ${banner.description || ''}, ${banner.isAd === true}, ${banner.shopId || null}, ${banner.url || null},
+      ${banner.expirationDate}, now()
+    )
+    on conflict (id) do update set
+      title = excluded.title,
+      image = excluded.image,
+      image_url = excluded.image_url,
+      image_storage_key = excluded.image_storage_key,
+      description = excluded.description,
+      is_ad = excluded.is_ad,
+      shop_id = excluded.shop_id,
+      url = excluded.url,
+      expiration_date = excluded.expiration_date,
+      updated_at = now()
+  `;
+}
+
+export async function deleteBannerRow(bannerId: string, shopId: string) {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  await sql`delete from promo_banners where id = ${bannerId} and shop_id = ${shopId}`;
+}
+
+export async function upsertPointCouponRow(coupon: GeneratedCoupon) {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  await sql`
+    insert into point_coupons (code, points, shop_id, shop_name, description, created_at, expires_at, is_used, used_by_customer_id, used_at)
+    values (
+      ${coupon.code}, ${Math.max(1, Number(coupon.points) || 1)}, ${coupon.shopId}, ${coupon.shopName || ''}, ${coupon.description || ''},
+      ${coupon.createdAt || new Date().toISOString()}, ${coupon.expiresAt}, ${coupon.isUsed === true}, ${coupon.usedByCustomerId || null}, ${coupon.usedAt || null}
+    )
+    on conflict (code) do update set
+      points = excluded.points,
+      shop_id = excluded.shop_id,
+      shop_name = excluded.shop_name,
+      description = excluded.description,
+      expires_at = excluded.expires_at,
+      is_used = excluded.is_used,
+      used_by_customer_id = excluded.used_by_customer_id,
+      used_at = excluded.used_at
+  `;
+}
+
+export async function deletePointCouponRow(code: string, shopId: string) {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  await sql`delete from point_coupons where upper(code) = upper(${code}) and shop_id = ${shopId} and is_used = false`;
+}
+
+export async function insertAuditLogRow(log: AuditLog) {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  await sql`
+    insert into audit_logs (id, shop_id, shop_name, actor_type, actor_name, actor_id, action, action_label, description, target_type, target_id, customer_id, customer_name, points, status, metadata, created_at)
+    values (
+      ${log.id}, ${log.shopId}, ${log.shopName || ''}, ${log.actorType || 'system'}, ${log.actorName || ''}, ${log.actorId || null},
+      ${log.action || ''}, ${log.actionLabel || ''}, ${log.description || ''}, ${log.targetType || null}, ${log.targetId || null},
+      ${log.customerId || null}, ${log.customerName || null}, ${typeof log.points === 'number' ? log.points : null}, ${log.status || 'info'},
+      ${JSON.stringify(log.metadata || {})}::jsonb, ${log.createdAt || new Date().toISOString()}
+    )
+    on conflict (id) do nothing
+  `;
+}
+
+export async function upsertOnboardingChecklistRow(checklist: ShopOnboardingChecklist) {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  await sql`
+    insert into shop_onboarding_checklists (
+      id, shop_id, rich_menu_configured, tested_in_line_browser, tested_customer_claim,
+      tested_reward_redeem, test_data_cleaned, reviewed_customer_messages, ready_for_pilot,
+      notes, created_at, updated_at
+    ) values (
+      ${checklist.id}, ${checklist.shopId}, ${checklist.richMenuConfigured === true}, ${checklist.testedInLineBrowser === true}, ${checklist.testedCustomerClaim === true},
+      ${checklist.testedRewardRedeem === true}, ${checklist.testDataCleaned === true}, ${checklist.reviewedCustomerMessages === true}, ${checklist.readyForPilot === true},
+      ${checklist.notes || ''}, ${checklist.createdAt || new Date().toISOString()}, now()
+    )
+    on conflict (shop_id) do update set
+      rich_menu_configured = excluded.rich_menu_configured,
+      tested_in_line_browser = excluded.tested_in_line_browser,
+      tested_customer_claim = excluded.tested_customer_claim,
+      tested_reward_redeem = excluded.tested_reward_redeem,
+      test_data_cleaned = excluded.test_data_cleaned,
+      reviewed_customer_messages = excluded.reviewed_customer_messages,
+      ready_for_pilot = excluded.ready_for_pilot,
+      notes = excluded.notes,
+      updated_at = now()
+  `;
+}
+
+export async function upsertMembershipTiersForShop(shopId: string, tiers: MembershipTier[]) {
+  await ensureCrmSchema();
+  const sql = requireSql();
+  const payload = JSON.stringify(tiers.map((tier) => ({ ...tier, shopId })));
+  await sql`
+    insert into membership_tiers (id, shop_id, name, min_lifetime_points, benefit_text, is_active, sort_order, created_at, updated_at)
+    select id, "shopId", name, greatest(0, coalesce("minLifetimePoints", 0)), coalesce("benefitText", ''), coalesce("isActive", true), coalesce("sortOrder", 0), coalesce("createdAt"::timestamptz, now()), now()
+    from jsonb_to_recordset(${payload}::jsonb) as x(id text, "shopId" text, name text, "minLifetimePoints" integer, "benefitText" text, "isActive" boolean, "sortOrder" integer, "createdAt" text)
+    on conflict (shop_id, name) do update set
+      min_lifetime_points = excluded.min_lifetime_points,
+      benefit_text = excluded.benefit_text,
+      is_active = excluded.is_active,
+      sort_order = excluded.sort_order,
+      updated_at = now()
+  `;
+
+  const rows = await sql`select id, lifetime_points as "lifetimePoints", tier, shop_ids as "shopIds" from customers`;
+  const txRows = await sql`select distinct user_id as "userId" from transactions where shop_id = ${shopId}`;
+  const txCustomerIds = new Set((txRows as Array<{ userId: string }>).map((row) => row.userId));
+  const activeTiers = tiers.filter((tier) => tier.isActive).sort((a, b) => b.minLifetimePoints - a.minLifetimePoints);
+
+  for (const row of rows as Array<{ id: string; lifetimePoints: number; shopIds?: string[] }>) {
+    const belongsToShop = Array.isArray(row.shopIds) ? row.shopIds.includes(shopId) : false;
+    if (!belongsToShop && !txCustomerIds.has(row.id)) continue;
+    const resolved = activeTiers.find((tier) => row.lifetimePoints >= tier.minLifetimePoints)?.name || 'Member';
+    await sql`update customers set tier = ${resolved}, updated_at = now() where id = ${row.id}`;
+  }
 }
 
 async function syncBanners(rows: PromoBanner[]) {

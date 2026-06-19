@@ -369,3 +369,22 @@ Migration ที่ต้องรันก่อน deploy: `neon/migrations/00
 - ปุ่ม “เปิดลิงก์ทดสอบ” ไม่แก้แต้มใน localStorage เองแล้ว แต่พาไป flow รับแต้มจริงผ่าน customer claim
 - ไม่ต้องรัน SQL ใหม่สำหรับเฟสนี้
 - เอกสาร: `docs/ONLINE_ONLY_MERCHANT_POINT_ADJUSTMENT_PHASE7C_TH.md`
+
+## Phase 7D/7E — Online-only Settings / Rewards / Banners
+
+This package adds database-first persistence for merchant settings, membership tiers, pilot checklist, rewards, banners, and point coupons.
+
+Before deploying this package, run:
+
+```text
+neon/migrations/008_phase_7d_online_only_settings_rewards_banners.sql
+```
+
+The migration adds merchant-facing settings columns to `shops`:
+
+- `welcome_message`
+- `contact_text`
+- `share_message_template`
+- `rich_menu_contact_url`
+
+The browser still uses localStorage as a temporary UI cache after loading the latest Neon snapshot, but the updated flows write to Neon first and only show success after the API returns successfully.

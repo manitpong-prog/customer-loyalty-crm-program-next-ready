@@ -133,3 +133,23 @@ Migration ที่ต้องรันก่อน deploy: `neon/migrations/00
 - API อัปเดต current/lifetime points, recalculates tier from membership_tiers, inserts transaction, and writes audit log
 - Test link button no longer mutates local points directly; it opens the customer claim flow instead
 - No SQL migration required
+
+## Phase 7D/7E — Online-only Settings / Rewards / Banners + Legacy Sync Reduction
+
+Status: implemented in this package.
+
+Completed:
+- Merchant settings now save through `/api/db/merchant-settings` before UI success.
+- Point rules and customer-facing shop messages are stored in Neon.
+- Membership tiers save through `/api/db/membership-tiers` and recalculate customer tiers in Neon.
+- Pilot checklist saves through `/api/db/onboarding-checklist`.
+- Rewards use `/api/db/rewards` for create/edit/toggle/delete.
+- Promo banners use `/api/db/banners` for create/delete.
+- Point coupons use `/api/db/point-coupons` for create/delete so Phase 7A point claim can read coupons from Neon.
+- LocalStorage remains as UI cache after Neon snapshot, not as the source of truth for these flows.
+
+Required SQL:
+- `neon/migrations/008_phase_7d_online_only_settings_rewards_banners.sql`
+
+Known limitation:
+- Legacy `/api/db/sync` still exists as compatibility fallback and should be removed only after all remaining non-critical flows are converted.
