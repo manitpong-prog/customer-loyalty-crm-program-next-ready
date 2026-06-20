@@ -8,7 +8,7 @@ export const DEFAULT_MEMBERSHIP_TIER_TEMPLATES: Array<Pick<MembershipTier, 'name
   { name: 'VIP', minLifetimePoints: 5000, benefitText: 'สิทธิ์สูงสุด', isActive: true, sortOrder: 5 },
 ];
 
-export const TIER_NAMES: TierType[] = ['Bronze', 'Silver', 'Gold', 'Platinum', 'VIP'];
+export const TIER_NAMES: TierType[] = ['Member', 'Silver', 'Gold', 'Platinum', 'VIP'];
 
 export function normalizeTierName(name: string | undefined | null): TierType {
   const normalized = String(name || '').trim();
