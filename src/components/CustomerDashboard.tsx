@@ -1338,7 +1338,7 @@ export default function CustomerDashboard({
               <div className="relative mt-3 text-center">
                 <p className="text-[11px] font-black tracking-[0.16em] text-[#a8761f]">LOYALTY PRIVILEGE CLUB</p>
                 <h3 className="mt-1 text-[22px] font-black tracking-wide text-[#2a140a]">
-                  {customer.tier.toUpperCase()} Member
+                  สมาชิกระดับ {customer.tier.toUpperCase()}
                 </h3>
                 <div className="mx-auto mt-2 h-px w-24 bg-gradient-to-r from-transparent via-[#c89a45] to-transparent" />
               </div>
