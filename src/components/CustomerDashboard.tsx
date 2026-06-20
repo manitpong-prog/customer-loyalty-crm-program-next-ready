@@ -391,7 +391,7 @@ export default function CustomerDashboard({
     );
     setBanners(filterBannersByShop(getBanners(), selectedShopId, true));
     setMembershipTiers(getMembershipTiersForShop(getMembershipTiers(), selectedShopId));
-    setTransactions(scopedTransactions.filter((t) => t.userId === currCust.id));
+    setTransactions(currCust ? scopedTransactions.filter((t) => t.userId === currCust.id) : []);
   };
 
   useEffect(() => {
@@ -488,72 +488,135 @@ export default function CustomerDashboard({
     }
   }, [customer, activeTab]);
 
+  // Find Active Shop details
+  const activeShop = shops.find((s) => s.id === selectedShopId) || shops[0];
+  const activeShopPointRate = Math.max(1, activeShop?.pointsRate || 10);
+  const activeShopWelcomeMessage = activeShop?.welcomeMessage || activeShop?.description || "สะสมแต้ม แลกของรางวัล และรับสิทธิพิเศษจากร้านค้า";
+  const activeShopContactText = activeShop?.contactText || activeShop?.phone || "ติดต่อร้านค้าเพื่อสอบถามรายละเอียดเพิ่มเติม";
+
   if (!customer)
     return (
-      <div className="min-h-[100dvh] bg-slate-50">
-        <div className="bg-[#06C755] px-4 py-4 text-white shadow-sm">
-          <div className="flex items-center gap-2 text-sm font-black">
-            <span className="h-2.5 w-2.5 rounded-full bg-white/50" />
-            iM Sticker
+      <div
+        className={
+          isProductionView
+            ? "relative min-h-[100dvh] bg-[#fbfaf6] font-sans text-[#24120b] flex flex-col w-full max-w-md mx-auto overflow-hidden"
+            : "relative min-h-[720px] bg-[#fbfaf6] font-sans text-[#24120b] flex flex-col max-w-[420px] mx-auto sm:border-[8px] sm:border-[#1f1712] rounded-[40px] overflow-hidden shadow-[0_25px_60px_-15px_rgba(55,36,18,0.18)] border border-[#e7ded2]"
+        }
+      >
+        <div className="bg-[#fbfaf6]/95 px-5 pt-5 pb-3 select-none border-b border-[#eadfce]/70">
+          <div className="flex items-center gap-2">
+            <h1 className="text-[30px] leading-none font-black tracking-tight text-[#2a140a]">
+              {activeShop?.name || "iM Sticker"}
+            </h1>
+            <Sparkles className="h-5 w-5 text-[#c9942f]" />
+          </div>
+          <div className="mt-1 flex items-center gap-2 text-[11px] font-extrabold tracking-wide text-[#6f5b43]">
+            <span className="h-1.5 w-1.5 rotate-45 bg-[#d7a63d]" />
+            <span>สมาชิกสะสมแต้ม</span>
+            <span className="h-1.5 w-1.5 rotate-45 bg-[#d7a63d]" />
           </div>
         </div>
 
-        {isProductionView && (
-          <LineLoginPanel
-            context="customer"
-            shopId={selectedShopId}
-            onAuthenticated={onLineIdentityChange}
-            compact
-          />
-        )}
-
-        <div className="flex min-h-[55vh] items-center justify-center p-6 text-center">
-          <div className="max-w-sm rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="text-sm font-black text-slate-900">
-              {isAutoLoadingMember ? "กำลังเตรียมบัตรสมาชิก" : "ยังไม่พบข้อมูลสมาชิกของคุณ"}
-            </div>
-            <p className="mt-2 text-xs leading-5 text-slate-600">
-              {isAutoLoadingMember
-                ? `กำลังโหลดข้อมูลสมาชิกอัตโนมัติ${autoMemberRefreshAttempt ? ` รอบที่ ${autoMemberRefreshAttempt}` : ""} เมื่อพร้อมแล้วจะพาไปหน้าสมาชิกอัตโนมัติ`
-                : "ถ้าเพิ่งเข้าสู่ระบบด้วย LINE ระบบจะลองโหลดข้อมูลสมาชิกให้อัตโนมัติ หรือกดโหลดใหม่ได้อีกครั้ง"}
-            </p>
-            {isAutoLoadingMember && (
-              <div className="mt-4 flex items-center justify-center gap-2 rounded-2xl bg-emerald-50 px-4 py-3 text-xs font-extrabold text-emerald-700">
-                <RefreshCw className="h-4 w-4 animate-spin" />
-                กำลังโหลดข้อมูลใหม่...
+        <div className="flex-1 overflow-y-auto px-4 pb-12 pt-4 scrollbar-none bg-[#fbfaf6]">
+          {isAutoLoadingMember ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center space-y-6">
+              <div className="relative">
+                <div className="h-14 w-14 animate-spin rounded-full border-[3px] border-[#e7bf69] border-t-transparent"></div>
+                <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-5 w-5 text-[#c9942f] animate-pulse" />
               </div>
-            )}
-            <div className="mt-4 grid gap-2">
-              <button
-                type="button"
-                onClick={async () => {
-                  setIsAutoLoadingMember(true);
-                  await initializeDatabase();
-                  loadData();
-                  onDataChange();
-                  setIsAutoLoadingMember(false);
-                }}
-                className="rounded-2xl bg-slate-950 px-4 py-2 text-xs font-extrabold text-white"
-              >
-                โหลดข้อมูลใหม่
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  window.location.href = `${window.location.pathname}?resetLine=1`;
-                }}
-                className="rounded-2xl border border-slate-200 px-4 py-2 text-xs font-extrabold text-slate-700"
-              >
-                ล้างข้อมูล LINE ชั่วคราว
-              </button>
+              <div className="space-y-2">
+                <h3 className="text-sm font-extrabold text-[#2a140a]">
+                  กำลังเตรียมบัตรสมาชิกสะสมแต้ม...
+                </h3>
+                {autoMemberRefreshAttempt > 0 && (
+                  <span className="inline-block rounded-full bg-[#fbf7ef] border border-[#eadfce] px-3 py-1 text-[9px] font-bold text-[#c9942f] font-mono">
+                    กำลังดึงข้อมูล Neon (รอบที่ {autoMemberRefreshAttempt}/8)
+                  </span>
+                )}
+                <p className="text-[11px] leading-relaxed text-slate-500 font-semibold px-4">
+                  ระบบกำลังประมวลผลและนำเข้าบัญชี LINE ของคุณ โปรดรอสักครู่หน้าจอจะอัปเดตอัตโนมัติ
+                </p>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex flex-col space-y-6 py-4">
+              <div className="text-center space-y-3 py-4">
+                <div className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[#fbf7ef] to-[#f5edd9] border border-[#eadfce] text-[#c9942f] shadow-sm">
+                  <Gift className="h-6 w-6 text-[#c9942f]" />
+                </div>
+                <div className="space-y-1.5">
+                  <h2 className="text-base font-black text-[#2a140a]">
+                    ยินดีต้อนรับสู่ระบบสะสมแต้ม
+                  </h2>
+                  <p className="text-xs text-[#6f5b43] font-semibold leading-relaxed px-4">
+                    {activeShopWelcomeMessage}
+                  </p>
+                </div>
+              </div>
+
+              {isProductionView && (
+                <div className="-mx-1">
+                  <LineLoginPanel
+                    context="customer"
+                    shopId={selectedShopId}
+                    onAuthenticated={onLineIdentityChange}
+                    compact={false}
+                  />
+                </div>
+              )}
+
+              <div className="rounded-[24px] border border-[#eadfce]/80 bg-white/70 p-5 space-y-4 shadow-2xs">
+                <h4 className="text-[10px] font-black text-[#4a3626] uppercase tracking-wider">
+                  สิทธิพิเศษสำหรับสมาชิก
+                </h4>
+                <ul className="space-y-3.5 text-xs text-[#5f5144] font-bold">
+                  <li className="flex items-start gap-3">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#fbf7ef] text-[#c9942f] text-[10px] font-black">✓</span>
+                    <span className="leading-relaxed">
+                      <strong>สะสมแต้มแลกรางวัล:</strong> สะสมแต้มทุกครั้งเมื่อใช้บริการเพื่อแลกรับส่วนลดและของรางวัล
+                    </span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#fbf7ef] text-[#c9942f] text-[10px] font-black">✓</span>
+                    <span className="leading-relaxed">
+                      <strong>สิทธิ์พิเศษระดับ VIP:</strong> เลื่อนระดับสมาชิกเพื่อรับสิทธิ์และของรางวัลที่พิเศษยิ่งขึ้น
+                    </span>
+                  </li>
+                </ul>
+              </div>
+
+              <div className="text-center pt-2">
+                <p className="text-[10px] text-slate-400 font-bold font-mono">
+                  {activeShopContactText}
+                </p>
+              </div>
+
+              {!isProductionView && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 text-center space-y-3">
+                  <p className="text-xs text-slate-600 font-bold">
+                    [โหมดจำลองระบบ] ไม่พบบัญชีลูกค้าในฐานข้อมูล
+                  </p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsAutoLoadingMember(true);
+                      await initializeDatabase();
+                      loadData();
+                      onDataChange();
+                      setIsAutoLoadingMember(false);
+                    }}
+                    className="w-full rounded-xl bg-slate-950 py-2 text-xs font-extrabold text-white"
+                  >
+                    โหลดข้อมูลระบบใหม่
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
 
-  // Find Active Shop details
-  const activeShop = shops.find((s) => s.id === selectedShopId) || shops[0];
   const recordCustomerAuditLog = (params: {
     action: string;
     actionLabel: string;
@@ -583,9 +646,6 @@ export default function CustomerDashboard({
       metadata: params.metadata || {},
     });
   };
-  const activeShopPointRate = Math.max(1, activeShop?.pointsRate || 10);
-  const activeShopWelcomeMessage = activeShop?.welcomeMessage || activeShop?.description || "สะสมแต้ม แลกของรางวัล และรับสิทธิพิเศษจากร้านค้า";
-  const activeShopContactText = activeShop?.contactText || activeShop?.phone || "ติดต่อร้านค้าเพื่อสอบถามรายละเอียดเพิ่มเติม";
   const displayedCustomerName = customer.name || customer.lineName || "สมาชิก";
   const maskedMemberId = `${(customer.lineId || customer.id).substring(0, 12).toUpperCase()}***`;
   const expiringPoints = 0;
@@ -1064,7 +1124,7 @@ export default function CustomerDashboard({
   // Update Profile
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profileName.trim()) return;
+    if (!customer || !profileName.trim()) return;
 
     const nextCustomer: Customer = {
       ...customer,
