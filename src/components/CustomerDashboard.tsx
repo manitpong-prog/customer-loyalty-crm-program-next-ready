@@ -365,12 +365,12 @@ export default function CustomerDashboard({
     const currCust = isProductionView
       ? (lineCustomerId ? scopedCustomers.find((c) => c.id === lineCustomerId) || allCustomers.find((c) => c.id === lineCustomerId) || null : null)
       : (
-          scopedCustomers.find((c) => c.id === currentCustomerId) ||
-          allCustomers.find((c) => c.id === currentCustomerId) ||
-          scopedCustomers[0] ||
-          allCustomers[0] ||
-          null
-        );
+        scopedCustomers.find((c) => c.id === currentCustomerId) ||
+        allCustomers.find((c) => c.id === currentCustomerId) ||
+        scopedCustomers[0] ||
+        allCustomers[0] ||
+        null
+      );
     setCustomer(currCust);
 
     // Production route is locked to one shop slug. Demo can still switch shops.
@@ -1338,7 +1338,7 @@ export default function CustomerDashboard({
               <div className="relative mt-3 text-center">
                 <p className="text-[11px] font-black tracking-[0.16em] text-[#a8761f]">LOYALTY PRIVILEGE CLUB</p>
                 <h3 className="mt-1 text-[22px] font-black tracking-wide text-[#2a140a]">
-                  {customer.tier.toUpperCase()} VIP MEMBER
+                  {customer.tier.toUpperCase()} Member
                 </h3>
                 <div className="mx-auto mt-2 h-px w-24 bg-gradient-to-r from-transparent via-[#c89a45] to-transparent" />
               </div>
@@ -1924,9 +1924,9 @@ export default function CustomerDashboard({
                             </p>
                           </div>
                           <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-[9.5px] font-bold text-amber-700 leading-relaxed">
-                          ลูกค้าสามารถคัดลอกลิงก์นี้ส่งให้ร้านค้าอีกครั้งได้ตลอดจนกว่าร้านค้าจะอนุมัติหรือปฏิเสธรายการ
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
+                            ลูกค้าสามารถคัดลอกลิงก์นี้ส่งให้ร้านค้าอีกครั้งได้ตลอดจนกว่าร้านค้าจะอนุมัติหรือปฏิเสธรายการ
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
                             <button
                               type="button"
                               onClick={() => handleShareRedeemLink(t)}
