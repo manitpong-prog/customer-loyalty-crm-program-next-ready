@@ -362,12 +362,15 @@ export default function CustomerDashboard({
       true,
     );
     const lineCustomerId = lineIdentity?.customerId || (lineIdentity?.lineUserId ? `line_${lineIdentity.lineUserId}` : "");
-    const currCust =
-      (lineCustomerId ? scopedCustomers.find((c) => c.id === lineCustomerId) : undefined) ||
-      scopedCustomers.find((c) => c.id === currentCustomerId) ||
-      allCustomers.find((c) => c.id === currentCustomerId) ||
-      scopedCustomers[0] ||
-      allCustomers[0];
+    const currCust = isProductionView
+      ? (lineCustomerId ? scopedCustomers.find((c) => c.id === lineCustomerId) || allCustomers.find((c) => c.id === lineCustomerId) || null : null)
+      : (
+          scopedCustomers.find((c) => c.id === currentCustomerId) ||
+          allCustomers.find((c) => c.id === currentCustomerId) ||
+          scopedCustomers[0] ||
+          allCustomers[0] ||
+          null
+        );
     setCustomer(currCust);
 
     // Production route is locked to one shop slug. Demo can still switch shops.
