@@ -437,9 +437,10 @@ export async function syncPointClaimDataToNeon(params: {
   // Customer rows must be persisted before coupon/transaction rows because
   // point_coupons.used_by_customer_id and transactions.user_id reference customers.id.
   // The legacy fire-and-forget sync can race here, especially in LINE in-app browser.
-  await syncEntityToNeon(KEYS.CUSTOMERS, params.customers);
-  await syncEntityToNeon(KEYS.COUPONS, params.coupons);
-  await syncEntityToNeon(KEYS.TRANSACTIONS, params.transactions);
+  // Disabled to prevent full-table MVCC bloat. Use persistPointClaimToNeon instead.
+  // await syncEntityToNeon(KEYS.CUSTOMERS, params.customers);
+  // await syncEntityToNeon(KEYS.COUPONS, params.coupons);
+  // await syncEntityToNeon(KEYS.TRANSACTIONS, params.transactions);
 }
 
 export async function persistPointClaimToNeon(params: {

@@ -33,7 +33,7 @@ export async function GET() {
     // Runtime schema checks are intentionally opt-in. Migrations already create
     // the production schema. Running schema DDL on every dashboard/customer load
     // caused slow reads on Vercel + Neon.
-    const shouldBootstrap = process.env.ENABLE_RUNTIME_SCHEMA_CHECK === 'true';
+    const shouldBootstrap = false; // process.env.ENABLE_RUNTIME_SCHEMA_CHECK === 'true'; // Disabled to prevent DB bloat and slow reads
     const seedResult = shouldBootstrap
       ? (await ensureCrmSchema(), await seedInitialDataIfEmpty())
       : { seeded: false, mode: 'skipped-runtime-check' };
