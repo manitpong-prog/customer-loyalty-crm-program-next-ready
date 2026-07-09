@@ -555,12 +555,12 @@ export default function CustomerDashboard({
               </div>
 
               {isProductionView && (
-                <div className="-mx-1">
+                <div className="mt-2">
                   <LineLoginPanel
                     context="customer"
                     shopId={selectedShopId}
                     onAuthenticated={onLineIdentityChange}
-                    compact={false}
+                    compact
                   />
                 </div>
               )}
@@ -1272,11 +1272,11 @@ export default function CustomerDashboard({
         {activeTab === "home" && (
           <div className="space-y-5">
             {/* Member greeting */}
-            <section className="rounded-[28px] border border-[#eadfce] bg-white/80 p-4 shadow-[0_18px_38px_-26px_rgba(60,32,12,0.45)]">
+            <section className="rounded-[28px] border border-[#eadfce] bg-white/80 p-2 shadow-[0_18px_38px_-26px_rgba(60,32,12,0.45)]">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="relative shrink-0">
-                    <div className="h-20 w-20 overflow-hidden rounded-full border-[3px] border-[#e7bf69] bg-white shadow-[0_10px_30px_-18px_rgba(55,36,18,0.55)]">
+                    <div className="h-12 w-12 overflow-hidden rounded-full border-[3px] border-[#e7bf69] bg-white shadow-[0_10px_30px_-18px_rgba(55,36,18,0.55)]">
                       <img
                         src={customer.avatar}
                         alt={displayedCustomerName}
@@ -1291,7 +1291,7 @@ export default function CustomerDashboard({
 
                   <div className="min-w-0">
                     <p className="text-[12px] font-bold text-[#5f5144]">สวัสดีค่ะ</p>
-                    <h2 className="mt-0.5 truncate text-[22px] font-black leading-tight tracking-tight text-[#24120b]">
+                    <h2 className="mt-0.5 truncate text-[16px] font-black leading-tight tracking-tight text-[#24120b]">
                       {displayedCustomerName}
                     </h2>
                     <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[#d6c7b3] bg-[#fbf7ef] px-3 py-1 text-[10px] font-black text-[#4a3626] shadow-sm">
@@ -1337,7 +1337,7 @@ export default function CustomerDashboard({
 
               <div className="relative mt-3 text-center">
                 <p className="text-[11px] font-black tracking-[0.16em] text-[#a8761f]">LOYALTY PRIVILEGE CLUB</p>
-                <h3 className="mt-1 text-[22px] font-black tracking-wide text-[#2a140a]">
+                <h3 className="mt-1 text-[16px] font-black tracking-wide text-[#2a140a]">
                   สมาชิกระดับ {customer.tier.toUpperCase()}
                 </h3>
                 <div className="mx-auto mt-2 h-px w-24 bg-gradient-to-r from-transparent via-[#c89a45] to-transparent" />
@@ -1983,7 +1983,7 @@ export default function CustomerDashboard({
               </p>
             </div>
 
-            <div className="bg-white border border-slate-200/70 rounded-3xl p-4 shadow-sm space-y-3">
+            <div className="bg-white border border-slate-200/70 rounded-3xl p-2 shadow-sm space-y-3">
               <div className="flex items-center gap-3">
                 <img
                   src={customer.avatar}
@@ -2013,7 +2013,7 @@ export default function CustomerDashboard({
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200/70 rounded-3xl p-4 shadow-sm">
+            <div className="bg-white border border-slate-200/70 rounded-3xl p-2 shadow-sm">
               <p className="text-[10px] font-black text-slate-500">ติดต่อร้าน</p>
               <p className="text-xs font-bold text-slate-800 mt-1 leading-relaxed">{activeShopContactText}</p>
             </div>
