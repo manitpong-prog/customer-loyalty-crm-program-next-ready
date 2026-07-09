@@ -1,17 +1,33 @@
-### YYYY-MM-DD HH:MM - Compact member banner patch
 
-- **Changed** `src/components/CustomerDashboard.tsx`
-  - Set `<LineLoginPanel>` `compact` prop to make LINE panel tiny.
-  - Removed `-mx-1` wrapper negative margin (replaced with `mt-2`).
-  - Reduced greeting card padding from `p-4` → `p-2`.
-  - Avatar size `h-20 w-20` → `h-12 w-12`.
-  - Display name font size `text-[22px]` → `text-[16px]`.
-  - Result: Two large boxes at top now ~60% shorter and less visually dominant.
 
-Terminal commands used:
+## 2026-07-09 - Compact Customer Top Cards Patch v2
+
+### Goal
+- Reduce the two top customer UI blocks that were too visually dominant: LINE connection panel and member greeting card.
+- Keep the existing LINE login/logout logic intact.
+
+### Files changed
+1. `src/components/LineLoginPanel.tsx`
+   - Added a real compact render path when `compact` is true.
+   - The previous `compact` prop only hid the merchant helper note, so the panel still looked large.
+   - New compact UI uses smaller icon, text, button, spacing, and optional small status message.
+
+2. `src/components/CustomerDashboard.tsx`
+   - Reduced top body spacing from `pt-4` to `pt-2`.
+   - Reduced home tab spacing from `space-y-5` to `space-y-3`.
+   - Reduced member greeting card padding, avatar size, LINE badge size, name text size, tier badge size, and claim button size.
+
+### Expected visual result
+- The LINE panel becomes a slim single-row banner.
+- The member greeting card becomes much shorter and should no longer pull focus from the points/member card below.
+
+### Test commands
 ```bash
-git checkout -b feat/compact-member-banner
-# edit file ...
-git add src/components/CustomerDashboard.tsx
-git commit -m "refactor: compact greeting + line panels on customer dashboard"
+npm install
+npm run typecheck
+npm run dev
 ```
+
+### Notes
+- No database or SQL changes required.
+- No business logic changed.

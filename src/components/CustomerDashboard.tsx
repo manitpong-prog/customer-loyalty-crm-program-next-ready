@@ -555,12 +555,12 @@ export default function CustomerDashboard({
               </div>
 
               {isProductionView && (
-                <div className="mt-2">
+                <div className="-mx-1">
                   <LineLoginPanel
                     context="customer"
                     shopId={selectedShopId}
                     onAuthenticated={onLineIdentityChange}
-                    compact
+                    compact={false}
                   />
                 </div>
               )}
@@ -1267,16 +1267,16 @@ export default function CustomerDashboard({
       </AnimatePresence>
 
       {/* Active Area / Body with flex grow */}
-      <div className="flex-1 overflow-y-auto px-4 pb-28 pt-4 scrollbar-none bg-[#fbfaf6]">
+      <div className="flex-1 overflow-y-auto px-4 pb-28 pt-2 scrollbar-none bg-[#fbfaf6]">
         {/* TAB 1: HOME */}
         {activeTab === "home" && (
-          <div className="space-y-5">
+          <div className="space-y-3">
             {/* Member greeting */}
-            <section className="rounded-[28px] border border-[#eadfce] bg-white/80 p-2 shadow-[0_18px_38px_-26px_rgba(60,32,12,0.45)]">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-3">
+            <section className="rounded-2xl border border-[#eadfce] bg-white/80 p-2.5 shadow-[0_12px_26px_-24px_rgba(60,32,12,0.4)]">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   <div className="relative shrink-0">
-                    <div className="h-12 w-12 overflow-hidden rounded-full border-[3px] border-[#e7bf69] bg-white shadow-[0_10px_30px_-18px_rgba(55,36,18,0.55)]">
+                    <div className="h-10 w-10 overflow-hidden rounded-full border-2 border-[#e7bf69] bg-white shadow-[0_8px_18px_-16px_rgba(55,36,18,0.55)]">
                       <img
                         src={customer.avatar}
                         alt={displayedCustomerName}
@@ -1284,18 +1284,18 @@ export default function CustomerDashboard({
                         referrerPolicy="no-referrer"
                       />
                     </div>
-                    <div className="absolute -bottom-1 -right-1 flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-[#06C755] text-[8px] font-black text-white shadow-md">
+                    <div className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-white bg-[#06C755] text-[5px] font-black text-white shadow-sm">
                       LINE
                     </div>
                   </div>
 
                   <div className="min-w-0">
-                    <p className="text-[12px] font-bold text-[#5f5144]">สวัสดีค่ะ</p>
-                    <h2 className="mt-0.5 truncate text-[16px] font-black leading-tight tracking-tight text-[#24120b]">
+                    <p className="text-[10px] font-bold leading-none text-[#5f5144]">สวัสดีค่ะ</p>
+                    <h2 className="mt-0.5 truncate text-[15px] font-black leading-tight tracking-tight text-[#24120b]">
                       {displayedCustomerName}
                     </h2>
-                    <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[#d6c7b3] bg-[#fbf7ef] px-3 py-1 text-[10px] font-black text-[#4a3626] shadow-sm">
-                      <Award className="h-3.5 w-3.5 text-[#b8872d]" />
+                    <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-[#d6c7b3] bg-[#fbf7ef] px-2 py-0.5 text-[8px] font-black text-[#4a3626] shadow-sm">
+                      <Award className="h-2.5 w-2.5 text-[#b8872d]" />
                       {customer.tier.toUpperCase()} MEMBER
                     </div>
                   </div>
@@ -1304,10 +1304,10 @@ export default function CustomerDashboard({
                 <button
                   type="button"
                   onClick={() => setActiveTab("code")}
-                  className="shrink-0 rounded-2xl border border-[#3b2b21] bg-white px-3.5 py-2.5 text-[11px] font-black text-[#2b1a12] shadow-[0_10px_28px_-24px_rgba(43,26,18,0.5)] transition active:scale-[0.98]"
+                  className="shrink-0 rounded-xl border border-[#3b2b21] bg-white px-2.5 py-1.5 text-[9px] font-black text-[#2b1a12] shadow-[0_8px_22px_-22px_rgba(43,26,18,0.5)] transition active:scale-[0.98]"
                 >
-                  <span className="flex items-center gap-1.5">
-                    <QrCode className="h-4 w-4 text-[#9b7651]" />
+                  <span className="flex items-center gap-1">
+                    <QrCode className="h-3.5 w-3.5 text-[#9b7651]" />
                     รับแต้ม
                   </span>
                 </button>
@@ -1337,7 +1337,7 @@ export default function CustomerDashboard({
 
               <div className="relative mt-3 text-center">
                 <p className="text-[11px] font-black tracking-[0.16em] text-[#a8761f]">LOYALTY PRIVILEGE CLUB</p>
-                <h3 className="mt-1 text-[16px] font-black tracking-wide text-[#2a140a]">
+                <h3 className="mt-1 text-[22px] font-black tracking-wide text-[#2a140a]">
                   สมาชิกระดับ {customer.tier.toUpperCase()}
                 </h3>
                 <div className="mx-auto mt-2 h-px w-24 bg-gradient-to-r from-transparent via-[#c89a45] to-transparent" />
@@ -1983,7 +1983,7 @@ export default function CustomerDashboard({
               </p>
             </div>
 
-            <div className="bg-white border border-slate-200/70 rounded-3xl p-2 shadow-sm space-y-3">
+            <div className="bg-white border border-slate-200/70 rounded-3xl p-4 shadow-sm space-y-3">
               <div className="flex items-center gap-3">
                 <img
                   src={customer.avatar}
@@ -2013,7 +2013,7 @@ export default function CustomerDashboard({
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200/70 rounded-3xl p-2 shadow-sm">
+            <div className="bg-white border border-slate-200/70 rounded-3xl p-4 shadow-sm">
               <p className="text-[10px] font-black text-slate-500">ติดต่อร้าน</p>
               <p className="text-xs font-bold text-slate-800 mt-1 leading-relaxed">{activeShopContactText}</p>
             </div>
