@@ -1231,14 +1231,6 @@ export default function CustomerDashboard({
         </div>
       </div>
 
-      {isProductionView && (
-        <LineLoginPanel
-          context="customer"
-          shopId={selectedShopId}
-          onAuthenticated={onLineIdentityChange}
-          compact
-        />
-      )}
 
       {/* Success / Error Notification banners floating */}
       <AnimatePresence>
@@ -1312,6 +1304,15 @@ export default function CustomerDashboard({
                   </span>
                 </button>
               </div>
+
+              {isProductionView && (
+                <LineLoginPanel
+                  context="customer"
+                  shopId={selectedShopId}
+                  onAuthenticated={onLineIdentityChange}
+                  compact
+                />
+              )}
             </section>
 
             {/* Platinum member card */}

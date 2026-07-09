@@ -398,25 +398,25 @@ export default function LineLoginPanel({
 
   if (compact) {
     return (
-      <section className={`mx-4 mt-2 rounded-2xl border px-3 py-2 shadow-sm ${panelTone}`}>
-        <div className="flex items-center gap-2.5">
-          <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${isMerchant ? "bg-amber-100" : "bg-emerald-100"}`}>
-            {isMerchant ? <ShieldCheck className="h-4 w-4" /> : <Smartphone className="h-4 w-4" />}
+      <div className={`mt-2 rounded-xl border px-2.5 py-1.5 ${panelTone}`}>
+        <div className="flex items-center gap-2">
+          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${isMerchant ? "bg-amber-100" : "bg-emerald-100"}`}>
+            {isMerchant ? <ShieldCheck className="h-3.5 w-3.5" /> : <Smartphone className="h-3.5 w-3.5" />}
           </div>
 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <p className="shrink-0 text-[9px] font-black uppercase tracking-[0.14em] opacity-70">
+              <p className="shrink-0 text-[8px] font-black uppercase tracking-[0.12em] opacity-70">
                 {isMerchant ? "ร้านค้า LINE" : "LINE"}
               </p>
               {identity && (
-                <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-black ${identity.verified ? "bg-emerald-100 text-emerald-800" : "bg-white/70 text-slate-700"}`}>
+                <span className={`inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[7px] font-black ${identity.verified ? "bg-emerald-100 text-emerald-800" : "bg-white/70 text-slate-700"}`}>
                   <BadgeCheck className="h-2.5 w-2.5" />
                   เชื่อมแล้ว
                 </span>
               )}
             </div>
-            <p className="truncate text-[11px] font-black leading-tight">
+            <p className="truncate text-[10px] font-black leading-tight">
               {identity ? identity.displayName : isMerchant ? "เข้าสู่ระบบร้านค้าด้วย LINE" : "เชื่อม LINE เพื่อสะสมแต้ม"}
             </p>
           </div>
@@ -425,9 +425,9 @@ export default function LineLoginPanel({
             <button
               type="button"
               onClick={logout}
-              className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-black/10 bg-white px-2 py-1.5 text-[9px] font-extrabold text-slate-700 transition hover:bg-slate-50"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-black/10 bg-white px-2 py-1 text-[8px] font-extrabold text-slate-700 transition hover:bg-slate-50"
             >
-              <LogOut className="h-3 w-3" />
+              <LogOut className="h-2.5 w-2.5" />
               ออก
             </button>
           ) : (
@@ -435,21 +435,21 @@ export default function LineLoginPanel({
               type="button"
               onClick={loginWithLine}
               disabled={isLoading || !liffId}
-              className={`inline-flex shrink-0 items-center gap-1 rounded-xl px-2 py-1.5 text-[9px] font-extrabold transition disabled:cursor-not-allowed disabled:opacity-50 ${actionTone}`}
+              className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1 text-[8px] font-extrabold transition disabled:cursor-not-allowed disabled:opacity-50 ${actionTone}`}
             >
-              <LogIn className="h-3 w-3" />
+              <LogIn className="h-2.5 w-2.5" />
               {isLoading ? "..." : "เชื่อม"}
             </button>
           )}
         </div>
 
         {statusMessage && (
-          <div className="mt-1.5 flex items-start gap-1.5 rounded-xl border border-black/10 bg-white/80 px-2 py-1 text-[9px] font-semibold text-slate-700">
-            <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+          <div className="mt-1 flex items-start gap-1.5 rounded-lg border border-black/10 bg-white/80 px-2 py-1 text-[8px] font-semibold text-slate-700">
+            <AlertCircle className="mt-0.5 h-2.5 w-2.5 shrink-0" />
             <span>{statusMessage}</span>
           </div>
         )}
-      </section>
+      </div>
     );
   }
 

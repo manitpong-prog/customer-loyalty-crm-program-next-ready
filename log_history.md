@@ -31,3 +31,35 @@ npm run dev
 ### Notes
 - No database or SQL changes required.
 - No business logic changed.
+
+## 2026-07-09 - Compact Header Patch v3: รวม LINE + Member greeting เป็นกล่องเดียว
+
+### เป้าหมาย
+- ปรับส่วนบนของ CustomerDashboard ให้การ์ดเชื่อม LINE และการ์ดทักทายสมาชิกอยู่ในกล่องเดียวกัน
+- ลดการดึงสายตาจากพื้นที่หลักของหน้าแอพ โดยยังให้ผู้ใช้เห็นสถานะ LINE และปุ่มเชื่อม/ออกจากระบบได้
+
+### ไฟล์ที่แก้
+1. `src/components/CustomerDashboard.tsx`
+   - ย้าย `<LineLoginPanel compact />` จากตำแหน่งแยกด้านบนของหน้า เข้ามาอยู่ภายในการ์ดทักทายสมาชิก
+   - ทำให้หน้า Home เหลือกล่องสมาชิกกล่องเดียวสำหรับ Avatar, ชื่อ, Tier, ปุ่มรับแต้ม และสถานะ LINE
+
+2. `src/components/LineLoginPanel.tsx`
+   - ปรับโหมด `compact` ให้เป็นแถวเล็กสำหรับฝังในกล่องอื่น แทนการสร้างการ์ดใหญ่แยกของตัวเอง
+   - ลด icon, padding, font และปุ่ม ให้เหมาะกับการอยู่ใน Member greeting card
+
+### สิ่งที่ไม่ได้แก้
+- ไม่แก้ logic การ login/logout LINE
+- ไม่แก้ API, database, Neon, SQL หรือ schema
+- ไม่แก้หน้าร้านค้า/Admin
+
+### วิธีทดสอบ
+```bash
+unzip -o customer-dashboard-compact-merged-v3.zip -d .
+npm install
+npm run dev
+```
+
+จากนั้นเปิดหน้า Customer Dashboard และตรวจว่า:
+- การ์ด LINE ไม่แสดงเป็นกล่องแยกด้านบนแล้ว
+- ข้อมูล LINE อยู่รวมในกล่องทักทายสมาชิกเดียวกัน
+- ปุ่มเชื่อม LINE / ออกจากระบบ ยังคลิกได้ตามเดิม
