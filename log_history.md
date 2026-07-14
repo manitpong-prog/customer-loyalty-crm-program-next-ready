@@ -124,3 +124,26 @@ npm run build
 - Game API ใช้ versioned migration เป็นหลัก และไม่รัน DDL ตอน runtime เว้นแต่ตั้ง `ENABLE_RUNTIME_SCHEMA_CHECK=true` เพื่อรักษาความเร็ว cold start
 - MVP ใช้แตะผลไม้; swipe gesture วางไว้ Phase ถัดไป
 - ก่อนเปิด public ควรเพิ่ม LINE-session binding/rate limit และ harden reward redemption ให้ atomic มากขึ้น
+
+
+## 2026-07-14 — Fruit Math Slash v1.1: ปรับเวลาเป็น 7–6–5 วินาที
+
+### เป้าหมาย
+- ลดความยากด้านเวลา โดยคงกติกา จำนวนผลไม้ ค่าเข้าเล่น และรางวัลเดิมทั้งหมด
+
+### ไฟล์ที่แก้
+- `src/lib/server/games/gameDb.ts` — เปลี่ยนเวลาที่ Server กำหนดสำหรับข้อ 1–3 / 4–6 / 7–10 เป็น 7 / 6 / 5 วินาที
+- `src/features/fruit-math-game/FruitMathGame.tsx` — อัปเดตข้อความกติกาหน้าลูกค้าให้ตรงกับเวลาใหม่
+- `src/features/fruit-math-game/GameSettingsPanel.tsx` — อัปเดตข้อความกติกาหน้าร้านค้าให้ตรงกับเวลาใหม่
+- `docs/FRUIT_MATH_SLASH_PHASE8A_TH.md` — อัปเดตคู่มือเกม
+- `PROJECT_STATE.md` — อัปเดตสถานะกติกาปัจจุบัน
+
+### สิ่งที่ไม่เปลี่ยน
+- ค่าเข้าเล่น 10 แต้ม
+- จำนวนผลไม้ 4 / 6 / 8 ลูก
+- ชนะเมื่อถูก 8 ข้อ และแพ้เมื่อผิดครบ 3 ข้อ
+- Reward Ticket 1 ใบ อายุ 30 วัน
+- โครงสร้างฐานข้อมูลและ SQL migration
+
+### SQL
+- ไม่ต้องรัน SQL เพิ่ม เพราะเป็นการเปลี่ยนค่ากติกาในโค้ดเท่านั้น

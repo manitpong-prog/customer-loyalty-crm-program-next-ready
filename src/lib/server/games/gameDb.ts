@@ -54,12 +54,12 @@ function shuffle<T>(values: T[]): T[] {
 
 function getQuestionRules(index: number) {
   if (index <= 2) {
-    return { maxNumber: 9, timeLimitSeconds: 5, optionCount: 4, wrongSpread: 4 };
+    return { maxNumber: 9, timeLimitSeconds: 7, optionCount: 4, wrongSpread: 4 };
   }
   if (index <= 5) {
-    return { maxNumber: 15, timeLimitSeconds: 4, optionCount: 6, wrongSpread: 5 };
+    return { maxNumber: 15, timeLimitSeconds: 6, optionCount: 6, wrongSpread: 5 };
   }
-  return { maxNumber: 20, timeLimitSeconds: 3, optionCount: 8, wrongSpread: 6 };
+  return { maxNumber: 20, timeLimitSeconds: 5, optionCount: 8, wrongSpread: 6 };
 }
 
 function generateQuestion(index: number): StoredGameQuestion {
@@ -81,7 +81,7 @@ function generateQuestion(index: number): StoredGameQuestion {
     const firstResult = operatorOne === '+' ? first + second : first - second;
     answer = operatorTwo === '+' ? firstResult + third : firstResult - third;
 
-    // Keep the mental-math challenge fair for a 3–5 second timer.
+    // Keep the mental-math challenge fair for a 5–7 second timer.
     if (answer >= 0 && answer <= 45 && firstResult >= 0) break;
   }
 

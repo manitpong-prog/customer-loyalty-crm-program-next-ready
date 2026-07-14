@@ -312,9 +312,9 @@ export default function FruitMathGame({
 
               <section className="rounded-3xl border border-[#eadcca] bg-white p-4 text-[11px] font-semibold leading-relaxed text-[#5f493a]">
                 <p className="font-black text-[#2b160c]">กติกา</p>
-                <p className="mt-2">• ข้อ 1–3: 5 วินาที / ผลไม้ 4 ลูก</p>
-                <p>• ข้อ 4–6: 4 วินาที / ผลไม้ 6 ลูก</p>
-                <p>• ข้อ 7–10: 3 วินาที / ผลไม้ 8 ลูก</p>
+                <p className="mt-2">• ข้อ 1–3: 7 วินาที / ผลไม้ 4 ลูก</p>
+                <p>• ข้อ 4–6: 6 วินาที / ผลไม้ 6 ลูก</p>
+                <p>• ข้อ 7–10: 5 วินาที / ผลไม้ 8 ลูก</p>
                 <p>• แตะผิดหรือหมดเวลา นับว่าผิด 1 ข้อ</p>
                 <p>• ผิดครบ 3 ข้อ เกมจบทันที</p>
               </section>
