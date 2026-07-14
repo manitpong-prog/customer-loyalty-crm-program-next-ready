@@ -22,6 +22,8 @@ import {
   Compass,
   Bell,
   Home,
+  Gamepad2,
+  Ticket,
 } from "lucide-react";
 import {
   Customer,
@@ -31,6 +33,7 @@ import {
   Shop,
   TierType,
   MembershipTier,
+  RewardPaymentMethod,
 } from "../types";
 import {
   getCustomers,
@@ -59,6 +62,8 @@ import LineLoginPanel from "./LineLoginPanel";
 import { shopIdToSlug } from "../lib/shopSlug";
 import { getMembershipTiersForShop, resolveMembershipTier, getCurrentMembershipTierConfig, getNextMembershipTier } from "../lib/membershipTiers";
 import type { LineIdentity } from "../lib/lineAuth";
+import FruitMathGame from "../features/fruit-math-game/FruitMathGame";
+import type { FruitMathGameState } from "../features/fruit-math-game/types";
 
 type CustomerTab = "home" | "rewards" | "code" | "history" | "profile";
 type CouponValidationState = "ready" | "used" | "expired" | "wrong-shop" | "not-found";
@@ -102,12 +107,15 @@ export default function CustomerDashboard({
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [banners, setBanners] = useState<PromoBanner[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [gameState, setGameState] = useState<FruitMathGameState | null>(null);
+  const [showFruitMathGame, setShowFruitMathGame] = useState(false);
 
   // Interactive UI States
   const [promoCode, setPromoCode] = useState("");
   const [qrCodeData, setQrCodeData] = useState("");
   const [showQrModal, setShowQrModal] = useState(false);
   const [selectedReward, setSelectedReward] = useState<Reward | null>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<RewardPaymentMethod>('points');
   const [isRedeeming, setIsRedeeming] = useState(false);
   const [isRedeemSuccess, setIsRedeemSuccess] = useState(false);
   const [latestRedeemTransaction, setLatestRedeemTransaction] = useState<Transaction | null>(null);
@@ -149,6 +157,26 @@ export default function CustomerDashboard({
     return "";
   };
 
+  const getRewardMode = (reward?: Reward | null) => reward?.redemptionMode || 'points';
+  const getRewardTicketCost = (reward?: Reward | null) => Math.max(1, Number(reward?.ticketCost) || 1);
+  const ticketBalance = gameState?.tickets.available || 0;
+  const getRewardCostLabel = (reward: Reward) => {
+    const mode = getRewardMode(reward);
+    if (mode === 'tickets') return `${getRewardTicketCost(reward)} Ticket`;
+    if (mode === 'either') return `${reward.pointsCost} แต้ม หรือ ${getRewardTicketCost(reward)} Ticket`;
+    return `${reward.pointsCost} แต้ม`;
+  };
+  const canRedeemReward = (reward: Reward) => {
+    const mode = getRewardMode(reward);
+    const byPoints = customer ? customer.currentPoints >= reward.pointsCost : false;
+    const byTickets = ticketBalance >= getRewardTicketCost(reward);
+    return mode === 'points' ? byPoints : mode === 'tickets' ? byTickets : byPoints || byTickets;
+  };
+  const getTransactionCostLabel = (transaction: Transaction) =>
+    transaction.paymentMethod === 'tickets'
+      ? `${transaction.ticketsUsed || 0} Ticket`
+      : `${transaction.points} แต้ม`;
+
   const getCustomerHomeUrl = () => {
     const liffId = process.env.NEXT_PUBLIC_LINE_LIFF_ID;
     if (liffId) return `https://liff.line.me/${liffId}?tab=home`;
@@ -176,18 +204,18 @@ export default function CustomerDashboard({
 
   const getRedeemRewardName = (transaction?: Transaction | null) => {
     if (!transaction) return selectedReward?.name || "ของรางวัล";
-    return transaction.description.replace("ขอแลกรางวัล: ", "").replace(" (ร้านปฏิเสธ - คืนแต้มแล้ว)", "") || selectedReward?.name || "ของรางวัล";
+    return transaction.description.replace("ขอแลกรางวัล: ", "").replace(" (ร้านปฏิเสธ - คืนแต้มแล้ว)", "").replace(" (ร้านปฏิเสธ - คืนสิทธิ์แล้ว)", "") || selectedReward?.name || "ของรางวัล";
   };
 
   const buildRedeemShareText = (transaction?: Transaction | null) => {
     if (!transaction) return "";
     const url = getMerchantRedeemUrl(transaction);
-    const statusText = transaction.status === "pending" ? "รอร้านอนุมัติ" : transaction.status === "completed" ? "อนุมัติแล้ว" : "ถูกปฏิเสธ/คืนแต้มแล้ว";
+    const statusText = transaction.status === "pending" ? "รอร้านอนุมัติ" : transaction.status === "completed" ? "อนุมัติแล้ว" : "ถูกปฏิเสธ/คืนสิทธิ์แล้ว";
     return [
       `คำขอแลกรางวัลจาก ${transaction.userName}`,
       `ร้าน: ${transaction.shopName}`,
       `รายการ: ${getRedeemRewardName(transaction)}`,
-      `ใช้แต้ม: ${transaction.points} แต้ม`,
+      `ใช้สิทธิ์: ${getTransactionCostLabel(transaction)}`,
       `สถานะ: ${statusText}`,
       `ลิงก์สำหรับร้านค้า: ${url}`,
     ].join("\n");
@@ -397,6 +425,35 @@ export default function CustomerDashboard({
   useEffect(() => {
     loadData();
   }, [currentCustomerId, selectedShopId, activeTab, lineIdentity?.lineUserId, lineIdentity?.customerId, dataVersion]);
+
+  const refreshGameState = async (customerId?: string) => {
+    const resolvedCustomerId = customerId || customer?.id;
+    if (!resolvedCustomerId) {
+      setGameState(null);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/db/games/state?shopId=${encodeURIComponent(selectedShopId)}&customerId=${encodeURIComponent(resolvedCustomerId)}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => null) as { ok?: boolean; state?: FruitMathGameState } | null;
+      if (response.ok && payload?.ok && payload.state) setGameState(payload.state);
+    } catch {
+      // Game is an optional module. Keep the loyalty dashboard usable if its API is unavailable.
+    }
+  };
+
+  useEffect(() => {
+    if (!customer?.id) return;
+    void refreshGameState(customer.id);
+  }, [customer?.id, selectedShopId]);
+
+  const handleGamePointsChange = (currentPoints: number) => {
+    if (!customer) return;
+    const nextCustomer = { ...customer, currentPoints };
+    setCustomer(nextCustomer);
+    saveCustomers([nextCustomer, ...getCustomers().filter((item) => item.id !== nextCustomer.id)], { sync: false });
+    onDataChange();
+  };
 
   useEffect(() => {
     if (customer || !isProductionView || !lineIdentity?.customerId) {
@@ -1047,6 +1104,7 @@ export default function CustomerDashboard({
   // Open Redemption Drawer/Modal
   const selectRewardForRedeem = (reward: Reward) => {
     setSelectedReward(reward);
+    setSelectedPaymentMethod(getRewardMode(reward) === 'tickets' ? 'tickets' : 'points');
     setIsRedeemSuccess(false);
     setLatestRedeemTransaction(null);
   };
@@ -1078,6 +1136,7 @@ export default function CustomerDashboard({
         body: JSON.stringify({
           rewardId: latestReward.id,
           shopId: selectedShopId,
+          paymentMethod: selectedPaymentMethod,
           customer: {
             ...customer,
             shopIds: Array.from(new Set([...(customer.shopIds || []), selectedShopId])),
@@ -1091,6 +1150,7 @@ export default function CustomerDashboard({
         customer?: Customer;
         transaction?: Transaction;
         reward?: Reward;
+        ticketBalance?: number;
       } | null;
 
       if (!response.ok || !payload?.ok || !payload.transaction || !payload.customer) {
@@ -1105,6 +1165,9 @@ export default function CustomerDashboard({
       saveTransactions([payload.transaction, ...getTransactions().filter((tx) => tx.id !== payload.transaction!.id)], { sync: false });
 
       setCustomer(payload.customer);
+      if (typeof payload.ticketBalance === 'number') {
+        setGameState((current) => current ? { ...current, tickets: { ...current.tickets, available: payload.ticketBalance! } } : current);
+      }
       setSelectedReward(confirmedReward);
       setLatestRedeemTransaction(payload.transaction);
       setTransactions((current) => [payload.transaction!, ...current.filter((tx) => tx.id !== payload.transaction!.id)]);
@@ -1386,6 +1449,38 @@ export default function CustomerDashboard({
               ))}
             </section>
 
+            {/* Fruit Math Slash game entry */}
+            <section className="overflow-hidden rounded-3xl border border-orange-200 bg-gradient-to-r from-orange-50 via-amber-50 to-rose-50 p-4 shadow-[0_18px_38px_-32px_rgba(140,55,10,0.75)]">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500 to-rose-600 text-white shadow-lg">
+                    <Gamepad2 className="h-6 w-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <h3 className="text-sm font-black text-[#2b160c]">Fruit Math Slash</h3>
+                      <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[8px] font-black text-violet-700">
+                        <Ticket className="mr-0.5 inline h-2.5 w-2.5" /> {ticketBalance} ใบ
+                      </span>
+                    </div>
+                    <p className="mt-0.5 line-clamp-2 text-[10px] font-bold leading-relaxed text-[#745341]">
+                      คิดเลข 3 ตัวให้ทันเวลา ตอบถูก 8 ข้อ รับ Reward Ticket 1 ใบ
+                    </p>
+                    <p className="mt-1 text-[9px] font-black text-orange-700">
+                      {gameState ? `ใช้ ${gameState.config.entryPoints} แต้ม • วันนี้เหลือ ${gameState.attemptsRemainingToday}/${gameState.config.dailyPlayLimit} รอบ` : 'กำลังโหลดกติกาเกม...'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowFruitMathGame(true)}
+                  className="shrink-0 rounded-2xl bg-gradient-to-r from-orange-500 to-rose-600 px-3 py-2 text-[10px] font-black text-white shadow-md transition active:scale-95"
+                >
+                  เล่นเกม
+                </button>
+              </div>
+            </section>
+
             {activeShop?.isActive === false && (
               <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-xs font-bold text-red-800">
                 ร้านนี้ปิดใช้งานชั่วคราว บางฟังก์ชันอาจยังไม่เปิดให้ใช้งาน กรุณาติดต่อร้านก่อนรับแต้มหรือแลกรางวัล
@@ -1425,8 +1520,7 @@ export default function CustomerDashboard({
                       <p className="line-clamp-2 min-h-[28px] text-[10px] font-black leading-tight text-[#24120b]">{rew.name}</p>
                       <div className="flex items-center gap-1.5">
                         <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#d9a72f] text-[9px] font-black text-white">P</span>
-                        <span className="font-mono text-[12px] font-black text-[#2a140a]">{rew.pointsCost.toLocaleString()}</span>
-                        <span className="text-[9px] font-bold text-[#5f5144]">คะแนน</span>
+                        <span className="font-mono text-[10px] font-black text-[#2a140a]">{getRewardCostLabel(rew)}</span>
                       </div>
                     </div>
                   </button>
@@ -1469,7 +1563,7 @@ export default function CustomerDashboard({
                       </div>
                       <div className="flex shrink-0 items-center gap-1">
                         <span className={`font-mono text-[13px] font-black ${t.type === "earn" ? "text-[#16833a]" : "text-red-600"}`}>
-                          {t.type === "earn" ? `+${t.points}` : `-${t.points}`} คะแนน
+                          {t.type === "earn" ? `+${t.points} คะแนน` : `-${getTransactionCostLabel(t)}`}
                         </span>
                         <ChevronRight className="h-4 w-4 text-[#7a6b5b]" />
                       </div>
@@ -1491,9 +1585,14 @@ export default function CustomerDashboard({
                 <Gift className="w-4 h-4 text-amber-600" />
                 ของรางวัลจากร้าน {activeShop?.name}
               </h3>
-              <p className="text-[10px] text-slate-500 font-medium font-sans">
-                เลือกของรางวัลที่ต้องการแลก แล้วรอให้ร้านยืนยันตอนรับของ
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[10px] text-slate-500 font-medium font-sans">
+                  เลือกของรางวัลที่ต้องการแลก แล้วรอให้ร้านยืนยันตอนรับของ
+                </p>
+                <span className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[9px] font-black text-violet-700">
+                  <Ticket className="h-3 w-3" /> Ticket ที่ใช้ได้ {ticketBalance} ใบ
+                </span>
+              </div>
             </div>
 
             {/* Active Shop details banner inside rewards */}
@@ -1516,7 +1615,7 @@ export default function CustomerDashboard({
             {/* Rewards Filter grid */}
             <div className="grid grid-cols-2 gap-3">
               {rewards.map((rew) => {
-                const canRedeem = customer.currentPoints >= rew.pointsCost;
+                const canRedeem = canRedeemReward(rew);
                 return (
                   <div
                     key={rew.id}
@@ -1531,12 +1630,12 @@ export default function CustomerDashboard({
                         referrerPolicy="no-referrer"
                       />
                       <div className="absolute top-2 left-2 bg-slate-900/90 px-2 py-0.5 rounded-lg text-[9px] font-mono font-extrabold text-amber-400 shadow-sm">
-                        ⚡ {rew.pointsCost} แต้ม
+                        ⚡ {getRewardCostLabel(rew)}
                       </div>
                       <div
                         className={`absolute bottom-2 right-2 text-[8px] font-black px-2.5 py-0.5 rounded-full shadow-sm text-white ${canRedeem ? "bg-emerald-600" : "bg-slate-500/80"}`}
                       >
-                        {canRedeem ? "พร้อมแลก" : "แต้มไม่พอ"}
+                        {canRedeem ? "พร้อมแลก" : "สิทธิ์ไม่พอ"}
                       </div>
                     </div>
                     <div className="p-2.5 flex-1 flex flex-col justify-between">
@@ -1874,7 +1973,7 @@ export default function CustomerDashboard({
                       <span
                         className={`font-mono font-black text-sm ${t.type === "earn" ? "text-emerald-600" : "text-rose-600"}`}
                       >
-                        {t.type === "earn" ? `+${t.points}` : `-${t.points}`}
+                        {t.type === "earn" ? `+${t.points} แต้ม` : `-${getTransactionCostLabel(t)}`}
                       </span>
                     </div>
 
@@ -2172,6 +2271,17 @@ export default function CustomerDashboard({
         </div>
       </div>
 
+      {showFruitMathGame && customer && (
+        <FruitMathGame
+          open={showFruitMathGame}
+          shopId={selectedShopId}
+          customer={customer}
+          onClose={() => setShowFruitMathGame(false)}
+          onCustomerPointsChange={handleGamePointsChange}
+          onGameStateChange={setGameState}
+        />
+      )}
+
       {/* POPUP 1: Card Details QR Modal */}
       <AnimatePresence>
         {showQrModal && (
@@ -2271,60 +2381,98 @@ export default function CustomerDashboard({
                 />
 
                 <div className="space-y-1">
-                  <div className="flex justify-between items-start">
+                  <div className="flex justify-between items-start gap-3">
                     <h4 className="text-xs font-extrabold text-slate-900">
                       {selectedReward.name}
                     </h4>
-                    <span className="text-amber-700 font-mono font-black text-xs bg-amber-50 px-3 py-0.5 rounded-full border border-amber-200/50">
-                      {selectedReward.pointsCost} แต้ม
+                    <span className="shrink-0 rounded-full border border-amber-200/50 bg-amber-50 px-3 py-0.5 font-mono text-xs font-black text-amber-700">
+                      {getRewardCostLabel(selectedReward)}
                     </span>
                   </div>
-                  <p className="text-[10px] text-slate-500 leading-relaxed pt-1 font-semibold font-sans">
+                  <p className="pt-1 text-[10px] font-semibold leading-relaxed text-slate-500 font-sans">
                     {selectedReward.description}
                   </p>
                 </div>
 
-                {/* Point deduction calculation check representation */}
-                <div className="bg-slate-50 rounded-2xl p-3.5 text-[10.5px] space-y-2 border border-slate-150/80 shadow-inner">
-                  <div className="flex justify-between text-slate-500">
-                    <span>แต้มสะสมมีอยู่:</span>
-                    <span className="font-mono font-bold text-slate-700">
-                      {customer.currentPoints} แต้ม
-                    </span>
+                {getRewardMode(selectedReward) === 'either' && !isRedeemSuccess && (
+                  <div className="rounded-2xl border border-slate-200 bg-white p-2">
+                    <p className="mb-2 px-1 text-[10px] font-black text-slate-600">เลือกสิทธิ์ที่จะใช้แลกรางวัล</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPaymentMethod('points')}
+                        className={`rounded-xl border px-2 py-2 text-[10px] font-black transition ${selectedPaymentMethod === 'points' ? 'border-amber-400 bg-amber-50 text-amber-800' : 'border-slate-200 bg-slate-50 text-slate-500'}`}
+                      >
+                        {selectedReward.pointsCost} แต้ม
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPaymentMethod('tickets')}
+                        className={`rounded-xl border px-2 py-2 text-[10px] font-black transition ${selectedPaymentMethod === 'tickets' ? 'border-violet-400 bg-violet-50 text-violet-800' : 'border-slate-200 bg-slate-50 text-slate-500'}`}
+                      >
+                        {getRewardTicketCost(selectedReward)} Ticket
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex justify-between text-slate-500">
-                    <span>แต้มที่ใช้แลก:</span>
-                    <span className="font-mono font-bold text-rose-600">
-                      -{selectedReward.pointsCost} แต้ม
-                    </span>
-                  </div>
-                  <div className="flex justify-between border-t border-slate-200 pt-1.5 text-slate-650 font-bold">
-                    <span>แต้มคงเหลือ:</span>
-                    <span
-                      className={`font-mono ${customer.currentPoints - selectedReward.pointsCost >= 0 ? "text-emerald-600" : "text-rose-600"}`}
-                    >
-                      {customer.currentPoints - selectedReward.pointsCost} แต้ม
-                    </span>
-                  </div>
+                )}
+
+                <div className="space-y-2 rounded-2xl border border-slate-150/80 bg-slate-50 p-3.5 text-[10.5px] shadow-inner">
+                  {selectedPaymentMethod === 'tickets' ? (
+                    <>
+                      <div className="flex justify-between text-slate-500">
+                        <span>Reward Ticket ที่ใช้ได้:</span>
+                        <span className="font-mono font-bold text-slate-700">{ticketBalance} ใบ</span>
+                      </div>
+                      <div className="flex justify-between text-slate-500">
+                        <span>Ticket ที่ใช้แลก:</span>
+                        <span className="font-mono font-bold text-rose-600">-{getRewardTicketCost(selectedReward)} ใบ</span>
+                      </div>
+                      <div className="flex justify-between border-t border-slate-200 pt-1.5 font-bold text-slate-650">
+                        <span>Ticket คงเหลือ:</span>
+                        <span className={`font-mono ${ticketBalance - getRewardTicketCost(selectedReward) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {ticketBalance - getRewardTicketCost(selectedReward)} ใบ
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between text-slate-500">
+                        <span>แต้มสะสมมีอยู่:</span>
+                        <span className="font-mono font-bold text-slate-700">{customer.currentPoints} แต้ม</span>
+                      </div>
+                      <div className="flex justify-between text-slate-500">
+                        <span>แต้มที่ใช้แลก:</span>
+                        <span className="font-mono font-bold text-rose-600">-{selectedReward.pointsCost} แต้ม</span>
+                      </div>
+                      <div className="flex justify-between border-t border-slate-200 pt-1.5 font-bold text-slate-650">
+                        <span>แต้มคงเหลือ:</span>
+                        <span className={`font-mono ${customer.currentPoints - selectedReward.pointsCost >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {customer.currentPoints - selectedReward.pointsCost} แต้ม
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Action button conditional state */}
                 {!isRedeemSuccess ? (
                   <div className="pt-2">
-                    {customer.currentPoints >= selectedReward.pointsCost ? (
+                    {(selectedPaymentMethod === 'tickets'
+                      ? ticketBalance >= getRewardTicketCost(selectedReward)
+                      : customer.currentPoints >= selectedReward.pointsCost) ? (
                       <button
                         type="button"
                         onClick={handleConfirmRedeem}
                         disabled={isRedeeming}
-                        className="w-full bg-amber-500 hover:bg-amber-600 text-white font-extrabold text-xs py-3 rounded-xl transition duration-150 active:scale-95 text-center block cursor-pointer shadow-md"
+                        className="block w-full cursor-pointer rounded-xl bg-amber-500 py-3 text-center text-xs font-extrabold text-white shadow-md transition duration-150 hover:bg-amber-600 active:scale-95 disabled:cursor-wait disabled:bg-slate-400"
                       >
-                        {isRedeeming
-                          ? "กำลังส่งคำขอ..."
-                          : "ยืนยันแลกรางวัล"}
+                        {isRedeeming ? "กำลังส่งคำขอ..." : `ยืนยันใช้ ${selectedPaymentMethod === 'tickets' ? `${getRewardTicketCost(selectedReward)} Ticket` : `${selectedReward.pointsCost} แต้ม`}`}
                       </button>
                     ) : (
-                      <div className="text-center p-3 bg-rose-50 border border-rose-100 rounded-xl text-[10px] text-rose-600 font-bold">
-                        แต้มของคุณยังไม่พอสำหรับรางวัลนี้
+                      <div className="rounded-xl border border-rose-100 bg-rose-50 p-3 text-center text-[10px] font-bold text-rose-600">
+                        {selectedPaymentMethod === 'tickets'
+                          ? `Reward Ticket ยังไม่พอ ต้องใช้ ${getRewardTicketCost(selectedReward)} ใบ`
+                          : `แต้มยังไม่พอ ต้องใช้ ${selectedReward.pointsCost} แต้ม`}
                       </div>
                     )}
                   </div>

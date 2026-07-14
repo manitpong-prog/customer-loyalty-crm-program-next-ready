@@ -52,3 +52,20 @@ For DB phases, run SQL migration in Neon first, then deploy code.
 - เพิ่มเฉพาะ LIFF deep-link parser ที่ปลอดภัย: decode `liff.state` หลายชั้น, เก็บ `tab`/coupon code ของระบบ, แยก LINE OAuth `code` ออกจาก coupon `code`
 - ปรับ `/api/db/snapshot` และ LINE APIs ให้ไม่เรียก `ensureCrmSchema()` ทุก request เว้นแต่ตั้ง `ENABLE_RUNTIME_SCHEMA_CHECK=true`
 - ไม่ต้องรัน SQL ใหม่ และ Production ไม่ควรตั้ง `ENABLE_RUNTIME_SCHEMA_CHECK=true`
+
+## Phase 8A — Fruit Math Slash + Reward Ticket (2026-07-14)
+
+- เพิ่มมินิเกมคณิตศาสตร์ 3 จำนวน ใช้ `+` และ `-`
+- ค่าเริ่มต้น 10 แต้ม/รอบ, สูงสุด 10 ข้อ, ชนะเมื่อถูก 8 ข้อ, แพ้เมื่อผิด 3 ข้อ
+- ความยาก 5/4/3 วินาที และ 4/6/8 ผลไม้
+- ชนะได้รับ Reward Ticket 1 ใบ อายุ 30 วัน
+- ร้านตั้งค่า entry points, daily play limit และเปิด/ปิดเกมได้
+- ของรางวัลรองรับ `points`, `tickets`, `either`
+- Migration ที่ต้องรัน: `neon/migrations/009_fruit_math_game_reward_tickets.sql`
+- คู่มือ: `docs/FRUIT_MATH_SLASH_PHASE8A_TH.md`
+
+### ลำดับถัดไปที่แนะนำ
+1. ทดสอบ game/ticket flow บน Neon branch หรือ staging
+2. เพิ่มการผูก API กับ LINE customer session และ Merchant authorization
+3. ทำ reward redemption/approval ให้ atomic เต็มรูปแบบ
+4. Phase 8B เพิ่ม swipe-to-slash, sound, fruit split effect และ game analytics

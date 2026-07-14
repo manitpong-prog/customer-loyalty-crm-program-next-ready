@@ -63,3 +63,64 @@ npm run dev
 - การ์ด LINE ไม่แสดงเป็นกล่องแยกด้านบนแล้ว
 - ข้อมูล LINE อยู่รวมในกล่องทักทายสมาชิกเดียวกัน
 - ปุ่มเชื่อม LINE / ออกจากระบบ ยังคลิกได้ตามเดิม
+
+## 2026-07-14 - Phase 8A: Fruit Math Slash + Reward Ticket
+
+### เป้าหมาย
+- เพิ่มมินิเกมคณิตศาสตร์แบบใช้ทักษะในหน้า Customer
+- ใช้ 10 แต้มต่อรอบ ตอบถูก 8 จาก 10 ก่อนผิดครบ 3 ครั้ง
+- เวลาต่อข้อ 5 → 4 → 3 วินาที และตัวเลือก 4 → 6 → 8 ผลไม้
+- ชนะรับ Reward Ticket 1 ใบ อายุ 30 วัน
+- เพิ่มระบบให้ของรางวัลเลือกใช้แต้ม, Ticket หรือเลือกอย่างใดอย่างหนึ่ง
+
+### ไฟล์ใหม่
+1. `src/features/fruit-math-game/FruitMathGame.tsx`
+   - UI เกมเต็มหน้าจอ, lobby, ยืนยันหักแต้ม, timer, ผลไม้ตก, หน้าชนะ/แพ้
+2. `src/features/fruit-math-game/GameSettingsPanel.tsx`
+   - หน้าตั้งค่าค่าเข้าเล่น จำนวนครั้งต่อวัน และเปิด/ปิดเกม
+3. `src/features/fruit-math-game/types.ts`
+   - Types ของ game state, question และ round
+4. `src/lib/server/games/gameDb.ts`
+   - สุ่มโจทย์, เริ่มเกม, ตรวจคำตอบ, ออก Ticket, จอง/ใช้/คืน Ticket
+5. `src/app/api/db/games/state/route.ts`
+6. `src/app/api/db/games/start/route.ts`
+7. `src/app/api/db/games/answer/route.ts`
+8. `src/app/api/db/games/abandon/route.ts`
+9. `src/app/api/db/games/settings/route.ts`
+10. `neon/migrations/009_fruit_math_game_reward_tickets.sql`
+11. `docs/FRUIT_MATH_SLASH_PHASE8A_TH.md`
+
+### ไฟล์ที่แก้
+1. `src/types.ts`
+   - เพิ่ม Reward redemption mode, payment method, game config/session และ Ticket summary
+2. `src/lib/server/crmDb.ts`
+   - รองรับราคา Ticket ใน rewards/transactions
+   - รองรับขอแลก อนุมัติ ปฏิเสธ และคืน Ticket
+   - ตรวจการหักแต้มด้วย `UPDATE ... RETURNING`
+3. `src/app/api/db/reward-redeem/route.ts`
+   - รับ `paymentMethod` เป็น points หรือ tickets
+4. `src/components/CustomerDashboard.tsx`
+   - เพิ่มทางเข้าเกม ยอด Ticket และ UI เลือกวิธีแลกรางวัล
+5. `src/components/OwnerDashboard.tsx`
+   - เพิ่มเมนูมินิเกม ตั้งค่าเกม ตั้งค่ารางวัลแบบ Ticket และแสดงการอนุมัติที่รองรับทั้งสองสิทธิ์
+6. `PROJECT_STATE.md`
+   - อัปเดตสถานะ Phase ล่าสุด
+
+### SQL ที่ต้องรัน
+```text
+neon/migrations/009_fruit_math_game_reward_tickets.sql
+```
+
+### การตรวจสอบ
+```bash
+npm run typecheck
+npm run build
+```
+
+ผล: TypeScript ผ่าน และ Next.js production build ผ่าน
+
+### หมายเหตุ
+- โปรเจค ZIP นี้เป็น Next.js Web App ไม่ใช่ Expo React Native จึงไม่ได้เพิ่ม Expo dependency
+- Game API ใช้ versioned migration เป็นหลัก และไม่รัน DDL ตอน runtime เว้นแต่ตั้ง `ENABLE_RUNTIME_SCHEMA_CHECK=true` เพื่อรักษาความเร็ว cold start
+- MVP ใช้แตะผลไม้; swipe gesture วางไว้ Phase ถัดไป
+- ก่อนเปิด public ควรเพิ่ม LINE-session binding/rate limit และ harden reward redemption ให้ atomic มากขึ้น

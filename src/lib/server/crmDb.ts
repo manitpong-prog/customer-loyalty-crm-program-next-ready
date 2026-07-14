@@ -1,5 +1,5 @@
 import { neon } from '@neondatabase/serverless';
-import type { AuditLog, Customer, PromoBanner, Reward, Shop, ShopOnboardingChecklist, Transaction, MembershipTier, PointRoundingMode } from '../../types';
+import type { AuditLog, Customer, PromoBanner, Reward, Shop, ShopOnboardingChecklist, Transaction, MembershipTier, PointRoundingMode, RewardPaymentMethod } from '../../types';
 import {
   INITIAL_BANNERS,
   INITIAL_CUSTOMERS,
@@ -7,6 +7,12 @@ import {
   INITIAL_SHOPS,
   INITIAL_TRANSACTIONS,
 } from '../../data/mockData';
+import {
+  ensureGameSchema,
+  getAvailableRewardTicketCount,
+  reserveRewardTickets,
+  settleReservedRewardTickets,
+} from './games/gameDb';
 import {
   PILOT_BANNERS,
   PILOT_CUSTOMERS,
@@ -165,6 +171,8 @@ export async function ensureCrmSchema() {
 
   await sql`alter table rewards add column if not exists image_url text`;
   await sql`alter table rewards add column if not exists image_storage_key text`;
+  await sql`alter table rewards add column if not exists redemption_mode text not null default 'points'`;
+  await sql`alter table rewards add column if not exists ticket_cost integer not null default 1`;
 
   await sql`create table if not exists promo_banners (
     id text primary key,
@@ -201,6 +209,11 @@ export async function ensureCrmSchema() {
   )`;
 
   await sql`alter table transactions add column if not exists points_expires_at timestamptz`;
+  await sql`alter table transactions add column if not exists payment_method text not null default 'points'`;
+  await sql`alter table transactions add column if not exists tickets_used integer not null default 0`;
+  try { await sql`alter table transactions drop constraint if exists transactions_points_check`; } catch {}
+  try { await sql`alter table transactions drop constraint if exists transactions_points_nonnegative_check`; } catch {}
+  try { await sql`alter table transactions add constraint transactions_points_nonnegative_check check (points >= 0)`; } catch {}
 
   await sql`create table if not exists point_coupons (
     code text primary key,
@@ -293,6 +306,7 @@ export async function ensureCrmSchema() {
   await sql`create index if not exists idx_merchant_line_users_line_user_id on merchant_line_users(line_user_id)`;
   await sql`create index if not exists idx_shop_onboarding_checklists_shop_id on shop_onboarding_checklists(shop_id)`;
   await sql`create index if not exists idx_membership_tiers_shop_id on membership_tiers(shop_id)`;
+  await ensureGameSchema();
 }
 
 
@@ -342,9 +356,9 @@ export async function getCrmSnapshot(): Promise<CrmSnapshot> {
   const [shops, customers, rewards, banners, transactions, coupons, auditLogs, onboardingChecklists] = await Promise.all([
     sql`select id, name, description, logo, category, points_rate as "pointsRate", is_active as "isActive", registration_status as "registrationStatus", phone, created_at as "createdAt" from shops order by created_at asc`,
     sql`select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds" from customers order by created_at asc`,
-    sql`select id, name, image, description, points_cost as "pointsCost", stock, is_available as "isAvailable", shop_id as "shopId" from rewards order by created_at asc`,
+    sql`select id, name, image, description, points_cost as "pointsCost", redemption_mode as "redemptionMode", ticket_cost as "ticketCost", stock, is_available as "isAvailable", shop_id as "shopId" from rewards order by created_at asc`,
     sql`select id, title, image, description, is_ad as "isAd", shop_id as "shopId", url, expiration_date as "expirationDate" from promo_banners order by created_at asc`,
-    sql`select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", created_at as "createdAt" from transactions order by created_at desc limit 100`,
+    sql`select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", payment_method as "paymentMethod", tickets_used as "ticketsUsed", created_at as "createdAt" from transactions order by created_at desc limit 100`,
     sql`select code, points, shop_id as "shopId", shop_name as "shopName", description, created_at as "createdAt", expires_at as "expiresAt", is_used as "isUsed", used_by_customer_id as "usedByCustomerId", used_at as "usedAt" from point_coupons order by created_at desc limit 100`,
     sql`select id, shop_id as "shopId", shop_name as "shopName", actor_type as "actorType", actor_name as "actorName", actor_id as "actorId", action, action_label as "actionLabel", description, target_type as "targetType", target_id as "targetId", customer_id as "customerId", customer_name as "customerName", points, status, metadata, created_at as "createdAt" from audit_logs order by created_at desc limit 100`,
     sql`select id, shop_id as "shopId", rich_menu_configured as "richMenuConfigured", tested_in_line_browser as "testedInLineBrowser", tested_customer_claim as "testedCustomerClaim", tested_reward_redeem as "testedRewardRedeem", test_data_cleaned as "testDataCleaned", reviewed_customer_messages as "reviewedCustomerMessages", ready_for_pilot as "readyForPilot", notes, created_at as "createdAt", updated_at as "updatedAt" from shop_onboarding_checklists order by created_at asc`,
@@ -434,14 +448,16 @@ async function syncRewards(rows: Reward[]) {
   if (!rows.length) return;
 
   await sql`
-    insert into rewards (id, name, image, description, points_cost, stock, is_available, shop_id, updated_at)
-    select id, name, coalesce(image, ''), coalesce(description, ''), coalesce("pointsCost", 1), coalesce(stock, 0), coalesce("isAvailable", true), "shopId", now()
-    from jsonb_to_recordset(${payload}::jsonb) as x(id text, name text, image text, description text, "pointsCost" integer, stock integer, "isAvailable" boolean, "shopId" text)
+    insert into rewards (id, name, image, description, points_cost, redemption_mode, ticket_cost, stock, is_available, shop_id, updated_at)
+    select id, name, coalesce(image, ''), coalesce(description, ''), coalesce("pointsCost", 1), coalesce("redemptionMode", 'points'), coalesce("ticketCost", 1), coalesce(stock, 0), coalesce("isAvailable", true), "shopId", now()
+    from jsonb_to_recordset(${payload}::jsonb) as x(id text, name text, image text, description text, "pointsCost" integer, "redemptionMode" text, "ticketCost" integer, stock integer, "isAvailable" boolean, "shopId" text)
     on conflict (id) do update set
       name = excluded.name,
       image = excluded.image,
       description = excluded.description,
       points_cost = excluded.points_cost,
+      redemption_mode = excluded.redemption_mode,
+      ticket_cost = excluded.ticket_cost,
       stock = excluded.stock,
       is_available = excluded.is_available,
       shop_id = excluded.shop_id,
@@ -454,13 +470,15 @@ export async function upsertRewardRow(reward: Reward) {
   const sql = requireSql();
 
   await sql`
-    insert into rewards (id, name, image, description, points_cost, stock, is_available, shop_id, updated_at)
+    insert into rewards (id, name, image, description, points_cost, redemption_mode, ticket_cost, stock, is_available, shop_id, updated_at)
     values (
       ${reward.id},
       ${reward.name},
       ${reward.image || ''},
       ${reward.description || ''},
       ${Math.max(1, Number(reward.pointsCost) || 1)},
+      ${reward.redemptionMode || 'points'},
+      ${Math.max(1, Number(reward.ticketCost) || 1)},
       ${Math.max(0, Number(reward.stock) || 0)},
       ${reward.isAvailable !== false},
       ${reward.shopId},
@@ -471,6 +489,8 @@ export async function upsertRewardRow(reward: Reward) {
       image = excluded.image,
       description = excluded.description,
       points_cost = excluded.points_cost,
+      redemption_mode = excluded.redemption_mode,
+      ticket_cost = excluded.ticket_cost,
       stock = excluded.stock,
       is_available = excluded.is_available,
       shop_id = excluded.shop_id,
@@ -515,9 +535,9 @@ async function syncTransactions(rows: Transaction[]) {
   if (!rows.length) return;
 
   await sql`
-    insert into transactions (id, user_id, user_name, user_phone, shop_id, shop_name, type, points, description, status, reward_id, created_at)
-    select id, "userId", coalesce("userName", ''), coalesce("userPhone", ''), "shopId", coalesce("shopName", ''), type, points, coalesce(description, ''), coalesce(status, 'completed'), nullif("rewardId", ''), coalesce("createdAt"::timestamptz, now())
-    from jsonb_to_recordset(${payload}::jsonb) as x(id text, "userId" text, "userName" text, "userPhone" text, "shopId" text, "shopName" text, type text, points integer, description text, status text, "rewardId" text, "createdAt" text)
+    insert into transactions (id, user_id, user_name, user_phone, shop_id, shop_name, type, points, description, status, reward_id, payment_method, tickets_used, created_at)
+    select id, "userId", coalesce("userName", ''), coalesce("userPhone", ''), "shopId", coalesce("shopName", ''), type, points, coalesce(description, ''), coalesce(status, 'completed'), nullif("rewardId", ''), coalesce("paymentMethod", 'points'), coalesce("ticketsUsed", 0), coalesce("createdAt"::timestamptz, now())
+    from jsonb_to_recordset(${payload}::jsonb) as x(id text, "userId" text, "userName" text, "userPhone" text, "shopId" text, "shopName" text, type text, points integer, description text, status text, "rewardId" text, "paymentMethod" text, "ticketsUsed" integer, "createdAt" text)
     on conflict (id) do update set
       user_id = excluded.user_id,
       user_name = excluded.user_name,
@@ -529,6 +549,8 @@ async function syncTransactions(rows: Transaction[]) {
       description = excluded.description,
       status = excluded.status,
       reward_id = excluded.reward_id,
+      payment_method = excluded.payment_method,
+      tickets_used = excluded.tickets_used,
       created_at = excluded.created_at
   `;
 }
@@ -906,7 +928,7 @@ export async function getCustomerOnlineState(params: {
 
   // 3. Load Rewards
   const rewardsRes = await sql`
-    select id, name, image, description, points_cost as "pointsCost", stock, is_available as "isAvailable", shop_id as "shopId", image_url as "imageUrl", image_storage_key as "imageStorageKey"
+    select id, name, image, description, points_cost as "pointsCost", redemption_mode as "redemptionMode", ticket_cost as "ticketCost", stock, is_available as "isAvailable", shop_id as "shopId", image_url as "imageUrl", image_storage_key as "imageStorageKey"
     from rewards where shop_id = ${shopId} order by created_at asc
   `;
   const rewards = rewardsRes as unknown as Reward[];
@@ -929,7 +951,7 @@ export async function getCustomerOnlineState(params: {
   let transactions: Transaction[] = [];
   if (customer) {
     const txRes = await sql`
-      select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", created_at as "createdAt", points_expires_at as "pointsExpiresAt"
+      select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", payment_method as "paymentMethod", tickets_used as "ticketsUsed", created_at as "createdAt", points_expires_at as "pointsExpiresAt"
       from transactions where user_id = ${customer.id} and shop_id = ${shopId} order by created_at desc
     `;
     transactions = txRes as unknown as Transaction[];
@@ -1242,7 +1264,7 @@ export async function adjustCustomerPointsOnline(params: {
     from customers where id = ${customer.id} limit 1
   `;
   const updatedTxRes = await sql`
-    select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", created_at as "createdAt", points_expires_at as "pointsExpiresAt"
+    select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", payment_method as "paymentMethod", tickets_used as "ticketsUsed", created_at as "createdAt", points_expires_at as "pointsExpiresAt"
     from transactions where id = ${txId} limit 1
   `;
 
@@ -1396,7 +1418,7 @@ export async function claimPointCouponOnline(params: {
     from point_coupons where code = ${coupon.code} limit 1
   `;
   const updatedTxRes = await sql`
-    select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", created_at as "createdAt", points_expires_at as "pointsExpiresAt"
+    select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", payment_method as "paymentMethod", tickets_used as "ticketsUsed", created_at as "createdAt", points_expires_at as "pointsExpiresAt"
     from transactions where id = ${txId} limit 1
   `;
 
@@ -1446,86 +1468,133 @@ export async function redeemRewardOnline(params: {
   rewardId: string;
   shopId: string;
   customer: Partial<Customer> & { id: string };
-}): Promise<{ customer: Customer; transaction: Transaction }> {
+  paymentMethod?: RewardPaymentMethod;
+}): Promise<{ customer: Customer; transaction: Transaction; ticketBalance: number }> {
   await ensureCrmSchema();
   const sql = requireSql();
 
-  const rewardsRes = await sql`select name, points_cost as "pointsCost", stock, is_available as "isAvailable" from rewards where id = ${params.rewardId} and shop_id = ${params.shopId} limit 1`;
+  const rewardsRes = await sql`
+    select name, points_cost as "pointsCost", redemption_mode as "redemptionMode", ticket_cost as "ticketCost",
+      stock, is_available as "isAvailable"
+    from rewards where id = ${params.rewardId} and shop_id = ${params.shopId} limit 1
+  `;
   if (rewardsRes.length === 0) throw new Error('ไม่พบข้อมูลของรางวัลนี้');
-  const reward = rewardsRes[0];
+  const reward = rewardsRes[0] as any;
 
   if (!reward.isAvailable) throw new Error('ของรางวัลนี้ไม่ได้เปิดใช้งาน');
   if (Number(reward.stock) <= 0) throw new Error('ของรางวัลนี้หมดสต็อกชั่วคราว');
 
+  const redemptionMode = String(reward.redemptionMode || 'points') as 'points' | 'tickets' | 'either';
+  const requestedMethod: RewardPaymentMethod = params.paymentMethod || (redemptionMode === 'tickets' ? 'tickets' : 'points');
+  if (redemptionMode === 'points' && requestedMethod !== 'points') {
+    throw new Error('ของรางวัลนี้แลกได้ด้วยแต้มเท่านั้น');
+  }
+  if (redemptionMode === 'tickets' && requestedMethod !== 'tickets') {
+    throw new Error('ของรางวัลนี้แลกได้ด้วย Reward Ticket เท่านั้น');
+  }
+
   const custRes = await sql`
-    select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds"
+    select id, name, phone, line_name as "lineName", line_id as "lineId", avatar,
+      current_points as "currentPoints", lifetime_points as "lifetimePoints", tier,
+      created_at as "createdAt", shop_ids as "shopIds"
     from customers where id = ${params.customer.id} limit 1
   `;
   if (custRes.length === 0) throw new Error('ไม่พบข้อมูลสมาชิก');
   const customer = custRes[0] as unknown as Customer;
 
   const pointsCost = Math.max(1, Number(reward.pointsCost) || 1);
-  if (Number(customer.currentPoints) < pointsCost) {
-    throw new Error(`แต้มสะสมของคุณไม่เพียงพอสำหรับแลกของรางวัลชิ้นนี้ (ต้องใช้ ${pointsCost} แต้ม แต่มีคงเหลือ ${customer.currentPoints} แต้ม)`);
+  const ticketCost = Math.max(1, Number(reward.ticketCost) || 1);
+  const txId = `tx_red_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  let reservedTickets = 0;
+  let deductedPoints = 0;
+
+  try {
+    if (requestedMethod === 'tickets') {
+      reservedTickets = await reserveRewardTickets({
+        shopId: params.shopId,
+        customerId: customer.id,
+        count: ticketCost,
+        transactionId: txId,
+      });
+      if (reservedTickets !== ticketCost) {
+        throw new Error(`Reward Ticket ไม่เพียงพอ ต้องใช้ ${ticketCost} ใบ`);
+      }
+    } else {
+      if (Number(customer.currentPoints) < pointsCost) {
+        throw new Error(`แต้มสะสมของคุณไม่เพียงพอสำหรับแลกของรางวัลชิ้นนี้ (ต้องใช้ ${pointsCost} แต้ม แต่มีคงเหลือ ${customer.currentPoints} แต้ม)`);
+      }
+      const deductionRows = await sql`
+        update customers
+        set current_points = current_points - ${pointsCost}, updated_at = now()
+        where id = ${customer.id} and current_points >= ${pointsCost}
+        returning current_points as "currentPoints"
+      `;
+      if (!deductionRows[0]) {
+        throw new Error(`แต้มสะสมของคุณไม่เพียงพอสำหรับแลกของรางวัลชิ้นนี้ (ต้องใช้ ${pointsCost} แต้ม)`);
+      }
+      deductedPoints = pointsCost;
+    }
+
+    const shopsRes = await sql`select name from shops where id = ${params.shopId} limit 1`;
+    const shopName = shopsRes[0]?.name || '';
+
+    await sql`
+      insert into transactions (
+        id, user_id, user_name, user_phone, shop_id, shop_name, type, points,
+        description, status, reward_id, payment_method, tickets_used, created_at
+      )
+      values (
+        ${txId}, ${customer.id}, ${customer.name}, ${customer.phone || ''}, ${params.shopId}, ${shopName},
+        'redeem', ${requestedMethod === 'points' ? pointsCost : 0}, ${`ขอแลกรางวัล: ${reward.name}`},
+        'pending', ${params.rewardId}, ${requestedMethod}, ${requestedMethod === 'tickets' ? ticketCost : 0}, now()
+      )
+    `;
+
+    const logId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const costDescription = requestedMethod === 'tickets'
+      ? `${ticketCost} Reward Ticket`
+      : `${pointsCost} แต้ม`;
+    await sql`
+      insert into audit_logs (
+        id, shop_id, shop_name, actor_type, actor_name, action, action_label, description,
+        customer_id, customer_name, points, status, metadata, created_at
+      )
+      values (
+        ${logId}, ${params.shopId}, ${shopName}, 'customer', ${customer.name}, 'request_redeem',
+        'ขอแลกของรางวัล', ${`ขอแลกของรางวัล: ${reward.name} โดยใช้ ${costDescription}`},
+        ${customer.id}, ${customer.name}, ${requestedMethod === 'points' ? -pointsCost : null}, 'info',
+        ${JSON.stringify({ paymentMethod: requestedMethod, ticketsUsed: requestedMethod === 'tickets' ? ticketCost : 0 })}::jsonb,
+        now()
+      )
+    `;
+  } catch (error) {
+    if (reservedTickets > 0) {
+      await settleReservedRewardTickets({ transactionId: txId, action: 'reject' }).catch(() => undefined);
+    }
+    if (deductedPoints > 0) {
+      await sql`update customers set current_points = current_points + ${deductedPoints}, updated_at = now() where id = ${customer.id}`.catch(() => undefined);
+    }
+    throw error;
   }
 
-  const newCurrentPoints = Number(customer.currentPoints) - pointsCost;
-  await sql`update customers set current_points = ${newCurrentPoints}, updated_at = now() where id = ${customer.id}`;
-
-  const shopsRes = await sql`select name from shops where id = ${params.shopId} limit 1`;
-  const shopName = shopsRes[0]?.name || '';
-
-  const txId = `tx_red_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  await sql`
-    insert into transactions (id, user_id, user_name, user_phone, shop_id, shop_name, type, points, description, status, reward_id, created_at)
-    values (
-      ${txId},
-      ${customer.id},
-      ${customer.name},
-      ${customer.phone || ''},
-      ${params.shopId},
-      ${shopName},
-      'redeem',
-      ${pointsCost},
-      ${`แลกของรางวัล: ${reward.name}`},
-      'pending',
-      ${params.rewardId},
-      now()
-    )
-  `;
-
-  const logId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  await sql`
-    insert into audit_logs (id, shop_id, shop_name, actor_type, actor_name, action, action_label, description, customer_id, customer_name, points, status, created_at)
-    values (
-      ${logId},
-      ${params.shopId},
-      ${shopName},
-      'customer',
-      ${customer.name},
-      'request_redeem',
-      'ขอแลกของรางวัล',
-      ${`ขอแลกของรางวัล: ${reward.name}`},
-      ${customer.id},
-      ${customer.name},
-      ${pointsCost},
-      'info',
-      now()
-    )
-  `;
-
   const updatedCustomerRes = await sql`
-    select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds"
+    select id, name, phone, line_name as "lineName", line_id as "lineId", avatar,
+      current_points as "currentPoints", lifetime_points as "lifetimePoints", tier,
+      created_at as "createdAt", shop_ids as "shopIds"
     from customers where id = ${customer.id} limit 1
   `;
   const updatedTxRes = await sql`
-    select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", created_at as "createdAt", points_expires_at as "pointsExpiresAt"
+    select id, user_id as "userId", user_name as "userName", user_phone as "userPhone",
+      shop_id as "shopId", shop_name as "shopName", type, points, description, status,
+      reward_id as "rewardId", payment_method as "paymentMethod", tickets_used as "ticketsUsed",
+      created_at as "createdAt", points_expires_at as "pointsExpiresAt"
     from transactions where id = ${txId} limit 1
   `;
 
   return {
     customer: updatedCustomerRes[0] as unknown as Customer,
     transaction: updatedTxRes[0] as unknown as Transaction,
+    ticketBalance: await getAvailableRewardTicketCount({ shopId: params.shopId, customerId: customer.id }),
   };
 }
 
@@ -1533,12 +1602,15 @@ export async function handleRewardApprovalOnline(params: {
   transactionId: string;
   shopId: string;
   action: 'approve' | 'reject';
-}): Promise<{ customer: Customer; transaction: Transaction }> {
+}): Promise<{ customer: Customer; transaction: Transaction; ticketBalance: number }> {
   await ensureCrmSchema();
   const sql = requireSql();
 
   const txRes = await sql`
-    select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", created_at as "createdAt"
+    select id, user_id as "userId", user_name as "userName", user_phone as "userPhone",
+      shop_id as "shopId", shop_name as "shopName", type, points, description, status,
+      reward_id as "rewardId", payment_method as "paymentMethod", tickets_used as "ticketsUsed",
+      created_at as "createdAt"
     from transactions
     where id = ${params.transactionId} and shop_id = ${params.shopId}
     limit 1
@@ -1551,78 +1623,70 @@ export async function handleRewardApprovalOnline(params: {
   }
 
   const custRes = await sql`
-    select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds"
+    select id, name, phone, line_name as "lineName", line_id as "lineId", avatar,
+      current_points as "currentPoints", lifetime_points as "lifetimePoints", tier,
+      created_at as "createdAt", shop_ids as "shopIds"
     from customers where id = ${transaction.userId} limit 1
   `;
   if (custRes.length === 0) throw new Error('ไม่พบข้อมูลสมาชิกของรายการนี้');
-  let customer = custRes[0] as unknown as Customer;
-
-  const pointsCost = transaction.points;
+  const customer = custRes[0] as unknown as Customer;
+  const paymentMethod = transaction.paymentMethod || 'points';
+  const pointsCost = Number(transaction.points) || 0;
+  const ticketsUsed = Number(transaction.ticketsUsed) || 0;
 
   if (params.action === 'approve') {
     await sql`update transactions set status = 'completed' where id = ${transaction.id}`;
-    
     if (transaction.rewardId) {
-      await sql`update rewards set stock = greatest(0, stock - 1) where id = ${transaction.rewardId}`;
+      await sql`update rewards set stock = greatest(0, stock - 1), updated_at = now() where id = ${transaction.rewardId}`;
     }
-
-    const logId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    await sql`
-      insert into audit_logs (id, shop_id, shop_name, actor_type, actor_name, action, action_label, description, customer_id, customer_name, points, status, created_at)
-      values (
-        ${logId},
-        ${params.shopId},
-        ${transaction.shopName || ''},
-        'owner',
-        'Owner',
-        'approve_redeem',
-        'อนุมัติการแลกรางวัล',
-        ${`อนุมัติแลกของรางวัล: ${transaction.description || ''}`},
-        ${customer.id},
-        ${customer.name},
-        ${pointsCost},
-        'success',
-        now()
-      )
-    `;
+    if (paymentMethod === 'tickets') {
+      await settleReservedRewardTickets({ transactionId: transaction.id, action: 'approve' });
+    }
   } else {
-    const newCurrentPoints = Number(customer.currentPoints) + pointsCost;
-    await sql`update customers set current_points = ${newCurrentPoints}, updated_at = now() where id = ${customer.id}`;
+    if (paymentMethod === 'tickets') {
+      await settleReservedRewardTickets({ transactionId: transaction.id, action: 'reject' });
+    } else if (pointsCost > 0) {
+      await sql`update customers set current_points = current_points + ${pointsCost}, updated_at = now() where id = ${customer.id}`;
+    }
     await sql`update transactions set status = 'rejected' where id = ${transaction.id}`;
-
-    const logId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    await sql`
-      insert into audit_logs (id, shop_id, shop_name, actor_type, actor_name, action, action_label, description, customer_id, customer_name, points, status, created_at)
-      values (
-        ${logId},
-        ${params.shopId},
-        ${transaction.shopName || ''},
-        'owner',
-        'Owner',
-        'reject_redeem',
-        'ปฏิเสธการแลกรางวัล',
-        ${`คืนแต้มสะสม: ${transaction.description || ''}`},
-        ${customer.id},
-        ${customer.name},
-        ${pointsCost},
-        'danger',
-        now()
-      )
-    `;
   }
 
+  const logId = `audit_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+  const actionLabel = params.action === 'approve' ? 'อนุมัติการแลกรางวัล' : 'ปฏิเสธการแลกรางวัล';
+  const costLabel = paymentMethod === 'tickets' ? `${ticketsUsed} Reward Ticket` : `${pointsCost} แต้ม`;
+  await sql`
+    insert into audit_logs (
+      id, shop_id, shop_name, actor_type, actor_name, action, action_label, description,
+      customer_id, customer_name, points, status, metadata, created_at
+    )
+    values (
+      ${logId}, ${params.shopId}, ${transaction.shopName || ''}, 'owner', 'Owner',
+      ${params.action === 'approve' ? 'approve_redeem' : 'reject_redeem'}, ${actionLabel},
+      ${`${actionLabel}: ${transaction.description || ''} (${costLabel})`}, ${customer.id}, ${customer.name},
+      ${paymentMethod === 'points' ? (params.action === 'reject' ? pointsCost : -pointsCost) : null},
+      ${params.action === 'approve' ? 'success' : 'danger'},
+      ${JSON.stringify({ paymentMethod, ticketsUsed })}::jsonb, now()
+    )
+  `;
+
   const updatedCustomerRes = await sql`
-    select id, name, phone, line_name as "lineName", line_id as "lineId", avatar, current_points as "currentPoints", lifetime_points as "lifetimePoints", tier, created_at as "createdAt", shop_ids as "shopIds"
+    select id, name, phone, line_name as "lineName", line_id as "lineId", avatar,
+      current_points as "currentPoints", lifetime_points as "lifetimePoints", tier,
+      created_at as "createdAt", shop_ids as "shopIds"
     from customers where id = ${customer.id} limit 1
   `;
   const updatedTxRes = await sql`
-    select id, user_id as "userId", user_name as "userName", user_phone as "userPhone", shop_id as "shopId", shop_name as "shopName", type, points, description, status, reward_id as "rewardId", created_at as "createdAt", points_expires_at as "pointsExpiresAt"
+    select id, user_id as "userId", user_name as "userName", user_phone as "userPhone",
+      shop_id as "shopId", shop_name as "shopName", type, points, description, status,
+      reward_id as "rewardId", payment_method as "paymentMethod", tickets_used as "ticketsUsed",
+      created_at as "createdAt", points_expires_at as "pointsExpiresAt"
     from transactions where id = ${transaction.id} limit 1
   `;
 
   return {
     customer: updatedCustomerRes[0] as unknown as Customer,
     transaction: updatedTxRes[0] as unknown as Transaction,
+    ticketBalance: await getAvailableRewardTicketCount({ shopId: params.shopId, customerId: customer.id }),
   };
 }
 

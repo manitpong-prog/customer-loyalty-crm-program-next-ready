@@ -54,12 +54,19 @@ export interface Customer {
   shopIds?: string[];
 }
 
+export type RewardRedemptionMode = 'points' | 'tickets' | 'either';
+export type RewardPaymentMethod = 'points' | 'tickets';
+
 export interface Reward {
   id: string;
   name: string;
   image: string;
   description: string;
   pointsCost: number;
+  /** How this reward can be redeemed. Existing rewards default to points. */
+  redemptionMode?: RewardRedemptionMode;
+  /** Number of game Reward Tickets required when ticket redemption is enabled. */
+  ticketCost?: number;
   stock: number;
   isAvailable: boolean;
   shopId: string;
@@ -92,6 +99,8 @@ export interface Transaction {
   description: string;
   status: 'completed' | 'pending' | 'rejected';
   rewardId?: string; // Optional if type is redeem
+  paymentMethod?: RewardPaymentMethod;
+  ticketsUsed?: number;
   createdAt: string;
 }
 
@@ -137,4 +146,30 @@ export interface AuditLog {
   status: AuditStatusType;
   metadata?: Record<string, unknown>;
   createdAt: string;
+}
+
+export interface MiniGameConfig {
+  id: string;
+  shopId: string;
+  name: string;
+  gameType: 'fruit_math_slash';
+  entryPoints: number;
+  maxQuestions: number;
+  questionsToWin: number;
+  maxMistakes: number;
+  dailyPlayLimit: number;
+  ticketReward: number;
+  ticketExpiryDays: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type GameSessionStatus = 'playing' | 'won' | 'lost' | 'expired' | 'abandoned';
+
+export interface RewardTicketSummary {
+  available: number;
+  reserved: number;
+  used: number;
+  expired: number;
 }

@@ -276,3 +276,17 @@ neon/migrations/002_phase_6c5_pilot_checklist.sql
 - เพิ่มเฉพาะ LIFF deep-link parser ที่ปลอดภัย: decode `liff.state` หลายชั้น, เก็บ `tab`/coupon code ของระบบ, แยก LINE OAuth `code` ออกจาก coupon `code`
 - ปรับ `/api/db/snapshot` และ LINE APIs ให้ไม่เรียก `ensureCrmSchema()` ทุก request เว้นแต่ตั้ง `ENABLE_RUNTIME_SCHEMA_CHECK=true`
 - ไม่ต้องรัน SQL ใหม่ และ Production ไม่ควรตั้ง `ENABLE_RUNTIME_SCHEMA_CHECK=true`
+
+## Fruit Math Slash + Reward Ticket
+
+เวอร์ชันนี้เพิ่มมินิเกมใช้แต้มเพื่อเล่นและ Reward Ticket สำหรับแลกรางวัล ดูกติกา โครงสร้างฐานข้อมูล SQL และวิธีทดสอบที่:
+
+```text
+docs/FRUIT_MATH_SLASH_PHASE8A_TH.md
+```
+
+ก่อนใช้งานต้องรัน migration:
+
+```text
+neon/migrations/009_fruit_math_game_reward_tickets.sql
+```

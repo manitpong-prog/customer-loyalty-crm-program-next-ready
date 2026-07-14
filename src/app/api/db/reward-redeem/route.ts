@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isDatabaseConfigured, redeemRewardOnline } from '../../../../lib/server/crmDb';
-import type { Customer } from '../../../../types';
+import type { Customer, RewardPaymentMethod } from '../../../../types';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -9,6 +9,7 @@ type RewardRedeemPayload = {
   rewardId?: string;
   shopId?: string;
   customer?: Partial<Customer>;
+  paymentMethod?: RewardPaymentMethod;
 };
 
 export async function POST(request: NextRequest) {
@@ -33,7 +34,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = await redeemRewardOnline({ rewardId, shopId, customer: { ...customer, id: customerId } });
+    const paymentMethod = body?.paymentMethod === 'tickets' ? 'tickets' : 'points';
+    const result = await redeemRewardOnline({ rewardId, shopId, customer: { ...customer, id: customerId }, paymentMethod });
     return NextResponse.json({ ok: true, source: 'neon', ...result });
   } catch (error) {
     console.error('[crm-db:reward-redeem]', error);

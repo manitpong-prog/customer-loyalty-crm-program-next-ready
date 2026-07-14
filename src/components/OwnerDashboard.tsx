@@ -3,9 +3,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   Store, QrCode, Users, Plus, Edit, Trash2, Check, X,
   ShoppingBag, Award, PlusCircle, MinusCircle, Search, 
-  Image, HelpCircle, Calendar, RefreshCw, AlertCircle, FileText, Copy, UserPlus, ReceiptText, Share2
+  Image, HelpCircle, Calendar, RefreshCw, AlertCircle, FileText, Copy, UserPlus, ReceiptText, Share2, Gamepad2, Ticket
 } from 'lucide-react';
-import { Shop, Customer, Reward, Transaction, PromoBanner, AuditLog, ShopOnboardingChecklist, PointRoundingMode, MembershipTier } from '../types';
+import { Shop, Customer, Reward, Transaction, PromoBanner, AuditLog, ShopOnboardingChecklist, PointRoundingMode, MembershipTier, RewardRedemptionMode } from '../types';
 import { 
   getShops, saveShops, getCustomers, saveCustomers, 
   getRewards, saveRewards, getTransactions, saveTransactions,
@@ -23,8 +23,9 @@ import {
 } from '../lib/shopScope';
 import { calculateEarnPoints, getEarnPointsExpiresAt, getPointRuleSummary, getPointRules, isEarnTransactionNearExpiry } from '../lib/pointRules';
 import { getDefaultMembershipTiersForShop, getMembershipTiersForShop, getTierBadgeClassName, resolveMembershipTier } from '../lib/membershipTiers';
+import GameSettingsPanel from '../features/fruit-math-game/GameSettingsPanel';
 
-type MerchantTab = 'dashboard' | 'approvals' | 'customers' | 'rewards' | 'promotions' | 'generator' | 'reports' | 'audit' | 'settings';
+type MerchantTab = 'dashboard' | 'approvals' | 'customers' | 'rewards' | 'games' | 'promotions' | 'generator' | 'reports' | 'audit' | 'settings';
 
 interface OwnerDashboardProps {
   key?: string;
@@ -405,6 +406,8 @@ export default function OwnerDashboard({
   const [editingReward, setEditingReward] = useState<Reward | null>(null);
   const [newRewName, setNewRewName] = useState('');
   const [newRewPoints, setNewRewPoints] = useState('100');
+  const [newRewRedemptionMode, setNewRewRedemptionMode] = useState<RewardRedemptionMode>('points');
+  const [newRewTicketCost, setNewRewTicketCost] = useState('1');
   const [newRewStock, setNewRewStock] = useState('20');
   const [newRewDesc, setNewRewDesc] = useState('');
   const [newRewImage, setNewRewImage] = useState('');
@@ -841,11 +844,13 @@ export default function OwnerDashboard({
         'ลำดับ': index + 1,
         'รหัสแลกรางวัล': transaction.id,
         'วันที่ขอแลก': formatReportDate(transaction.createdAt),
-        'สถานะ': transaction.status === 'completed' ? 'อนุมัติแล้ว' : transaction.status === 'pending' ? 'รออนุมัติ' : 'ปฏิเสธและคืนแต้มแล้ว',
+        'สถานะ': transaction.status === 'completed' ? 'อนุมัติแล้ว' : transaction.status === 'pending' ? 'รออนุมัติ' : 'ปฏิเสธและคืนสิทธิ์แล้ว',
         'ชื่อลูกค้า': transaction.userName,
         'เบอร์โทร': transaction.userPhone || '',
         'ของรางวัล': transaction.rewardId ? (rewardNameById.get(transaction.rewardId) || transaction.description) : transaction.description,
-        'แต้มที่ใช้': transaction.points,
+        'วิธีที่ใช้แลก': transaction.paymentMethod === 'tickets' ? 'Reward Ticket' : 'แต้ม',
+        'แต้มที่ใช้': transaction.paymentMethod === 'tickets' ? 0 : transaction.points,
+        'Ticket ที่ใช้': transaction.paymentMethod === 'tickets' ? Number(transaction.ticketsUsed || 0) : 0,
         'รายละเอียด': transaction.description,
       }));
   };
@@ -1405,7 +1410,7 @@ export default function OwnerDashboard({
     }
 
     if (!options?.skipConfirm) {
-      const confirmed = confirm(`ยืนยันอนุมัติรายการแลกรางวัลนี้ใช่ไหม?\n\nลูกค้า: ${tx.userName}\nของรางวัล: ${rewardName}\nใช้แต้ม: ${tx.points.toLocaleString('th-TH')} แต้ม\n\nหลังอนุมัติ ระบบจะลดสต็อกของรางวัล 1 ชิ้น`);
+      const confirmed = confirm(`ยืนยันอนุมัติรายการแลกรางวัลนี้ใช่ไหม?\n\nลูกค้า: ${tx.userName}\nของรางวัล: ${rewardName}\nใช้สิทธิ์: ${getRedeemCostLabel(tx)}\n\nหลังอนุมัติ ระบบจะลดสต็อกของรางวัล 1 ชิ้น`);
       if (!confirmed) return;
     }
 
@@ -1460,7 +1465,7 @@ export default function OwnerDashboard({
 
     const rewardName = tx.description.replace('ขอแลกรางวัล: ', '');
     if (!options?.skipConfirm) {
-      const confirmed = confirm(`ยืนยันปฏิเสธรายการแลกรางวัลนี้ใช่ไหม?\n\nลูกค้า: ${tx.userName}\nของรางวัล: ${rewardName}\nแต้มที่จะคืน: ${tx.points.toLocaleString('th-TH')} แต้ม\n\nหลังปฏิเสธ ระบบจะคืนแต้มให้ลูกค้าทันที`);
+      const confirmed = confirm(`ยืนยันปฏิเสธรายการแลกรางวัลนี้ใช่ไหม?\n\nลูกค้า: ${tx.userName}\nของรางวัล: ${rewardName}\nสิทธิ์ที่จะคืน: ${getRedeemCostLabel(tx)}\n\nหลังปฏิเสธ ระบบจะคืนสิทธิ์ให้ลูกค้าทันที`);
       if (!confirmed) return;
     }
 
@@ -1487,7 +1492,7 @@ export default function OwnerDashboard({
       if (payload?.customer) {
         saveCustomers([payload.customer, ...getCustomers().filter((item) => item.id !== payload.customer!.id)], { sync: false });
       }
-      showStatus(`✕ ปฏิเสธรายการแล้ว และคืน ${tx.points.toLocaleString('th-TH')} แต้มให้ ${tx.userName} แล้ว`);
+      showStatus(`✕ ปฏิเสธรายการแล้ว และคืน ${getRedeemCostLabel(tx)} ให้ ${tx.userName} แล้ว`);
       if (options?.closeModal) setReviewRedeemId(null);
       onDataChange();
       loadData();
@@ -1500,7 +1505,7 @@ export default function OwnerDashboard({
 
   const getCleanRewardName = (tx?: Transaction | null) => {
     if (!tx) return 'ของรางวัล';
-    return tx.description.replace('ขอแลกรางวัล: ', '').replace(' (ร้านปฏิเสธ - คืนแต้มแล้ว)', '') || 'ของรางวัล';
+    return tx.description.replace('ขอแลกรางวัล: ', '').replace(' (ร้านปฏิเสธ - คืนแต้มแล้ว)', '').replace(' (ร้านปฏิเสธ - คืนสิทธิ์แล้ว)', '') || 'ของรางวัล';
   };
 
   const extractRedeemIdFromText = (rawText: string) => {
@@ -1679,6 +1684,8 @@ export default function OwnerDashboard({
     setEditingReward(null);
     setNewRewName('');
     setNewRewPoints('100');
+    setNewRewRedemptionMode('points');
+    setNewRewTicketCost('1');
     setNewRewStock('20');
     setNewRewDesc('');
     setNewRewImage('');
@@ -1690,6 +1697,8 @@ export default function OwnerDashboard({
     setEditingReward(reward);
     setNewRewName(reward.name);
     setNewRewPoints(String(reward.pointsCost));
+    setNewRewRedemptionMode(reward.redemptionMode || 'points');
+    setNewRewTicketCost(String(reward.ticketCost || 1));
     setNewRewStock(String(reward.stock));
     setNewRewDesc(reward.description);
     setNewRewImage(reward.imageUrl || reward.image);
@@ -1713,6 +1722,12 @@ export default function OwnerDashboard({
       return;
     }
 
+    const parsedRewardTicketCost = parsePositiveIntegerInput(newRewTicketCost, 'จำนวน Reward Ticket');
+    if ((newRewRedemptionMode === 'tickets' || newRewRedemptionMode === 'either') && (parsedRewardTicketCost.error || parsedRewardTicketCost.value === null)) {
+      showStatus(parsedRewardTicketCost.error);
+      return;
+    }
+
     const parsedRewardStock = parsePositiveIntegerInput(newRewStock, 'จำนวนสต็อก', true);
     if (parsedRewardStock.error || parsedRewardStock.value === null) {
       showStatus(parsedRewardStock.error);
@@ -1720,6 +1735,7 @@ export default function OwnerDashboard({
     }
 
     const rewardPointsValue = parsedRewardPoints.value;
+    const rewardTicketCostValue = parsedRewardTicketCost.value || 1;
     const rewardStockValue = parsedRewardStock.value;
     const rewardDescription = newRewDesc.trim() || 'ไม่มีเงื่อนไขเพิ่มเติม';
 
@@ -1728,6 +1744,8 @@ export default function OwnerDashboard({
           ...editingReward,
           name: trimmedRewardName,
           pointsCost: rewardPointsValue,
+          redemptionMode: newRewRedemptionMode,
+          ticketCost: rewardTicketCostValue,
           stock: rewardStockValue,
           description: rewardDescription,
           image: newRewImage || defaultRewardImage,
@@ -1738,6 +1756,8 @@ export default function OwnerDashboard({
           id: `rew_${Date.now()}`,
           name: trimmedRewardName,
           pointsCost: rewardPointsValue,
+          redemptionMode: newRewRedemptionMode,
+          ticketCost: rewardTicketCostValue,
           stock: rewardStockValue,
           description: rewardDescription,
           image: newRewImage || defaultRewardImage,
@@ -1753,7 +1773,7 @@ export default function OwnerDashboard({
       description: editingReward ? `แก้ไขของรางวัล “${trimmedRewardName}”` : `เพิ่มของรางวัลใหม่ “${rewardToPersist.name}”`,
       targetType: 'reward',
       targetId: rewardToPersist.id,
-      metadata: { pointsCost: rewardPointsValue, stock: rewardStockValue },
+      metadata: { pointsCost: rewardPointsValue, redemptionMode: newRewRedemptionMode, ticketCost: rewardTicketCostValue, stock: rewardStockValue },
     });
 
     try {
@@ -1902,6 +1922,17 @@ export default function OwnerDashboard({
   const completedRedeems = rewardRedeems.filter(t => t.status === 'completed');
   const rejectedRedeems = rewardRedeems.filter(t => t.status === 'rejected');
   const pendingRedeemPoints = pendingRedeems.reduce((sum, tx) => sum + tx.points, 0);
+  const pendingRedeemTickets = pendingRedeems.reduce((sum, tx) => sum + (tx.paymentMethod === 'tickets' ? Number(tx.ticketsUsed || 0) : 0), 0);
+  const getRewardRedemptionLabel = (reward: Reward) => {
+    const mode = reward.redemptionMode || 'points';
+    const ticketCost = Math.max(1, Number(reward.ticketCost) || 1);
+    if (mode === 'tickets') return `${ticketCost} Ticket`;
+    if (mode === 'either') return `${reward.pointsCost} แต้ม หรือ ${ticketCost} Ticket`;
+    return `${reward.pointsCost} แต้ม`;
+  };
+  const getRedeemCostLabel = (transaction: Transaction) => transaction.paymentMethod === 'tickets'
+    ? `${Number(transaction.ticketsUsed || 0).toLocaleString('th-TH')} Ticket`
+    : `${Number(transaction.points || 0).toLocaleString('th-TH')} แต้ม`;
   const reviewRedeemTx = reviewRedeemId ? transactions.find((tx) => tx.id === reviewRedeemId && tx.type === 'redeem') || getTransactions().find((tx) => tx.id === reviewRedeemId && tx.shopId === selectedShopId && tx.type === 'redeem') : null;
   const reviewRedeemReward = reviewRedeemTx?.rewardId ? rewards.find((reward) => reward.id === reviewRedeemTx.rewardId) || getRewards().find((reward) => reward.id === reviewRedeemTx.rewardId && reward.shopId === selectedShopId) : null;
   const reviewRedeemCustomer = reviewRedeemTx ? customers.find((customer) => customer.id === reviewRedeemTx.userId) || getCustomers().find((customer) => customer.id === reviewRedeemTx.userId) : null;
@@ -1933,6 +1964,7 @@ export default function OwnerDashboard({
     { id: 'dashboard', label: 'แดชบอร์ด', shortLabel: 'หน้าแรก', icon: '🏠', description: 'ภาพรวมของร้านวันนี้' },
     { id: 'generator', label: 'ลิงก์รับแต้ม', shortLabel: 'รับแต้ม', icon: '🔗', count: usableCoupons.length, description: 'สร้างลิงก์หรือ QR สำหรับให้ลูกค้ารับแต้ม' },
     { id: 'rewards', label: 'ของรางวัล', shortLabel: 'รางวัล', icon: '🎁', count: rewards.length, description: 'เพิ่ม แก้ไข และเปิดปิดของรางวัล' },
+    { id: 'games', label: 'มินิเกม', shortLabel: 'เกม', icon: '🍎', description: 'ตั้งค่า Fruit Math Slash และ Reward Ticket' },
     { id: 'approvals', label: 'อนุมัติรางวัล', shortLabel: 'อนุมัติ', icon: '✅', count: pendingRedeems.length, description: 'ตรวจรายการที่ลูกค้าขอแลกรางวัล' },
     { id: 'reports', label: 'รายงาน', shortLabel: 'รายงาน', icon: '📊', description: 'ดาวน์โหลด CSV สำหรับ Excel / Google Sheets' },
     { id: 'audit', label: 'กิจกรรมระบบ', shortLabel: 'กิจกรรม', icon: '🧾', count: auditLogs.length, description: 'ดูว่าใครทำอะไร เมื่อไหร่ และเกี่ยวกับรายการไหน' },
@@ -1992,7 +2024,7 @@ export default function OwnerDashboard({
     {
       id: 'redeems' as const,
       title: 'รายการแลกรางวัล',
-      description: 'รายการรออนุมัติ อนุมัติแล้ว และปฏิเสธ/คืนแต้มแล้ว',
+      description: 'รายการรออนุมัติ อนุมัติแล้ว และปฏิเสธ/คืนสิทธิ์แล้ว',
       count: rewardRedeems.length,
       accent: 'from-amber-50 to-white border-amber-200 text-amber-800',
     },
@@ -2946,7 +2978,7 @@ export default function OwnerDashboard({
                   <p className="text-[10px] font-black text-amber-700 uppercase tracking-[0.22em]">Reward approval</p>
                   <h3 className="text-xl font-black text-slate-950 mt-1">อนุมัติรางวัล</h3>
                   <p className="text-xs text-slate-600 font-medium mt-1">
-                    ตรวจรายการที่ลูกค้าขอแลกของรางวัลก่อนส่งมอบจริง ถ้าปฏิเสธ ระบบจะคืนแต้มให้ลูกค้าทันที
+                    ตรวจรายการที่ลูกค้าขอแลกของรางวัลก่อนส่งมอบจริง ถ้าปฏิเสธ ระบบจะคืนแต้ม หรือคืน Reward Ticket ให้ลูกค้าตามวิธีที่ใช้แลก
                   </p>
                 </div>
                 <div className="rounded-2xl bg-white border border-amber-200 px-4 py-3 text-right shadow-sm">
@@ -2965,12 +2997,13 @@ export default function OwnerDashboard({
                   <p className="text-xl font-black text-emerald-700 font-mono mt-1">{completedRedeems.length}</p>
                 </div>
                 <div className="rounded-2xl bg-white border border-slate-200 p-3">
-                  <p className="text-[10px] font-black text-slate-500">ปฏิเสธ/คืนแต้ม</p>
+                  <p className="text-[10px] font-black text-slate-500">ปฏิเสธ/คืนสิทธิ์</p>
                   <p className="text-xl font-black text-rose-700 font-mono mt-1">{rejectedRedeems.length}</p>
                 </div>
                 <div className="rounded-2xl bg-white border border-slate-200 p-3">
-                  <p className="text-[10px] font-black text-slate-500">แต้มในคิว</p>
-                  <p className="text-xl font-black text-slate-950 font-mono mt-1">{pendingRedeemPoints}</p>
+                  <p className="text-[10px] font-black text-slate-500">สิทธิ์ในคิว</p>
+                  <p className="mt-1 text-sm font-black text-slate-950 font-mono">{pendingRedeemPoints} แต้ม</p>
+                  <p className="text-sm font-black text-violet-700 font-mono">{pendingRedeemTickets} Ticket</p>
                 </div>
               </div>
             </div>
@@ -3029,7 +3062,7 @@ export default function OwnerDashboard({
                   <AlertCircle className="w-4 h-4 text-amber-700 mt-0.5 shrink-0" />
                   <div className="text-xs text-amber-900 font-medium">
                     <p className="font-black">ก่อนอนุมัติ ให้ตรวจของรางวัลและยืนยันกับลูกค้าที่หน้าร้านก่อนเสมอ</p>
-                    <p className="mt-1 text-amber-800">กด “อนุมัติ” เมื่อส่งมอบของแล้วเท่านั้น ถ้ากด “ปฏิเสธ” ระบบจะคืนแต้มให้ลูกค้าโดยอัตโนมัติ</p>
+                    <p className="mt-1 text-amber-800">กด “อนุมัติ” เมื่อส่งมอบของแล้วเท่านั้น ถ้ากด “ปฏิเสธ” ระบบจะคืนแต้ม หรือคืน Reward Ticket ให้ลูกค้าโดยอัตโนมัติ</p>
                   </div>
                 </div>
 
@@ -3062,8 +3095,8 @@ export default function OwnerDashboard({
                               {customer && <p className="text-[11px] text-slate-500 mt-0.5">แต้มคงเหลือหลังขอแลก: {customer.currentPoints.toLocaleString('th-TH')} แต้ม</p>}
                             </div>
                             <div className="rounded-2xl bg-slate-50 border border-slate-200 p-3 col-span-2 sm:col-span-1">
-                              <p className="text-[10px] font-black text-slate-500">แต้ม / สต็อก</p>
-                              <p className="font-black text-rose-700 mt-1">-{t.points.toLocaleString('th-TH')} แต้ม</p>
+                              <p className="text-[10px] font-black text-slate-500">สิทธิ์ที่ใช้ / สต็อก</p>
+                              <p className="font-black text-rose-700 mt-1">-{getRedeemCostLabel(t)}</p>
                               <p className={`text-[11px] font-bold mt-0.5 ${stockDanger ? 'text-rose-700' : 'text-slate-600'}`}>คงเหลือ: {stockLabel}</p>
                             </div>
                           </div>
@@ -3089,7 +3122,7 @@ export default function OwnerDashboard({
                               disabled={processingRedeemId === t.id}
                               className="bg-white border border-rose-200 hover:bg-rose-50 disabled:bg-slate-100 disabled:text-slate-400 text-rose-700 font-black px-3 py-2.5 rounded-2xl text-xs transition cursor-pointer disabled:cursor-not-allowed active:scale-95 flex items-center justify-center gap-1.5"
                             >
-                              <X className="w-4 h-4" /> {processingRedeemId === t.id ? 'กำลังบันทึก...' : 'ปฏิเสธและคืนแต้ม'}
+                              <X className="w-4 h-4" /> {processingRedeemId === t.id ? 'กำลังบันทึก...' : 'ปฏิเสธและคืนสิทธิ์'}
                             </button>
                           </div>
                         </div>
@@ -3117,19 +3150,19 @@ export default function OwnerDashboard({
                       <tr className="border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider font-mono">
                         <th className="py-3 pl-4">ลูกค้า / วันที่</th>
                         <th className="py-3">ของรางวัล</th>
-                        <th className="py-3">แต้ม</th>
+                        <th className="py-3">สิทธิ์ที่ใช้</th>
                         <th className="py-3">สถานะ</th>
                         <th className="py-3 text-right pr-4">จัดการ</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
                       {rewardRedeems.map(t => {
-                        const rewardName = t.description.replace('ขอแลกรางวัล: ', '').replace(' (ร้านปฏิเสธ - คืนแต้มแล้ว)', '');
+                        const rewardName = t.description.replace('ขอแลกรางวัล: ', '').replace(' (ร้านปฏิเสธ - คืนแต้มแล้ว)', '').replace(' (ร้านปฏิเสธ - คืนสิทธิ์แล้ว)', '');
                         const statusBadge = t.status === 'pending'
                           ? <span className="px-2 py-1 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-200">รออนุมัติ</span>
                           : t.status === 'completed'
                             ? <span className="px-2 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">อนุมัติแล้ว</span>
-                            : <span className="px-2 py-1 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200">ปฏิเสธ / คืนแต้มแล้ว</span>;
+                            : <span className="px-2 py-1 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200">ปฏิเสธ / คืนสิทธิ์แล้ว</span>;
                         return (
                           <tr key={t.id} className="hover:bg-amber-50/40">
                             <td className="py-3.5 pl-4">
@@ -3480,6 +3513,11 @@ export default function OwnerDashboard({
           </div>
         )}
 
+        {/* MINI GAME SETTINGS */}
+        {activeTab === 'games' && (
+          <GameSettingsPanel shopId={selectedShopId} />
+        )}
+
         {/* TAB C: SHOP REWARDS CATALOG */}
         {activeTab === 'rewards' && (
           <div className="space-y-4">
@@ -3501,7 +3539,7 @@ export default function OwnerDashboard({
                     <div className="space-y-0.5">
                       <h4 className="text-xs font-bold text-slate-900 truncate">{rew.name}</h4>
                       <p className="text-[10px] text-slate-600 line-clamp-1">{rew.description}</p>
-                      <p className="text-[10px] font-semibold text-yellow-500 mt-1">ใช้แต้ม : {rew.pointsCost} แต้ม • สต็อก: {rew.stock} ชิ้น</p>
+                      <p className="mt-1 text-[10px] font-semibold text-yellow-600">ใช้สิทธิ์: {getRewardRedemptionLabel(rew)} • สต็อก: {rew.stock} ชิ้น</p>
                       <span className={`inline-flex w-fit mt-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${rew.isAvailable ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>
                         {rew.isAvailable ? 'แสดงบนหน้าลูกค้า' : 'ปิดการแสดงผล'}
                       </span>
@@ -3532,7 +3570,7 @@ export default function OwnerDashboard({
               ))}
               {rewards.length === 0 && (
                 <div className="md:col-span-2 py-12 text-center bg-slate-50 rounded-2xl border border-slate-200 text-slate-500 font-sans text-xs">
-                  ยังไม่มีของรางวัลของร้านนี้ กด “เพิ่มของรางวัลใหม่” เพื่อเริ่มสร้างรายการแลกแต้มจริง
+                  ยังไม่มีของรางวัลของร้านนี้ กด “เพิ่มของรางวัลใหม่” เพื่อเริ่มสร้างรายการแลกสิทธิ์
                 </div>
               )}
             </div>
@@ -3569,28 +3607,58 @@ export default function OwnerDashboard({
                       />
                     </div>
 
+                    <div className="space-y-1">
+                      <label className="block text-[10.5px] text-neutral-400">วิธีที่ลูกค้าใช้แลกรางวัล :</label>
+                      <select
+                        value={newRewRedemptionMode}
+                        onChange={(event) => setNewRewRedemptionMode(event.target.value as RewardRedemptionMode)}
+                        className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white outline-none"
+                      >
+                        <option value="points">ใช้แต้มเท่านั้น</option>
+                        <option value="tickets">ใช้ Reward Ticket เท่านั้น</option>
+                        <option value="either">เลือกใช้แต้ม หรือ Reward Ticket</option>
+                      </select>
+                      <p className="text-[9px] leading-relaxed text-neutral-500">MVP ยังไม่รองรับการใช้แต้มและ Ticket พร้อมกันในรายการเดียว</p>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-3">
+                      {(newRewRedemptionMode === 'points' || newRewRedemptionMode === 'either') && (
+                        <div className="space-y-1">
+                          <label className="block text-[10.5px] text-neutral-400">แต้มที่ใช้แลก :</label>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min={1}
+                            value={newRewPoints}
+                            onChange={(event) => setNewRewPoints(event.target.value)}
+                            className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white"
+                            required
+                          />
+                        </div>
+                      )}
+                      {(newRewRedemptionMode === 'tickets' || newRewRedemptionMode === 'either') && (
+                        <div className="space-y-1">
+                          <label className="block text-[10.5px] text-neutral-400">Reward Ticket ที่ใช้ :</label>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min={1}
+                            value={newRewTicketCost}
+                            onChange={(event) => setNewRewTicketCost(event.target.value)}
+                            className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white"
+                            required
+                          />
+                        </div>
+                      )}
                       <div className="space-y-1">
-                        <label className="text-[10.5px] text-neutral-400 block">แต้มที่จะดึงใช้ :</label>
-                        <input 
-                          type="number"
-                          inputMode="numeric"
-                          min={1}
-                          value={newRewPoints}
-                          onChange={(e) => setNewRewPoints(e.target.value)}
-                          className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg"
-                          required
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10.5px] text-neutral-400 block">เปิดสต็อกเบื้องต้น :</label>
-                        <input 
+                        <label className="block text-[10.5px] text-neutral-400">เปิดสต็อกเบื้องต้น :</label>
+                        <input
                           type="number"
                           inputMode="numeric"
                           min={0}
                           value={newRewStock}
-                          onChange={(e) => setNewRewStock(e.target.value)}
-                          className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white px-3 py-2 rounded-lg"
+                          onChange={(event) => setNewRewStock(event.target.value)}
+                          className="w-full rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white"
                           required
                         />
                       </div>
@@ -4159,7 +4227,7 @@ export default function OwnerDashboard({
                       </div>
                       <div className="rounded-2xl bg-white border border-slate-200 p-3 col-span-2 sm:col-span-1">
                         <p className="text-[10px] font-black text-slate-500">แต้ม / สต็อก</p>
-                        <p className="font-black text-rose-700 mt-1">-{reviewRedeemTx.points.toLocaleString('th-TH')} แต้ม</p>
+                        <p className="font-black text-rose-700 mt-1">-{getRedeemCostLabel(reviewRedeemTx)}</p>
                         <p className={`text-[11px] font-bold mt-0.5 ${reviewRedeemStockDanger ? 'text-rose-700' : 'text-slate-600'}`}>
                           คงเหลือ: {reviewRedeemReward ? `${reviewRedeemReward.stock} ชิ้น` : 'ไม่พบข้อมูลสต็อก'}
                         </p>
