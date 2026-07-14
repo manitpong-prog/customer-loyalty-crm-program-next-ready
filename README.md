@@ -285,8 +285,11 @@ neon/migrations/002_phase_6c5_pilot_checklist.sql
 docs/FRUIT_MATH_SLASH_PHASE8A_TH.md
 ```
 
-ก่อนใช้งานต้องรัน migration:
+ก่อนใช้งานต้องรัน migrations ตามลำดับ:
 
 ```text
 neon/migrations/009_fruit_math_game_reward_tickets.sql
+neon/migrations/010_fruit_math_timer_sync.sql
 ```
+
+Migration `010` แก้การนับเวลาระหว่างหน้าเกมกับ Server ให้เริ่มเมื่อหน้าจอพร้อมแสดงโจทย์จริง

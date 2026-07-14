@@ -197,10 +197,13 @@ async function applyGameSchema() {
     status text not null default 'playing' check (status in ('playing', 'won', 'lost', 'expired', 'abandoned')),
     started_at timestamptz not null default now(),
     question_started_at timestamptz not null default now(),
+    question_ready_index integer not null default -1,
     finished_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
   )`;
+
+  await db`alter table game_sessions add column if not exists question_ready_index integer not null default -1`;
 
   await db`create table if not exists reward_tickets (
     id text primary key,
@@ -412,10 +415,10 @@ export async function startFruitMathGame(params: { shopId: string; customerId: s
       insert into game_sessions (
         id, game_id, shop_id, customer_id, entry_points, questions,
         current_question_index, correct_answers, wrong_answers, status,
-        started_at, question_started_at, created_at, updated_at
+        started_at, question_started_at, question_ready_index, created_at, updated_at
       )
       select ${sessionId}, d.game_id, ${params.shopId}, d.id, d.entry_points, ${questionsJson}::jsonb,
-             0, 0, 0, 'playing', now(), now(), now(), now()
+             0, 0, 0, 'playing', now(), now(), -1, now(), now()
       from deducted d
       returning *
     ), inserted_transaction as (
@@ -472,6 +475,80 @@ export async function startFruitMathGame(params: { shopId: string; customerId: s
   };
 }
 
+
+export async function activateFruitMathQuestion(params: {
+  sessionId: string;
+  shopId: string;
+  customerId: string;
+  questionIndex: number;
+}): Promise<{
+  questionIndex: number;
+  timeLimitSeconds: number;
+  remainingMs: number;
+}> {
+  await ensureGameSchema();
+  const db = requireSql();
+  const normalizedQuestionIndex = Math.max(0, Math.floor(params.questionIndex));
+
+  const rows = await db`
+    with lock_row as (
+      select pg_advisory_xact_lock(hashtext(${params.sessionId}))
+    ), current_session as (
+      select s.*
+      from game_sessions s
+      join lock_row on true
+      where s.id = ${params.sessionId}
+        and s.shop_id = ${params.shopId}
+        and s.customer_id = ${params.customerId}
+        and s.status = 'playing'
+        and s.current_question_index = ${normalizedQuestionIndex}
+      for update
+    ), activated as (
+      update game_sessions s
+      set question_started_at = case
+            when s.question_ready_index < s.current_question_index then now()
+            else s.question_started_at
+          end,
+          question_ready_index = greatest(s.question_ready_index, s.current_question_index),
+          updated_at = now()
+      from current_session c
+      where s.id = c.id
+      returning s.current_question_index, s.question_started_at, s.questions
+    )
+    select current_question_index as "questionIndex",
+           (questions -> current_question_index ->> 'timeLimitSeconds')::int as "timeLimitSeconds",
+           greatest(
+             0,
+             floor(extract(epoch from (
+               question_started_at
+                 + make_interval(secs => (questions -> current_question_index ->> 'timeLimitSeconds')::int)
+                 - now()
+             )) * 1000)
+           )::int as "remainingMs"
+    from activated
+  `;
+
+  if (!rows[0]) {
+    const existing = await db`
+      select status, current_question_index as "currentQuestionIndex", question_ready_index as "questionReadyIndex"
+      from game_sessions
+      where id = ${params.sessionId}
+        and shop_id = ${params.shopId}
+        and customer_id = ${params.customerId}
+      limit 1
+    `;
+    if (!existing[0]) throw new Error('ไม่พบรอบเกมนี้');
+    if (existing[0].status !== 'playing') throw new Error('รอบเกมนี้จบไปแล้ว');
+    throw new Error('ลำดับโจทย์ไม่ตรงกับรอบเกม กรุณาเปิดเกมใหม่อีกครั้ง');
+  }
+
+  return {
+    questionIndex: Number(rows[0].questionIndex),
+    timeLimitSeconds: Number(rows[0].timeLimitSeconds),
+    remainingMs: Number(rows[0].remainingMs),
+  };
+}
+
 export async function answerFruitMathGame(params: {
   sessionId: string;
   shopId: string;
@@ -498,7 +575,8 @@ export async function answerFruitMathGame(params: {
     ), current_session as (
       select s.*, g.questions_to_win, g.max_mistakes, g.max_questions,
              g.ticket_reward, g.ticket_expiry_days,
-             ((s.questions -> s.current_question_index ->> 'correctAnswer')::int = ${answerValue})
+             (s.question_ready_index = s.current_question_index)
+               and ((s.questions -> s.current_question_index ->> 'correctAnswer')::int = ${answerValue})
                and now() <= s.question_started_at
                  + make_interval(secs => (s.questions -> s.current_question_index ->> 'timeLimitSeconds')::int)
                  + (${SERVER_TIME_GRACE_MS} * interval '1 millisecond') as is_correct
@@ -510,6 +588,7 @@ export async function answerFruitMathGame(params: {
         and s.customer_id = ${params.customerId}
         and s.status = 'playing'
         and s.current_question_index = ${Math.max(0, Math.floor(params.questionIndex))}
+        and s.question_ready_index = s.current_question_index
       for update
     ), calculated as (
       select c.*,
@@ -528,11 +607,7 @@ export async function answerFruitMathGame(params: {
             when c.next_index >= c.max_questions then case when c.next_correct >= c.questions_to_win then 'won' else 'lost' end
             else 'playing'
           end,
-          question_started_at = case
-            when c.next_correct >= c.questions_to_win or c.next_wrong >= c.max_mistakes or c.next_index >= c.max_questions
-              then s.question_started_at
-            else now()
-          end,
+          question_started_at = s.question_started_at,
           finished_at = case
             when c.next_correct >= c.questions_to_win or c.next_wrong >= c.max_mistakes or c.next_index >= c.max_questions
               then now()
@@ -579,11 +654,14 @@ export async function answerFruitMathGame(params: {
 
   if (!rows[0]) {
     const existing = await db`
-      select status, current_question_index as "currentQuestionIndex"
+      select status, current_question_index as "currentQuestionIndex", question_ready_index as "questionReadyIndex"
       from game_sessions where id = ${params.sessionId} and shop_id = ${params.shopId} and customer_id = ${params.customerId} limit 1
     `;
     if (!existing[0]) throw new Error('ไม่พบรอบเกมนี้');
     if (existing[0].status !== 'playing') throw new Error('รอบเกมนี้จบไปแล้ว');
+    if (Number(existing[0].questionReadyIndex) !== Number(existing[0].currentQuestionIndex)) {
+      throw new Error('โจทย์ข้อนี้ยังไม่เริ่มจับเวลา กรุณารอสักครู่');
+    }
     throw new Error('คำตอบข้อนี้ถูกส่งไปแล้ว กรุณารอข้อถัดไป');
   }
 

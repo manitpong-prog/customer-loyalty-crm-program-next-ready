@@ -147,3 +147,44 @@ npm run build
 
 ### SQL
 - ไม่ต้องรัน SQL เพิ่ม เพราะเป็นการเปลี่ยนค่ากติกาในโค้ดเท่านั้น
+
+
+## 2026-07-14 — Fruit Math Slash v1.2: Timer Synchronization Hotfix
+
+### ปัญหาที่พบ
+- ผู้เล่นเห็นตัวเลขเวลายังเหลือประมาณ 4 วินาที แต่ระบบตัดสินหมดเวลา
+- ไม่เกี่ยวกับ realtime database; เป็นการเริ่มจับเวลาคนละจังหวะระหว่าง Client และ Server
+
+### สาเหตุ
+- `game_sessions.question_started_at` ถูกตั้งใน Neon ก่อน response ถึง LINE WebView
+- ข้อถัดไปเริ่มเวลาใน Server ก่อน feedback 260 ms และก่อนหน้าจอ render
+- network/cold start ทำให้เวลาฝั่ง Server เดินนำหน้าตัวเลขบนหน้าจอ
+
+### แนวทางแก้
+- เพิ่มขั้นตอน activate ต่อโจทย์ โดย Server เริ่มจับเวลาเมื่อ Client พร้อมแสดงโจทย์
+- เพิ่ม `question_ready_index` ป้องกันการ activate โจทย์เดิมซ้ำเพื่อยืดเวลา
+- Answer API รับคำตอบเฉพาะข้อที่ activate แล้ว
+- Client ซ่อนโจทย์และผลไม้ระหว่างซิงก์เวลา
+- Client ใช้ `performance.now()` คำนวณเวลาที่ผ่านจริง แม้ interval ถูก browser หน่วง
+
+### ไฟล์ใหม่
+- `src/app/api/db/games/activate/route.ts`
+- `neon/migrations/010_fruit_math_timer_sync.sql`
+
+### ไฟล์ที่แก้
+- `src/lib/server/games/gameDb.ts`
+- `src/features/fruit-math-game/FruitMathGame.tsx`
+- `README.md`
+- `PROJECT_STATE.md`
+- `docs/FRUIT_MATH_SLASH_PHASE8A_TH.md`
+- `log_history.md`
+
+### SQL ที่ต้องรัน
+```text
+neon/migrations/010_fruit_math_timer_sync.sql
+```
+
+### การตรวจสอบ
+- `npm run typecheck` ผ่าน
+- `npm run build` ผ่าน
+- Next.js build พบ route ใหม่ `/api/db/games/activate`

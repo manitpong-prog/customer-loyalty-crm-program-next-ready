@@ -63,6 +63,7 @@ Migration:
 
 ```text
 neon/migrations/009_fruit_math_game_reward_tickets.sql
+neon/migrations/010_fruit_math_timer_sync.sql
 ```
 
 ## API ใหม่
@@ -70,6 +71,7 @@ neon/migrations/009_fruit_math_game_reward_tickets.sql
 ```text
 GET  /api/db/games/state
 POST /api/db/games/start
+POST /api/db/games/activate
 POST /api/db/games/answer
 POST /api/db/games/abandon
 GET  /api/db/games/settings
@@ -100,6 +102,7 @@ src/lib/server/games/
 
 ```text
 neon/migrations/009_fruit_math_game_reward_tickets.sql
+neon/migrations/010_fruit_math_timer_sync.sql
 ```
 
 ### 3. ตรวจโค้ด
@@ -137,3 +140,20 @@ npm run dev
 - ระบบป้องกันการแก้ request สำคัญอยู่ฝั่ง server แต่ผู้ใช้ที่เขียน automation ขั้นสูงยังสามารถคำนวณโจทย์จากหน้าเว็บได้ จึงควรเพิ่ม anti-bot/rate-limit หากเปิดเป็นกิจกรรมมูลค่าสูง
 - API ของโปรเจคเดิมยังใช้ customer/shop ID จาก client หลายจุด ควรเพิ่มการผูก session กับ LINE token และสิทธิ์ Merchant ก่อนเปิดสาธารณะในวงกว้าง
 - การแลกรางวัลเดิมใช้หลาย database statements พร้อม compensation; ควรย้าย flow ทั้งก้อนไป atomic transaction/CTE ใน Phase hardening ถัดไป
+
+
+## Timer Synchronization Hotfix v1.2
+
+เวอร์ชันเดิมเริ่ม `question_started_at` ใน Neon ตั้งแต่ก่อน API ส่งโจทย์กลับถึงมือถือ ทำให้เวลา Server เดินไปแล้วระหว่าง network, feedback animation และการ render โดยผู้เล่นยังไม่เห็นโจทย์จริง
+
+เวอร์ชัน v1.2 เปลี่ยน flow เป็น:
+
+```text
+รับโจทย์จาก Server
+→ หน้าจอเตรียมพื้นที่เกม
+→ POST /api/db/games/activate
+→ Neon บันทึกเวลาเริ่มของข้อนั้นเพียงครั้งเดียว
+→ หน้าเว็บแสดงโจทย์ ผลไม้ และเริ่มนับถอยหลัง
+```
+
+คอลัมน์ `question_ready_index` ป้องกันการเรียก activate ข้อเดิมซ้ำเพื่อรีเซ็ตเวลา ส่วนตัวจับเวลาบนหน้าจอใช้ `performance.now()` ซึ่งทนต่อการหน่วงของ `setInterval` ได้ดีกว่าเดิม

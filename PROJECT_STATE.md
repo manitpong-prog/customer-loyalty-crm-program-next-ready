@@ -61,7 +61,7 @@ For DB phases, run SQL migration in Neon first, then deploy code.
 - ชนะได้รับ Reward Ticket 1 ใบ อายุ 30 วัน
 - ร้านตั้งค่า entry points, daily play limit และเปิด/ปิดเกมได้
 - ของรางวัลรองรับ `points`, `tickets`, `either`
-- Migration ที่ต้องรัน: `neon/migrations/009_fruit_math_game_reward_tickets.sql`
+- Migrations ที่ต้องรัน: `neon/migrations/009_fruit_math_game_reward_tickets.sql` และ `neon/migrations/010_fruit_math_timer_sync.sql`
 - คู่มือ: `docs/FRUIT_MATH_SLASH_PHASE8A_TH.md`
 
 ### ลำดับถัดไปที่แนะนำ
@@ -69,3 +69,14 @@ For DB phases, run SQL migration in Neon first, then deploy code.
 2. เพิ่มการผูก API กับ LINE customer session และ Merchant authorization
 3. ทำ reward redemption/approval ให้ atomic เต็มรูปแบบ
 4. Phase 8B เพิ่ม swipe-to-slash, sound, fruit split effect และ game analytics
+
+
+## Phase 8A.2 — Timer Synchronization Hotfix (2026-07-14)
+
+- แก้ปัญหาหน้าจอยังแสดงเวลาเหลือ แต่ Server ตัดหมดเวลาก่อน
+- สาเหตุเดิม: Neon เริ่มเวลาโจทย์ก่อน API response, animation feedback และการ render บน LINE WebView
+- เพิ่มขั้นตอน activate โจทย์: Server เริ่มเวลาเมื่อ Client พร้อมแสดงโจทย์และผลไม้
+- เพิ่ม `question_ready_index` เพื่อป้องกันการ activate ข้อเดิมซ้ำเพื่อยืดเวลา
+- Client ใช้ `performance.now()` เพื่อให้เวลาถอยหลังไม่เพี้ยนเมื่อ `setInterval` ถูกหน่วง
+- API ใหม่: `POST /api/db/games/activate`
+- Migration: `neon/migrations/010_fruit_math_timer_sync.sql`

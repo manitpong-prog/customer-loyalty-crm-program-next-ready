@@ -45,6 +45,7 @@ export default function FruitMathGame({
   const [state, setState] = useState<FruitMathGameState | null>(null);
   const [round, setRound] = useState<FruitMathRound | null>(null);
   const [remainingMs, setRemainingMs] = useState(0);
+  const [questionActive, setQuestionActive] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<'correct' | 'wrong' | 'timeout' | null>(null);
@@ -82,19 +83,64 @@ export default function FruitMathGame({
   const question = round?.question || null;
 
   useEffect(() => {
-    if (screen !== 'playing' || !question) return;
+    if (screen !== 'playing' || !question || !round?.sessionId) return;
+
+    let cancelled = false;
+    let timer: number | null = null;
     timeoutSubmittedRef.current = false;
-    setRemainingMs(question.timeLimitSeconds * 1000);
-    const startedAt = Date.now();
-    const timer = window.setInterval(() => {
-      const remaining = Math.max(0, question.timeLimitSeconds * 1000 - (Date.now() - startedAt));
-      setRemainingMs(remaining);
-    }, 40);
-    return () => window.clearInterval(timer);
-  }, [question?.id, screen]);
+    setQuestionActive(false);
+    setRemainingMs(0);
+
+    const activateQuestion = async () => {
+      const response = await fetch('/api/db/games/activate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: round.sessionId,
+          shopId,
+          customerId: customer.id,
+          questionIndex: question.questionNumber - 1,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as {
+        ok?: boolean;
+        message?: string;
+        remainingMs?: number;
+      } | null;
+
+      if (!response.ok || !payload?.ok || !Number.isFinite(payload.remainingMs)) {
+        throw new Error(payload?.message || 'เริ่มจับเวลาโจทย์ไม่สำเร็จ');
+      }
+      if (cancelled) return;
+
+      const initialRemainingMs = Math.max(0, Math.min(
+        question.timeLimitSeconds * 1000,
+        Number(payload.remainingMs),
+      ));
+      const startedAt = performance.now();
+      setRemainingMs(initialRemainingMs);
+      setQuestionActive(true);
+
+      timer = window.setInterval(() => {
+        const remaining = Math.max(0, initialRemainingMs - (performance.now() - startedAt));
+        setRemainingMs(remaining);
+      }, 40);
+    };
+
+    void activateQuestion().catch((error) => {
+      if (cancelled) return;
+      setErrorMessage(error instanceof Error ? error.message : 'เริ่มจับเวลาโจทย์ไม่สำเร็จ');
+      setQuestionActive(false);
+    });
+
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearInterval(timer);
+    };
+  }, [customer.id, question?.id, round?.sessionId, screen, shopId]);
 
   const submitAnswer = useCallback(async (answer: number | null) => {
-    if (!round?.sessionId || !round.question || submitting) return;
+    if (!round?.sessionId || !round.question || submitting || !questionActive) return;
     setSubmitting(true);
     setSelectedAnswer(answer);
     setErrorMessage('');
@@ -153,13 +199,13 @@ export default function FruitMathGame({
       setSubmitting(false);
       setSelectedAnswer(null);
     }
-  }, [customer.id, onGameStateChange, round, shopId, submitting]);
+  }, [customer.id, onGameStateChange, questionActive, round, shopId, submitting]);
 
   useEffect(() => {
-    if (screen !== 'playing' || !question || remainingMs > 0 || submitting || timeoutSubmittedRef.current) return;
+    if (screen !== 'playing' || !question || !questionActive || remainingMs > 0 || submitting || timeoutSubmittedRef.current) return;
     timeoutSubmittedRef.current = true;
     void submitAnswer(null);
-  }, [question, remainingMs, screen, submitAnswer, submitting]);
+  }, [question, questionActive, remainingMs, screen, submitAnswer, submitting]);
 
   const startGame = async () => {
     if (!state) return;
@@ -226,7 +272,9 @@ export default function FruitMathGame({
     onClose();
   };
 
-  const progressPercent = question ? Math.max(0, Math.min(100, (remainingMs / (question.timeLimitSeconds * 1000)) * 100)) : 0;
+  const progressPercent = question && questionActive
+    ? Math.max(0, Math.min(100, (remainingMs / (question.timeLimitSeconds * 1000)) * 100))
+    : 0;
   const maxMistakes = state?.config.maxMistakes || 3;
   const hearts = useMemo(
     () => Array.from({ length: maxMistakes }, (_, index) => index < Math.max(0, maxMistakes - (round?.wrongAnswers || 0))),
@@ -369,25 +417,25 @@ export default function FruitMathGame({
 
               <div className="rounded-3xl border border-[#e6d5c0] bg-[#2b160c] p-4 text-center text-white shadow-lg">
                 <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-300">คำนวณแล้วแตะคำตอบ</p>
-                <p className="mt-2 font-mono text-[34px] font-black tracking-tight">{question.expression} = ?</p>
+                <p className="mt-2 font-mono text-[34px] font-black tracking-tight">{questionActive ? `${question.expression} = ?` : 'เตรียมโจทย์...'}</p>
                 <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/15">
                   <motion.div className={`h-full ${progressPercent <= 30 ? 'bg-rose-500' : 'bg-amber-400'}`} animate={{ width: `${progressPercent}%` }} transition={{ duration: 0.05 }} />
                 </div>
                 <div className="mt-1 flex items-center justify-center gap-1 text-[10px] font-black text-white/80">
-                  <Clock3 className="h-3 w-3" /> {(remainingMs / 1000).toFixed(1)} วินาที
+                  <Clock3 className="h-3 w-3" /> {questionActive ? `${(remainingMs / 1000).toFixed(1)} วินาที` : 'กำลังซิงก์เวลา...'}
                 </div>
               </div>
 
               <div className="relative h-[345px] overflow-hidden rounded-[30px] border border-emerald-200 bg-gradient-to-b from-sky-100 via-emerald-50 to-lime-100 shadow-inner">
                 <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-emerald-300/70 to-transparent" />
-                {question.options.map((option, index) => {
+                {questionActive && question.options.map((option, index) => {
                   const position = getFruitLayout(question.options.length, index);
                   const isSelected = selectedAnswer === option.value;
                   return (
                     <motion.button
                       key={`${question.id}-${option.id}`}
                       type="button"
-                      disabled={submitting}
+                      disabled={submitting || !questionActive}
                       onClick={() => void submitAnswer(option.value)}
                       initial={{ y: -75, opacity: 0, rotate: -8 }}
                       animate={isSelected
