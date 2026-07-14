@@ -51,6 +51,7 @@ export default function FruitMathGame({
   const [feedback, setFeedback] = useState<'correct' | 'wrong' | 'timeout' | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const timeoutSubmittedRef = useRef(false);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
   const loadState = useCallback(async () => {
     setErrorMessage('');
@@ -74,11 +75,30 @@ export default function FruitMathGame({
 
   useEffect(() => {
     if (!open) return;
+
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     setRound(null);
     setFeedback(null);
     setSelectedAnswer(null);
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     void loadState();
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+    };
   }, [open, loadState]);
+
+  useEffect(() => {
+    if (!open || screen === 'confirm') return;
+
+    const frame = window.requestAnimationFrame(() => {
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, screen]);
 
   const question = round?.question || null;
 
@@ -284,12 +304,12 @@ export default function FruitMathGame({
   if (!open) return null;
 
   return (
-    <div className="absolute inset-0 z-[80] flex items-stretch justify-center bg-[#150c08]/75 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[80] flex h-[100dvh] items-stretch justify-center overflow-hidden bg-[#150c08]/75 backdrop-blur-sm">
       <motion.div
         initial={{ opacity: 0, y: 24, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 24, scale: 0.98 }}
-        className="relative flex h-full w-full max-w-md flex-col overflow-hidden bg-[#fff9ef] shadow-2xl"
+        className="relative flex h-[100dvh] max-h-[100dvh] w-full max-w-md flex-col overflow-hidden bg-[#fff9ef] shadow-2xl"
       >
         <div className="flex items-center justify-between border-b border-amber-200/70 bg-white/90 px-4 py-3">
           <div>
@@ -301,7 +321,7 @@ export default function FruitMathGame({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
+        <div ref={scrollContainerRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
           {errorMessage && (
             <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-bold text-rose-700">
               {errorMessage}

@@ -188,3 +188,33 @@ neon/migrations/010_fruit_math_timer_sync.sql
 - `npm run typecheck` ผ่าน
 - `npm run build` ผ่าน
 - Next.js build พบ route ใหม่ `/api/db/games/activate`
+
+## 2026-07-14 — Fruit Math Slash v1.3: Mobile Scroll Position Hotfix
+
+### ปัญหาที่พบ
+- เมื่อผู้ใช้เลื่อนหน้าลูกค้าลงมาถึงการ์ดเกมแล้วกดเปิดเกม หน้าต่างเกมเริ่มแสดงจากช่วงกลางหรือล่าง
+- ส่วนหัวเกมและเนื้อหาด้านบนไม่อยู่ใน viewport แรก โดยเฉพาะใน LINE WebView/Chrome Android
+
+### สาเหตุ
+- Overlay ของเกมใช้ `position: absolute` จึงอ้างอิงตำแหน่งจาก Customer Dashboard ที่ยาวกว่าหน้าจอ
+- ตำแหน่ง scroll ของหน้าหลักถูกคงไว้เมื่อเปิดเกม ทำให้ viewport ไปตกอยู่ช่วงล่างของ overlay
+
+### แนวทางแก้
+- เปลี่ยน overlay เกมจาก `absolute` เป็น `fixed` ให้ยึดกับ viewport
+- กำหนดความสูงเป็น `100dvh` เพื่อเหมาะกับ browser chrome บนมือถือ
+- เพิ่ม scroll container ref และเลื่อนไปด้านบนอัตโนมัติเมื่อเปิดเกมหรือเปลี่ยนหน้าภายในเกม
+- ล็อก `document.body` ไม่ให้หน้าเบื้องหลังเลื่อนระหว่างเปิดเกม
+- เพิ่ม `overscroll-contain` เพื่อกัน scroll ส่งต่อไปยังหน้าหลัก
+
+### ไฟล์ที่แก้
+- `src/features/fruit-math-game/FruitMathGame.tsx`
+- `README.md`
+- `PROJECT_STATE.md`
+- `log_history.md`
+
+### SQL
+- ไม่ต้องรัน SQL เพิ่ม เพราะเป็นการแก้ UI/scroll ฝั่ง Client เท่านั้น
+
+### การตรวจสอบ
+- `npm run typecheck` ผ่าน
+- `npm run build` ผ่าน

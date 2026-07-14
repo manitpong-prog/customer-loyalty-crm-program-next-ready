@@ -80,3 +80,11 @@ For DB phases, run SQL migration in Neon first, then deploy code.
 - Client ใช้ `performance.now()` เพื่อให้เวลาถอยหลังไม่เพี้ยนเมื่อ `setInterval` ถูกหน่วง
 - API ใหม่: `POST /api/db/games/activate`
 - Migration: `neon/migrations/010_fruit_math_timer_sync.sql`
+
+## Phase 8A.3 — Mobile Game Scroll Position Hotfix (2026-07-14)
+
+- แก้หน้าต่าง Fruit Math Slash เปิดจากตำแหน่งกลาง/ล่างเมื่อผู้ใช้เลื่อนหน้าหลักมาก่อน
+- Overlay เกมเปลี่ยนเป็น `position: fixed` และสูง `100dvh`
+- หน้าต่างเกมเลื่อนไปด้านบนอัตโนมัติทุกครั้งที่เปิดหรือเปลี่ยน screen
+- ล็อก background scroll และกัน overscroll ส่งต่อไปยัง Customer Dashboard
+- ไม่ต้องรัน SQL ใหม่

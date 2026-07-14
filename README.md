@@ -293,3 +293,7 @@ neon/migrations/010_fruit_math_timer_sync.sql
 ```
 
 Migration `010` แก้การนับเวลาระหว่างหน้าเกมกับ Server ให้เริ่มเมื่อหน้าจอพร้อมแสดงโจทย์จริง
+
+### Mobile game scroll hotfix
+
+Fruit Math Slash ใช้ viewport-fixed overlay และ reset ตำแหน่ง scroll ทุกครั้งที่เปิด เพื่อให้ส่วนหัวเกมแสดงจากด้านบนเสมอใน LINE WebView และเบราว์เซอร์มือถือ การแก้ไขนี้ไม่ต้องรัน SQL เพิ่ม
